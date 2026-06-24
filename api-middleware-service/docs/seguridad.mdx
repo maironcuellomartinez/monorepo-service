@@ -1,0 +1,243 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { motion } from 'framer-motion';
+import { levelColors, medidas, sectionVariants, codeVariants } from '@/data/seguridad';
+
+# Seguridad
+
+<motion.div
+  variants={sectionVariants}
+  initial="hidden"
+  animate="visible"
+  className="mb-8"
+>
+  <p className="text-lg text-muted-foreground">
+    Resumen de todas las medidas implementadas para proteger la API, los datos y las sesiones.
+  </p>
+</motion.div>
+
+## Tabla de medidas de seguridad
+
+<div className="rounded-md border overflow-x-auto my-6">
+  <Table>
+    <TableHeader>
+      <TableRow>
+        <TableHead className="w-[200px]">Medida</TableHead>
+        <TableHead>Implementacion</TableHead>
+        <TableHead className="w-[150px]">Nivel</TableHead>
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      {medidas.map((item, idx) => (
+        <motion.tr
+          key={idx}
+          initial={{ opacity: 0, y: 10 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: '-20px' }}
+          transition={{ delay: idx * 0.03, duration: 0.2 }}
+          whileHover={{ scale: 1.01, backgroundColor: 'rgba(0,0,0,0.02)', transition: { duration: 0.1 } }}
+          className="group cursor-default"
+        >
+          <TableCell className="font-mono text-sm">{item.medida}</TableCell>
+          <TableCell className="font-mono text-xs text-muted-foreground">{item.implementacion}</TableCell>
+          <TableCell>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${levelColors[item.nivel]}`}>
+              {item.nivel}
+            </span>
+          </TableCell>
+        </motion.tr>
+      ))}
+    </TableBody>
+  </Table>
+</div>
+
+---
+
+## Helmet
+
+<motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+  <p>Protege contra vulnerabilidades HTTP comunes:</p>
+  <ul className="list-disc pl-6 my-2">
+    <li>XSS (Cross-Site Scripting)</li>
+    <li>Clickjacking (X-Frame-Options)</li>
+    <li>MIME sniffing (X-Content-Type-Options)</li>
+    <li>Otros encabezados de seguridad</li>
+  </ul>
+  <p>Se aplica globalmente en <code>main.ts</code>:</p>
+  <motion.pre variants={codeVariants} initial="hidden" whileInView="visible" viewport={{ once: true }} className="bg-muted p-4 rounded-lg overflow-x-auto">
+    <code className="text-sm">{`app.use(helmet());`}</code>
+  </motion.pre>
+</motion.div>
+
+---
+
+## CORS
+
+<motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+  <p>Configuracion dinamica segun entorno:</p>
+  <motion.pre variants={codeVariants} initial="hidden" whileInView="visible" viewport={{ once: true }} className="bg-muted p-4 rounded-lg overflow-x-auto">
+    <code className="text-sm">{`const corsOrigins = env === 'development'
+  ? ['http://localhost:5173', 'http://localhost:3000']
+  : process.env.CORS_ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? [];
+app.enableCors({ origin: corsOrigins, credentials: true });`}</code>
+  </motion.pre>
+  <ul className="list-disc pl-6 mt-2">
+    <li><strong>Development</strong>: origenes fijos (localhost:5173 para el dashboard, localhost:3000)</li>
+    <li><strong>Staging/Production</strong>: solo los definidos en <code>CORS_ALLOWED_ORIGINS</code></li>
+    <li><strong>Sin wildcard</strong>: no se permite <code>*</code> en ningun entorno</li>
+  </ul>
+</motion.div>
+
+---
+
+## Validacion de entorno
+
+<motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+  <p>La funcion <code>requiredSecret()</code> en <code>configuration.ts</code> protege contra configuraciones inseguras:</p>
+  <motion.pre variants={codeVariants} initial="hidden" whileInView="visible" viewport={{ once: true }} className="bg-muted p-4 rounded-lg overflow-x-auto">
+    <code className="text-sm">{`function requiredSecret(key: string, fallback: string): string {
+  const env = process.env.NODE_ENV ?? 'development';
+  const value = process.env[key];
+
+  if (env !== 'development') {
+    if (!value) throw new Error(\`Variable '\${key}' no configurada\`);
+    if (value.startsWith('dev-only--')) throw new Error(\`Variable '\${key}' tiene valor de desarrollo\`);
+    return value;
+  }
+
+  return value ?? fallback;
+}`}</code>
+  </motion.pre>
+  <p>Variables protegidas:</p>
+  <ul className="list-disc pl-6">
+    <li><code>JWT_SECRET</code></li>
+    <li><code>ADMIN_SESSION_SECRET</code></li>
+    <li><code>ABAC_M2M_TOKEN</code></li>
+  </ul>
+  <p>En staging/production, si alguna de estas variables falta o tiene el valor de desarrollo (<code>dev-only--...</code>), el servicio <strong>no arranca</strong>.</p>
+</motion.div>
+
+---
+
+## Refresh token rotation
+
+<motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+  <p>Cada vez que se refresca un token:</p>
+  <ol className="list-decimal pl-6 my-2">
+    <li>Se verifica la firma JWT del refresh token</li>
+    <li>Se busca en BD por hash del jti</li>
+    <li>Se compara el hash con bcrypt</li>
+  </ol>
+  <p><strong>Si es valido:</strong></p>
+  <ul className="list-disc pl-6">
+    <li>Se revoca el token actual (<code>revokedAt = new Date()</code>)</li>
+    <li>Se emite un nuevo access_token</li>
+    <li>Se emite un nuevo refresh_token</li>
+  </ul>
+  <p><strong>Si el hash no coincide (reuse attack):</strong></p>
+  <ul className="list-disc pl-6">
+    <li>Se revocan TODOS los tokens del cliente</li>
+    <li>Se responde con 401</li>
+  </ul>
+</motion.div>
+
+---
+
+## Sesion de administrador
+
+<motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+  <p>La sesion del dashboard se maneja con cookie httpOnly:</p>
+  <motion.pre variants={codeVariants} initial="hidden" whileInView="visible" viewport={{ once: true }} className="bg-muted p-4 rounded-lg overflow-x-auto">
+    <code className="text-sm">{`res.cookie('admin_session', token, {
+  httpOnly: true,
+  sameSite: 'strict',
+  path: '/',
+  secure: env !== 'development',  // solo HTTPS en prod
+  maxAge: 24 * 60 * 60 * 1000,   // 24h
+});`}</code>
+  </motion.pre>
+  <ul className="list-disc pl-6">
+    <li><strong>httpOnly</strong>: no accesible desde JavaScript</li>
+    <li><strong>sameSite: strict</strong>: no se envia en requests cross-site</li>
+    <li><strong>secure</strong>: solo en HTTPS (excepto development)</li>
+    <li><strong>maxAge</strong>: 24 horas</li>
+  </ul>
+</motion.div>
+
+---
+
+## Guards de autenticacion
+
+<motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+  <h3>AccessTokenGuard</h3>
+  <p>Valida el JWT de cliente externo en endpoints de datos:</p>
+  <motion.pre variants={codeVariants} className="bg-muted p-4 rounded-lg overflow-x-auto my-2">
+    <code className="text-sm">{`const payload = this.jwt.verify(token, { secret });
+if (payload.type !== 'external_client') {
+  throw new UnauthorizedException('Token no pertenece a una aplicacion externa');
+}`}</code>
+  </motion.pre>
+
+  <h3>AdminSessionGuard</h3>
+  <p>Valida la cookie de sesion de administrador en endpoints de gestion:</p>
+  <motion.pre variants={codeVariants} className="bg-muted p-4 rounded-lg overflow-x-auto my-2">
+    <code className="text-sm">{`const payload = this.jwtService.verify(token);
+(request as any).adminUser = { username: payload.username };`}</code>
+  </motion.pre>
+
+  <h3>AdminOrAccessGuard</h3>
+  <p>Guard compuesto que acepta ambos metodos (usado en <code>/v1/requests/*</code>):</p>
+  <ol className="list-decimal pl-6">
+    <li>Intenta cookie de admin</li>
+    <li>Si falla, intenta Bearer token de cliente externo</li>
+    <li>Si ninguno es valido -> 401</li>
+  </ol>
+
+  <h3>OAuthBulkheadGuard</h3>
+  <p>Protege <code>POST /oauth/token</code> contra abuso (ver <a href="./resiliencia.mdx">Resiliencia</a>).</p>
+</motion.div>
+
+---
+
+## Rate limiting
+
+<motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+  <motion.pre variants={codeVariants} className="bg-muted p-4 rounded-lg overflow-x-auto">
+    <code className="text-sm">{`// Global
+ThrottlerModule.forRoot([{
+  name: 'global',
+  ttl: 60000,
+  limit: 100,
+}])
+
+// Endpoints especificos
+@Throttle({ default: { limit: 10, ttl: 60000 } })  // /oauth/token
+@Throttle({ default: { limit: 5, ttl: 60000 } })   // /oauth/refresh
+@Throttle({ default: { limit: 5, ttl: 60000 } })   // /admin/login`}</code>
+  </motion.pre>
+</motion.div>
+
+---
+
+## Validacion de input
+
+<motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+  <motion.pre variants={codeVariants} className="bg-muted p-4 rounded-lg overflow-x-auto">
+    <code className="text-sm">{`app.useGlobalPipes(new ValidationPipe({
+  whitelist: true,              // elimina propiedades no declaradas en DTO
+  forbidNonWhitelisted: true,   // lanza error si envian propiedades extra
+  transform: true,              // transforma tipos (string -> number, etc.)
+}));`}</code>
+  </motion.pre>
+</motion.div>
+
+---
+
+## TypeORM synchronize
+
+<motion.div variants={sectionVariants} initial="hidden" whileInView="visible" viewport={{ once: true }}>
+  <motion.pre variants={codeVariants} className="bg-muted p-4 rounded-lg overflow-x-auto">
+    <code className="text-sm">{`synchronize: config.get('app.env') === 'development',`}</code>
+  </motion.pre>
+  <p><code>synchronize: true</code> solo en development. En staging y production se usa <code>false</code> y las migraciones se ejecutan manualmente.</p>
+</motion.div>

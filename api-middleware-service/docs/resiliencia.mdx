@@ -1,0 +1,163 @@
+# Resiliencia
+
+El servicio implementa resiliencia en 3 capas independientes para proteger distintos recursos.
+
+## Capa 1: HTTP Bulkhead entrante
+
+Protege el servidor HTTP contra sobrecarga general.
+
+### Implementacion
+
+`HttpBulkheadMiddleware` (NestMiddleware) usando `p-queue`.
+
+```typescript
+// src/recilience/bulkhead/http-bulkhead.middleware.ts
+const DEFAULT_CONCURRENCY = 50;
+const DEFAULT_MAX_QUEUE   = 100;
+```
+
+### Comportamiento
+
+- Si hay menos de `concurrency` requests activos → pasa inmediatamente
+- Si hay `concurrency` requests activos → encola hasta `maxQueueSize`
+- Si la cola esta llena → `429 Too Many Requests`
+- `/health/status` esta excluido del middleware
+
+### Configuracion
+
+| Variable | Default | Descripcion |
+|---|---|---|
+| `HTTP_BULKHEAD_CONCURRENCY` | 50 | Max requests simultaneos |
+| `HTTP_BULKHEAD_MAX_QUEUE` | 100 | Max requests en espera |
+
+### Metricas
+
+Expuestas via `HttpBulkheadMiddleware.getStats()`:
+
+```json
+{
+  "active": 3,
+  "queued": 5,
+  "concurrency": 50,
+  "maxQueueSize": 100
+}
+```
+
+---
+
+## Capa 2: OAuth Bulkhead
+
+Protege el endpoint `POST /oauth/token` contra fuerza bruta y DoS via bcrypt.
+
+### Problema
+
+Cada intento de autenticacion ejecuta `bcrypt.compare()` (CPU-bound, ~10ms por hash). Sin proteccion, un atacante podria:
+
+- **Fuerza bruta**: miles de intentos/seg contra client_secret
+- **DoS**: saturar CPU del servidor con bcrypt concurrentes
+
+### Solucion
+
+`OAuthBulkheadGuard` usando la implementacion `Bulkhead` propia:
+
+| Parametro | Valor | Justificacion |
+|---|---|---|
+| maxConcurrentCalls | 3 | Maximo 3 bcrypt simultaneos (~300 intentos/seg) |
+| maxQueueSize | 5 | Hasta 5 peticiones esperando |
+| queueTimeoutMs | 5000 | Timeout de espera en cola |
+| rejectWhenFull | true | 429 inmediato cuando la cola esta llena |
+
+### Efectividad
+
+- **Fuerza bruta**: con maxConcurrent=3, el atacante solo logra ~300 intentos/seg. Los 5 slots de cola se llenan rapido bajo ataque, y todas las peticiones extra reciben 429 instantaneo sin tocar CPU.
+- **DoS via bcrypt**: maximo 3 cores ocupados con bcrypt. El resto del servicio sigue respondiendo normalmente.
+
+### Respuestas HTTP
+
+| Situacion | Status | Body |
+|---|---|---|
+| Cola llena | 429 | `{ error: "Too Many Requests", message: "Demasiados intentos de autenticacion..." }` |
+| Timeout en cola | 408 | `{ error: "Request Timeout", message: "El servidor esta procesando demasiadas solicitudes..." }` |
+
+---
+
+## Capa 3: Gateway saliente
+
+Protege las llamadas HTTP hacia el api-gateway interno.
+
+### PQueue (colas de prioridad)
+
+Dos colas separadas para distintos tipos de operacion:
+
+| Cola | Concurrencia | Uso |
+|---|---|---|
+| highPriority | 10 | Consultas puntuales (by-number) |
+| lowPriority | 5 | Listados con filtros (potencialmente costosos) |
+
+### Circuit Breaker (opossum)
+
+| Parametro | Valor |
+|---|---|
+| timeout | 5000ms |
+| errorThresholdPercentage | 50% |
+| resetTimeout | 30000ms |
+| volumeThreshold | 5 llamadas |
+
+**Error filter**: los errores 4xx NO cuentan como falla de infraestructura (solo 5xx abren el circuito).
+
+**Eventos**:
+
+| Evento | Accion |
+|---|---|
+| `open` | Log warn + fallback lanza ServiceUnavailableException |
+| `halfOpen` | Log info, permite una llamada de prueba |
+| `close` | Log info, servicio restaurado |
+
+### Fallback
+
+Cuando el circuito esta abierto, todas las llamadas lanzan `ServiceUnavailableException` inmediatamente sin tocar el api-gateway.
+
+---
+
+## Bulkhead Registry
+
+El `BulkheadRegistry` es un singleton que gestiona bulkheads nombrados. Proporciona metodos de fabrica para distintos escenarios:
+
+```typescript
+registry.getOrCreate({ name: 'oauth:token', maxConcurrentCalls: 3, ... });
+registry.getForClient(clientId);           // Bulkhead por cliente
+registry.getForService(serviceName);       // Bulkhead por servicio
+registry.getForAbac(clientId);             // Bulkhead para ABAC
+registry.getForDatabase(schema);           // Bulkhead para DB
+registry.getForHttpExternal(serviceName);  // Bulkhead para HTTP externo
+```
+
+### Metricas globales
+
+```typescript
+registry.getAllMetrics();
+// {
+//   "oauth:token": { activeCalls: 2, queuedCalls: 1, ... },
+//   "gateway:high": { activeCalls: 0, queuedCalls: 0, ... },
+//   ...
+// }
+
+registry.getOverloadedBulkheads();
+// Retorna solo los bulkheads con uso >= 80% de capacidad
+```
+
+---
+
+## Rate Limiting
+
+Ademas del bulkhead, se aplica rate limiting con `@nestjs/throttler`:
+
+| Endpoint | Limite | Ventana |
+|---|---|---|
+| Global (todos los endpoints) | 100 req | 60s |
+| POST /oauth/token | 10 req | 60s |
+| POST /oauth/refresh | 5 req | 60s |
+| POST /admin/login | 5 req | 60s |
+| GET /admin/setup-required | Sin limite | - |
+| POST /admin/setup | Sin limite | - |
+| POST /admin/logout | Sin limite | - |

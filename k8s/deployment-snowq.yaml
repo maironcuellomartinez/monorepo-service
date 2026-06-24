@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-snowq-service
+  namespace: event-corner
+  labels:
+    app: api-snowq-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-snowq-service
+  template:
+    metadata:
+      labels:
+        app: api-snowq-service
+    spec:
+      containers:
+        - name: api-snowq-service
+          image: event-corner/api-snowq-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3090
+          envFrom:
+            - configMapRef:
+                name: snowq-config
+            - secretRef:
+                name: snowq-secrets
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 3090
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 3090
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-snowq-service
+  namespace: event-corner
+spec:
+  selector:
+    app: api-snowq-service
+  ports:
+    - port: 3090
+      targetPort: 3090
+  type: ClusterIP

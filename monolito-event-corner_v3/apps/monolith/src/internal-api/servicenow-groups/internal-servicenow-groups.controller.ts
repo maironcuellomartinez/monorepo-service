@@ -1,0 +1,48 @@
+import { Controller, Get, Post, Put, Delete, Body, Param, Inject, HttpCode, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam,
+    ApiBearerAuth } from '@nestjs/swagger';
+import { SERVICENOW_GROUP_SERVICE } from '@app/core/ports/incoming/service-tokens';
+import { ServiceNowGroupService } from '@app/core/services/servicenow/servicenow-group.service';
+import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
+import { RegisterSnowGroupDto, UpdateSnowGroupDto } from './dto/servicenow-groups.dto';
+
+@ApiTags('ServiceNow Groups')
+@ApiBearerAuth()
+@Controller('internal/servicenow-groups')
+export class InternalServiceNowGroupsController {
+    constructor(
+        @Inject(SERVICENOW_GROUP_SERVICE) private readonly service: ServiceNowGroupService,
+    ) {}
+
+    @Get()
+    @ApiOperation({ summary: 'Listar grupos de ServiceNow', description: 'Catálogo de grupos resolutores disponibles para asignar a corners y company-issue-configs.' })
+    @ApiResponse({ status: 200, description: 'Lista de grupos' })
+    async findAll() {
+        return unwrapOrThrow(await this.service.findAll());
+    }
+
+    @Post()
+    @HttpCode(HttpStatus.CREATED)
+    @ApiOperation({ summary: 'Registrar grupo de ServiceNow', description: 'Registra un grupo resolutor en el catálogo local. El sys_id real debe configurarse directamente en la entidad.' })
+    @ApiResponse({ status: 201, description: 'Grupo registrado' })
+    async register(@Body() dto: RegisterSnowGroupDto) {
+        return unwrapOrThrow(await this.service.register(dto.groupName, dto.description));
+    }
+
+    @Put(':id')
+    @ApiOperation({ summary: 'Actualizar grupo de ServiceNow' })
+    @ApiParam({ name: 'id', example: 'uuid-group' })
+    @ApiResponse({ status: 200, description: 'Grupo actualizado' })
+    async update(@Param('id') id: string, @Body() dto: UpdateSnowGroupDto) {
+        return unwrapOrThrow(await this.service.update(id, dto));
+    }
+
+    @Delete(':id')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiOperation({ summary: 'Eliminar grupo de ServiceNow' })
+    @ApiParam({ name: 'id', example: 'uuid-group' })
+    @ApiResponse({ status: 204, description: 'Eliminado' })
+    async delete(@Param('id') id: string) {
+        unwrapOrThrow(await this.service.delete(id));
+    }
+}

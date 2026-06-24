@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: abac-microservice
+  namespace: event-corner
+  labels:
+    app: abac-microservice
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: abac-microservice
+  template:
+    metadata:
+      labels:
+        app: abac-microservice
+    spec:
+      containers:
+        - name: abac-microservice
+          image: event-corner/abac-microservice:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3005
+          envFrom:
+            - configMapRef:
+                name: abac-config
+            - secretRef:
+                name: abac-secrets
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 3005
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 3005
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: abac-microservice
+  namespace: event-corner
+spec:
+  selector:
+    app: abac-microservice
+  ports:
+    - port: 3005
+      targetPort: 3005
+  type: ClusterIP

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: abac-config
+  namespace: event-corner
+data:
+  NODE_ENV: "production"
+  PORT: "3005"
+  HOST: "0.0.0.0"
+  DB_HOST: "mysql-abac"
+  DB_PORT: "3306"
+  DB_NAME: "abac_db"
+  JWT_ISSUER: "abac-service"
+  JWT_AUDIENCE: "abac-clients"
+  # Secrets (JWT_SECRET, ED25519_PRIVATE_KEY, etc.) → Secret abac-secrets

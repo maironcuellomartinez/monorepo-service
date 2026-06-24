@@ -1,0 +1,2 @@
+export const JWT_ED25519_OPTIONS = 'JWT_ED25519_OPTIONS';
+export const JWT_ED25519_DEFAULT_ALG = 'EdDSA';

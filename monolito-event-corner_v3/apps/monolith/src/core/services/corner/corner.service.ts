@@ -1,0 +1,115 @@
+// core/services/corner/corner.service.ts
+import { Injectable } from '@nestjs/common';
+import { ICornerService, CreateCornerCommand, UpdateCornerCommand, AddScheduleCommand } from '../../ports/incoming/corner/corner-service.port';
+import { ICornerRepository } from '../../ports/outgoing/repositories/corner-repository.port';
+import { IScheduleRepository } from '../../ports/outgoing/repositories/schedule-repository.port';
+import { IEventBus } from '../../ports/outgoing/event-bus/event-bus.port';
+import { DomainEvent } from '@app/shared/domain-event';
+import { Result } from '@app/result';
+import { Corner } from '../../domain/entities/corner.entity';
+import { CornerId, ScheduleId } from '../../domain/value-objects/ids';
+
+@Injectable()
+export class CornerService implements ICornerService {
+    constructor(
+        private readonly cornerRepo: ICornerRepository,
+        private readonly scheduleRepo: IScheduleRepository,
+        private readonly eventBus: IEventBus,
+    ) { }
+
+    async createCorner(command: CreateCornerCommand): Promise<Result<Corner>> {
+        const cornerId = crypto.randomUUID() as unknown as CornerId;
+        const cornerResult = Corner.create(
+            cornerId,
+            command.name,
+            command.onlyTechnicians ?? false,
+        );
+        if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
+        const corner = cornerResult.unwrap();
+
+        if (command.clientName) corner.updateInfo(undefined, command.clientName);
+
+        const saveResult = await this.cornerRepo.save(corner);
+        if (saveResult.isFailure) return Result.err(saveResult.unwrapError());
+
+        await this.eventBus.publish(new DomainEvent('CORNER_CREATED', cornerId.toString(), 'Corner', { name: command.name }));
+
+        return Result.ok(corner);
+    }
+
+    async updateCorner(id: string, command: UpdateCornerCommand): Promise<Result<Corner>> {
+        const cornerResult = await this.cornerRepo.findById(CornerId(id));
+        if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
+        const corner = cornerResult.unwrap();
+        if (!corner) {
+            return Result.err(new Error(`Corner ${id} not found`));
+        }
+
+        // Actualizar campos
+        corner.updateInfo(
+            command.name,
+            command.clientName,
+            command.description,
+            command.servicenowLocation,
+            command.latitude,
+            command.longitude,
+            undefined,
+            command.timezone,
+            command.country,
+            command.city,
+        );
+        if (command.onlyTechnicians !== undefined) corner.updateOperationalConfig(command.onlyTechnicians);
+        if (command.isActive !== undefined) {
+            if (command.isActive) corner.activate(); else corner.deactivate();
+        }
+
+        const updateResult = await this.cornerRepo.update(corner);
+        if (updateResult.isFailure) return Result.err(updateResult.unwrapError());
+
+        return Result.ok(corner);
+    }
+
+    async getCorner(id: string): Promise<Result<Corner | null>> {
+        return this.cornerRepo.findById(CornerId(id));
+    }
+
+    async getAllActiveCorners(): Promise<Result<Corner[]>> {
+        return this.cornerRepo.findAllActive();
+    }
+
+    async addSchedule(command: AddScheduleCommand): Promise<Result<void>> {
+        const cornerResult = await this.cornerRepo.findById(CornerId(command.cornerId));
+        if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
+        const corner = cornerResult.unwrap();
+        if (!corner) {
+            return Result.err(new Error(`Corner ${command.cornerId} not found`));
+        }
+
+        corner.addSchedule({
+            dayOfWeek: command.dayOfWeek,
+            startTime: command.startTime,
+            endTime: command.endTime,
+        });
+
+        const updateResult = await this.cornerRepo.update(corner);
+        if (updateResult.isFailure) return Result.err(updateResult.unwrapError());
+
+        return Result.ok(undefined);
+    }
+
+    async removeSchedule(scheduleId: string): Promise<Result<void>> {
+        // Necesitamos buscar el corner que contiene este schedule
+        // Podríamos tener un repositorio de schedules directamente
+        const scheduleResult = await this.scheduleRepo.findById(ScheduleId(scheduleId));
+        if (scheduleResult.isFailure) return Result.err(scheduleResult.unwrapError());
+        const schedule = scheduleResult.unwrap();
+        if (!schedule) {
+            return Result.err(new Error(`Schedule ${scheduleId} not found`));
+        }
+
+        // Eliminar la schedule (soft delete o realmente borrar)
+        await this.scheduleRepo.delete(scheduleId);
+
+        return Result.ok(undefined);
+    }
+}

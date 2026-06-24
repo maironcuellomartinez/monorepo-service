@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: event-corner
+
+resources:
+  - namespace.yaml
+  # ConfigMaps
+  - configmap-abac.yaml
+  - configmap-snowq.yaml
+  - configmap-integration.yaml
+  - configmap-monolith.yaml
+  - configmap-gateway.yaml
+  # Deployments + Services (orden de dependencias)
+  - deployment-abac.yaml
+  - deployment-snowq.yaml
+  - deployment-integration.yaml
+  - deployment-monolith.yaml
+  - deployment-gateway.yaml
+
+# Prefijo de imagen: ajustar al registry real en staging/prod
+# images:
+#   - name: event-corner/api-gateway
+#     newName: registry.example.com/event-corner/api-gateway
+#     newTag: "1.0.0"

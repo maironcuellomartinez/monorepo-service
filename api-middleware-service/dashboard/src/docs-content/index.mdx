@@ -1,0 +1,249 @@
+# API Middleware Service
+
+> Proxy OAuth2 para aplicaciones externas hacia Event Corner (api-gateway interno).
+
+---
+
+## Descripcion
+
+`api-middleware-service` es un servicio de autenticacion y autorizacion construido con **NestJS**. Actua como intermediario entre aplicaciones externas y el api-gateway interno. Implementa **OAuth2 client_credentials** con JWT local, gestion de clientes con bcrypt, y resiliencia en 3 niveles independientes.
+
+<Alert>
+  <AlertTitle>Sin base de datos de negocio</AlertTitle>
+  <AlertDescription>
+    El servicio solo gestiona clientes OAuth2, sesiones de administrador y refresh tokens. Los datos de solicitudes viven en el api-gateway interno — el middleware solo los consulta via proxy autenticado.
+  </AlertDescription>
+</Alert>
+
+---
+
+## Flujo de integracion
+
+<MermaidDiagram chart={`
+flowchart LR
+  subgraph Externo["Aplicaciones externas"]
+    EXT["App externa\n(client_id / client_secret)"]
+  end
+
+  subgraph MW["api-middleware-service :3007"]
+    AUTH["AuthModule\nPOST /oauth/token"]
+    GUARD["AccessTokenGuard\nvalida Bearer JWT"]
+    PROXY["RecordsModule\nGET /v1/requests/*"]
+  end
+
+  subgraph Backend["Backend interno"]
+    GW["api-gateway :3000\n/internal-api/*"]
+    MONO["monolith :3001\ndatos de negocio"]
+  end
+
+  EXT -->|"1. Basic Auth\nclient_id:secret"| AUTH
+  AUTH -->|"2. JWT access + refresh"| EXT
+  EXT -->|"3. Bearer JWT"| GUARD
+  GUARD --> PROXY
+  PROXY -->|"4. Bearer M2M\nABAC_M2M_TOKEN"| GW
+  GW --> MONO
+
+  style Externo fill:#eef2ff,stroke:#6366f1
+  style MW fill:#f0fdf4,stroke:#22c55e
+  style Backend fill:#fef9c3,stroke:#ca8a04
+`} />
+
+---
+
+## Stack tecnologico
+
+| Componente | Tecnologia |
+|---|---|
+| Runtime | Node.js 20 LTS |
+| Framework | NestJS 10 + TypeScript 5 |
+| Base de datos | MySQL 8 via TypeORM |
+| Autenticacion | JWT local (bcrypt + @nestjs/jwt) |
+| Resiliencia | opossum (circuit breaker) + p-queue (bulkhead) |
+| Validacion | class-validator + class-transformer |
+| Documentacion | Swagger (@nestjs/swagger) |
+| Testing | Jest + ts-jest + supertest |
+| Seguridad | helmet, compression, @nestjs/throttler |
+
+---
+
+## Modulos
+
+<div className="grid grid-cols-1 gap-4 md:grid-cols-2 my-6">
+  <Card>
+    <CardHeader className="pb-2">
+      <CardTitle className="text-sm font-mono">AuthModule</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <CardDescription>Emision y renovacion de tokens JWT. Implementa OAuth2 client_credentials con refresh token rotation y deteccion de reuse attack.</CardDescription>
+    </CardContent>
+  </Card>
+  <Card>
+    <CardHeader className="pb-2">
+      <CardTitle className="text-sm font-mono">ClientsModule</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <CardDescription>CRUD de aplicaciones externas. Gestiona clientId con prefijo mc_, secretHash bcrypt y tokenExpiresInSeconds configurable por cliente.</CardDescription>
+    </CardContent>
+  </Card>
+  <Card>
+    <CardHeader className="pb-2">
+      <CardTitle className="text-sm font-mono">RecordsModule</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <CardDescription>Proxy de consultas hacia el api-gateway interno. Expone GET /v1/requests con filtros y busqueda por numero de solicitud.</CardDescription>
+    </CardContent>
+  </Card>
+  <Card>
+    <CardHeader className="pb-2">
+      <CardTitle className="text-sm font-mono">GatewayModule</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <CardDescription>Cliente HTTP resiliente con PQueue de prioridad (HP concurrencia 10 / LP concurrencia 5) y circuit breaker opossum con error filter 4xx.</CardDescription>
+    </CardContent>
+  </Card>
+  <Card>
+    <CardHeader className="pb-2">
+      <CardTitle className="text-sm font-mono">AdminModule</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <CardDescription>Autenticacion de administradores via cookie httpOnly. Setup inicial de primer admin, login y logout con JWT de sesion.</CardDescription>
+    </CardContent>
+  </Card>
+  <Card>
+    <CardHeader className="pb-2">
+      <CardTitle className="text-sm font-mono">BulkheadModule</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <CardDescription>Resiliencia en 3 capas: HTTP Bulkhead entrante (p-queue), OAuth Bulkhead para bcrypt, y PQueue saliente hacia el gateway con circuit breaker.</CardDescription>
+    </CardContent>
+  </Card>
+</div>
+
+---
+
+## Endpoints
+
+### Autenticacion (`/oauth`)
+
+| Metodo | Ruta | Auth | Descripcion |
+|---|---|---|---|
+| POST | `/oauth/token` | Basic Auth | Emitir access token (client_credentials) |
+| POST | `/oauth/refresh` | — | Renovar access token via refresh token |
+
+### Clientes (`/clients`)
+
+| Metodo | Ruta | Auth | Descripcion |
+|---|---|---|---|
+| POST | `/clients` | AdminSession | Registrar aplicacion externa |
+| GET | `/clients` | AdminSession | Listar aplicaciones |
+| GET | `/clients/:clientId` | AdminSession | Detalle de aplicacion |
+| PATCH | `/clients/:clientId/rotate-secret` | AdminSession | Rotar client_secret |
+| PATCH | `/clients/:clientId/token-expiry` | AdminSession | Actualizar duracion del token |
+| DELETE | `/clients/:clientId` | AdminSession | Desactivar aplicacion |
+
+### Records (`/v1`)
+
+| Metodo | Ruta | Auth | Descripcion |
+|---|---|---|---|
+| GET | `/v1/requests/:number` | Bearer o AdminSession | Solicitud por numero |
+| GET | `/v1/requests` | Bearer o AdminSession | Listar solicitudes con filtros |
+
+### Admin (`/admin`)
+
+| Metodo | Ruta | Auth | Descripcion |
+|---|---|---|---|
+| GET | `/admin/setup-required` | — | Verificar si necesita configuracion inicial |
+| POST | `/admin/setup` | — | Crear primer administrador |
+| POST | `/admin/login` | — | Iniciar sesion |
+| POST | `/admin/logout` | — | Cerrar sesion |
+| GET | `/admin/me` | AdminSession | Usuario autenticado |
+
+---
+
+## Flujo de autenticacion OAuth2
+
+<MermaidDiagram chart={`
+sequenceDiagram
+  autonumber
+  actor App as App externa
+  participant MW as api-middleware-service
+  participant DB as MySQL
+
+  Note over App,DB: Registro inicial (solo admin)
+  App->>MW: POST /clients con AdminSession
+  MW->>DB: INSERT external_clients con bcrypt hash
+  MW-->>App: clientId + clientSecret (una sola vez)
+
+  Note over App,DB: Emision de token
+  App->>MW: POST /oauth/token con Basic Auth
+  MW->>DB: SELECT client WHERE clientId match
+  MW->>MW: bcrypt.compare(secret, hash)
+  MW->>DB: INSERT refresh_token con bcrypt del jti
+  MW-->>App: access_token + refresh_token + expires_in
+
+  Note over App,DB: Acceso a datos
+  App->>MW: GET /v1/requests con Bearer token
+  MW->>MW: jwt.verify con JWT_SECRET
+  MW->>MW: GatewayClient bulkhead + circuit breaker
+  MW-->>App: datos del api-gateway
+`} />
+
+---
+
+## Refresh token rotation
+
+<RefreshTokenFlow />
+
+---
+
+## Capa de resiliencia
+
+### Nivel 1 — HTTP Bulkhead entrante
+
+Middleware que limita requests concurrentes entrantes (default: 50 concurrencia, 100 cola). Excluye `/health/status`.
+
+### Nivel 2 — OAuth Bulkhead
+
+Guard especifico para `POST /oauth/token` que limita a **3 bcrypt simultaneos** (max 5 en cola, timeout 5s). Protege contra fuerza bruta y DoS via CPU exhaustion.
+
+### Nivel 3 — Gateway saliente
+
+- **PQueue**: dos colas de prioridad (HP concurrencia 10, LP concurrencia 5)
+- **Circuit Breaker** (opossum): se abre si >50% errores 5xx en ventana de 5 llamadas, reset a los 30s
+
+---
+
+## Entidades de base de datos
+
+### external_clients
+
+| Columna | Tipo | Descripcion |
+|---|---|---|
+| clientId | VARCHAR(64) PK | ID con prefijo `mc_` |
+| clientSecretHash | VARCHAR(128) | bcrypt del secret |
+| name | VARCHAR(100) | Nombre de la app |
+| description | VARCHAR(255) | Descripcion opcional |
+| tokenExpiresInSeconds | INT | Duracion del token (3600–604800) |
+| isActive | BOOLEAN | Si esta activo |
+| createdAt | DATETIME | Fecha de creacion |
+| updatedAt | DATETIME | Ultima actualizacion |
+
+### refresh_tokens
+
+| Columna | Tipo | Descripcion |
+|---|---|---|
+| id | INT PK | Auto-increment |
+| clientId | VARCHAR(64) | Cliente asociado |
+| tokenHash | VARCHAR(128) | bcrypt del jti del refresh token |
+| expiresAt | DATETIME | Fecha de expiracion (7 dias fijos) |
+| revokedAt | DATETIME | Fecha de revocacion (nullable) |
+| createdAt | DATETIME | Fecha de creacion |
+
+### admins
+
+| Columna | Tipo | Descripcion |
+|---|---|---|
+| id | INT PK | Auto-increment |
+| username | VARCHAR(100) | Nombre de usuario |
+| passwordHash | VARCHAR(128) | bcrypt de la contrasena |
+| createdAt | DATETIME | Fecha de creacion |

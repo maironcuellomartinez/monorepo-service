@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "monorepo": true,
+  "root": "apps/api-gateway",
+  "sourceRoot": "apps/api-gateway/src",
+  "compilerOptions": {
+    "deleteOutDir": true
+  },
+  "projects": {
+    "api-gateway": {
+      "type": "application",
+      "root": "apps/api-gateway",
+      "entryFile": "main",
+      "sourceRoot": "apps/api-gateway/src",
+      "compilerOptions": {
+        "webpack": true,
+        "tsConfigPath": "apps/api-gateway/tsconfig.app.json"
+      }
+    },
+    "monolith": {
+      "type": "application",
+      "root": "apps/monolith",
+      "entryFile": "main",
+      "sourceRoot": "apps/monolith/src",
+      "compilerOptions": {
+        "webpack": true,
+        "tsConfigPath": "apps/monolith/tsconfig.app.json"
+      }
+    },
+    "shared": {
+      "type": "library",
+      "root": "libs/shared",
+      "entryFile": "index",
+      "sourceRoot": "libs/shared/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/shared/tsconfig.lib.json"
+      }
+    },
+    "observability": {
+      "type": "library",
+      "root": "libs/observability",
+      "entryFile": "index",
+      "sourceRoot": "libs/observability/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/observability/tsconfig.lib.json"
+      }
+    },
+    "date-utils": {
+      "type": "library",
+      "root": "libs/date-utils",
+      "entryFile": "index",
+      "sourceRoot": "libs/date-utils/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/date-utils/tsconfig.lib.json"
+      }
+    },
+    "ed25519-service": {
+      "type": "library",
+      "root": "libs/ed25519.service",
+      "entryFile": "index",
+      "sourceRoot": "libs/ed25519.service/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/ed25519.service/tsconfig.lib.json"
+      }
+    },
+    "result": {
+      "type": "library",
+      "root": "libs/result",
+      "entryFile": "index",
+      "sourceRoot": "libs/result/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/result/tsconfig.lib.json"
+      }
+    }
+  }
+}

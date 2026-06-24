@@ -1,0 +1,29 @@
+# Compose de desarrollo standalone para integration-service.
+# Para staging/producción usar el compose unificado: ../docker-compose.yml
+#
+# Pre-requisito: MySQL principal corriendo en localhost:3306
+# (puede iniciarse con: docker compose --profile infra up -d desde la raíz del workspace)
+
+version: '3.9'
+
+services:
+  integration-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: ec-integration-dev
+    ports:
+      - "3008:3008"
+      - "9229:9229"
+    environment:
+      NODE_ENV: development
+      PORT: "3008"
+      HOST: "0.0.0.0"
+      DB_HOST: host.docker.internal
+      DB_PORT: "3306"
+      DB_NAME: integration_db
+      SNOWQ_BASE_URL: http://host.docker.internal:3090
+      ABAC_URL: http://host.docker.internal:3005
+    env_file: .env.development
+    restart: unless-stopped

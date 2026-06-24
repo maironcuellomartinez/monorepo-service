@@ -1,0 +1,194 @@
+# Arquitectura
+
+## Vision de sistema (C4 — Container)
+
+<MermaidDiagram chart={`
+flowchart TB
+  subgraph Clientes["Clientes externos"]
+    APP["App externa\n[application]"]
+    ADMIN["Administrador\n[person]"]
+  end
+
+  subgraph MW["api-middleware-service\n[NestJS :3007]"]
+    direction TB
+    AUTH["AuthModule\nOAuth2 + JWT"]
+    CLIENTS["ClientsModule\nCRUD clientes"]
+    RECORDS["RecordsModule\nproxy consultas"]
+    GATEWAY["GatewayClient\ncircuit breaker + bulkhead"]
+    ADMINMOD["AdminModule\nsesion cookie"]
+  end
+
+  subgraph Backend["Backend interno"]
+    GW["api-gateway\n:3000"]
+    MONO["monolith\n:3001"]
+  end
+
+  DB[("MySQL 8\nmiddleware_db")]
+
+  APP -->|"Basic Auth\nclient_credentials"| AUTH
+  APP -->|"Bearer JWT"| RECORDS
+  ADMIN -->|"Cookie httpOnly"| ADMINMOD
+  ADMIN -->|"Cookie httpOnly"| CLIENTS
+
+  AUTH --> DB
+  CLIENTS --> DB
+  ADMINMOD --> DB
+  RECORDS --> GATEWAY
+  GATEWAY -->|"Bearer M2M\n(ABAC_M2M_TOKEN)"| GW
+  GW --> MONO
+
+  style Clientes fill:#eef2ff,stroke:#6366f1
+  style MW fill:#f0fdf4,stroke:#22c55e
+  style Backend fill:#fef9c3,stroke:#ca8a04
+`} />
+
+---
+
+## Estructura de directorios
+
+```
+src/
+├── main.ts                          # Punto de entrada, bootstrap
+├── app.module.ts                    # Modulo raiz
+├── config/
+│   └── configuration.ts             # Configuracion tipada con validacion
+│
+├── auth/                            # Autenticacion OAuth2
+│   ├── auth.controller.ts           # POST /oauth/token, /oauth/refresh
+│   ├── auth.service.ts              # issueToken, refreshToken
+│   ├── dto/
+│   ├── entities/
+│   │   └── refresh-token.entity.ts
+│   └── guards/
+│       ├── access-token.guard.ts    # Valida JWT de cliente externo
+│       ├── oauth-bulkhead.guard.ts  # Bulkhead para bcrypt
+│       └── admin-or-access.guard.ts # Guard compuesto
+│
+├── clients/                         # Gestion de aplicaciones externas
+│   ├── clients.controller.ts        # CRUD de clientes
+│   ├── clients.service.ts
+│   └── entities/
+│       └── external-client.entity.ts
+│
+├── records/                         # Consulta de solicitudes
+│   └── records.controller.ts        # GET /v1/requests
+│
+├── gateway/                         # Cliente HTTP hacia api-gateway
+│   └── gateway.client.ts            # PQueue + Circuit Breaker + HTTP calls
+│
+├── admin/                           # Autenticacion de administradores
+│   ├── admin.controller.ts          # setup, login, logout, me
+│   └── guards/
+│       └── admin-session.guard.ts
+│
+└── recilience/
+    ├── bulkhead/
+    │   ├── bulkhead.ts
+    │   ├── bulkhead.registry.ts
+    │   └── http-bulkhead.middleware.ts
+    └── health/
+        └── health.controller.ts     # GET /health/status
+```
+
+---
+
+## Patrones de diseno
+
+### Bulkhead en 3 capas
+
+Cada capa protege un recurso diferente — el servidor HTTP, el proceso de bcrypt, y las llamadas salientes al api-gateway:
+
+<BulkheadFlow />
+
+---
+
+### Refresh token rotation
+
+El refresh token sigue el esquema de rotation con deteccion de reuse attack recomendado por OWASP. El jti se almacena como hash bcrypt — nunca en texto plano:
+
+<MermaidDiagram chart={`
+sequenceDiagram
+  autonumber
+  actor App as App externa
+  participant MW as api-middleware-service
+  participant DB as MySQL
+
+  App->>MW: POST /oauth/refresh { refresh_token }
+  MW->>MW: jwt.verify(refresh_token) → extrae jti + clientId
+  MW->>DB: SELECT token WHERE clientId=? AND revokedAt IS NULL ORDER BY createdAt DESC
+
+  alt Token valido (bcrypt.compare pasa)
+    MW->>DB: UPDATE token SET revokedAt = NOW()
+    MW->>DB: INSERT nuevo refresh_token (bcrypt del nuevo jti)
+    MW-->>App: nuevo access_token + nuevo refresh_token
+  else Token no encontrado o ya revocado (reuse attack)
+    MW->>DB: UPDATE ALL tokens SET revokedAt = NOW() WHERE clientId=?
+    MW-->>App: 401 Unauthorized
+    Note over App,DB: Todos los tokens del cliente son revocados
+  else Token expirado
+    MW-->>App: 401 Token expired
+  end
+`} />
+
+---
+
+### Guard compuesto (AdminOrAccessGuard)
+
+El endpoint `GET /v1/requests/*` acepta dos tipos de autenticacion. El guard los evalua en orden de prioridad:
+
+<MermaidDiagram chart={`
+flowchart TD
+  REQ["Request entrante\nGET /v1/requests/*"]
+
+  REQ --> CHK_COOKIE{"cookie\nadmin_session\npresente?"}
+
+  CHK_COOKIE -->|Si| VAL_ADMIN["jwt.verify(cookie)\ncon ADMIN_SESSION_SECRET"]
+  VAL_ADMIN --> OK_ADMIN{"JWT\nvalido?"}
+  OK_ADMIN -->|Si| INJECT_ADMIN["req.adminUser = payload\n→ continua"]
+  OK_ADMIN -->|No| UNAUTHORIZED["401 Unauthorized"]
+
+  CHK_COOKIE -->|No| CHK_BEARER{"Authorization:\nBearer presente?"}
+  CHK_BEARER -->|Si| VAL_BEARER["jwt.verify(token)\ncon JWT_SECRET\ntype = external_client"]
+  VAL_BEARER --> OK_BEARER{"JWT\nvalido?"}
+  OK_BEARER -->|Si| INJECT_CLIENT["req.externalClient = payload\n→ continua"]
+  OK_BEARER -->|No| UNAUTHORIZED
+  CHK_BEARER -->|No| UNAUTHORIZED
+
+  style INJECT_ADMIN fill:#d1fae5,stroke:#22c55e
+  style INJECT_CLIENT fill:#d1fae5,stroke:#22c55e
+  style UNAUTHORIZED fill:#fee2e2,stroke:#ef4444
+`} />
+
+---
+
+## Decisiones arquitectonicas
+
+### Autenticacion local vs OAuth externo
+
+Se eligio **JWT local + MySQL** sobre OAuth introspection externa porque:
+
+- Sin dependencias de red adicionales — la verificacion es local, no requiere round-trip HTTP en cada request
+- Latencia menor y predecible — verificacion de JWT en microsegundos vs llamada HTTP externa
+- Control total sobre el ciclo de vida de los tokens — rotacion, revocacion y expiracion por cliente
+
+### Duracion configurable del token por cliente
+
+Cada cliente tiene su propia duracion de access token (entre 1h y 7 dias), almacenada en `tokenExpiresInSeconds`. Esto permite:
+
+- Clientes de alta seguridad: tokens cortos de 1 hora
+- Integraciones batch o long-running: tokens de hasta 7 dias
+- Cambio de duracion en caliente desde el dashboard — sin redeploy
+
+### Refresh token fijo vs configurable
+
+El refresh token tiene duracion fija de **7 dias** para todos los clientes. Esta decision es deliberada: en un flujo `client_credentials`, las aplicaciones server-side ya tienen su `client_secret` almacenado y pueden re-autenticarse directamente en cualquier momento. Un valor fijo es suficiente y elimina una variable de configuracion innecesaria.
+
+| Decision | Opcion elegida | Alternativa descartada |
+|---|---|---|
+| Autenticacion | JWT local + MySQL | OAuth introspection externa |
+| Duracion de token | Configurable por cliente (1h–7d) | Fija global |
+| Refresh token | Rotation con deteccion de reuse | Sin refresh token |
+| Duracion refresh token | Fija 7 dias para todos los clientes | Configurable por cliente |
+| Bulkhead OAuth | Implementacion casera con cola | Rate-limit por IP (requiere Redis) |
+| Circuit breaker | opossum | Implementacion propia |
+| Sesion admin | Cookie httpOnly + JWT | API key fija |

@@ -1,0 +1,85 @@
+// infrastructure/jobs/snow-sync.job.ts
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
+import { IIncidentRepository } from '../../core/ports/outgoing/repositories/incident-repository.port';
+import { IServiceNowClient } from '../../core/ports/outgoing/servicenow/servicenow-client.port';
+import { IIncidentService } from '../../core/ports/incoming/incident/incident-service.port';
+import { INCIDENT_REPOSITORY } from '../../core/ports/outgoing/repositories/tokens';
+import { SERVICENOW_CLIENT } from '../../core/ports/outgoing/infrastructure-tokens';
+import { INCIDENT_SERVICE } from '../../core/ports/incoming/service-tokens';
+import { IncidentStatus } from '../../core/domain/enums/incident-status.enum';
+import { TechnicianId } from '@app/shared/types/branded-ids';
+
+// SN state codes that mean "closed" in ServiceNow
+const SN_CLOSED_STATES = new Set(['6', '7']); // 6=Resolved, 7=Closed
+const SYNC_INTERVAL_MS = 5 * 60_000; // 5 minutes
+// System actor ID used for automated closures
+const SYSTEM_TECHNICIAN_ID = 'SYSTEM_SNOW_SYNC';
+
+/**
+ * Job that polls ServiceNow state for active incidents and closes them
+ * in the monolith if they were closed directly in ServiceNow.
+ *
+ * Runs every 5 minutes. Only processes incidents that:
+ * - Have a servicenow_id (linked to SN)
+ * - Are currently in an active (non-terminal) state in monolith
+ */
+@Injectable()
+export class SnowSyncJob {
+    private readonly logger = new Logger(SnowSyncJob.name);
+
+    constructor(
+        @Inject(INCIDENT_REPOSITORY) private readonly incidentRepo: IIncidentRepository,
+        @Inject(SERVICENOW_CLIENT) private readonly snClient: IServiceNowClient,
+        @Inject(INCIDENT_SERVICE) private readonly incidentService: IIncidentService,
+    ) {}
+
+    @Interval(SYNC_INTERVAL_MS)
+    async sync(): Promise<void> {
+        this.logger.debug('SnowSyncJob: iniciando ciclo de sincronización SN → monolith');
+
+        const result = await this.incidentRepo.findActiveWithServiceNowId();
+        if (result.isFailure) {
+            this.logger.error(`SnowSyncJob: error obteniendo incidentes activos: ${result.unwrapError().message}`);
+            return;
+        }
+
+        const incidents = result.unwrap();
+        if (incidents.length === 0) {
+            this.logger.debug('SnowSyncJob: sin incidentes activos vinculados a SN');
+            return;
+        }
+
+        this.logger.log(`SnowSyncJob: verificando ${incidents.length} incidente(s) contra SN`);
+
+        for (const incident of incidents) {
+            const sysId = incident.servicenowId?.value;
+            if (!sysId) continue;
+
+            const stateResult = await this.snClient.queryIncidentState(sysId);
+            if (stateResult.isFailure) {
+                this.logger.warn(`SnowSyncJob: no se pudo consultar SN para incident=${incident.id} sysId=${sysId}: ${stateResult.unwrapError().message}`);
+                continue;
+            }
+
+            const snState = stateResult.unwrap();
+            if (!snState || !SN_CLOSED_STATES.has(snState)) continue;
+
+            this.logger.log(`SnowSyncJob: incident=${incident.id} cerrado en SN (state=${snState}) — cerrando en monolith`);
+
+            const closeResult = await this.incidentService.changeStatus({
+                incidentId: incident.id,
+                technicianId: TechnicianId(SYSTEM_TECHNICIAN_ID),
+                newStatus: IncidentStatus.CLOSED,
+                comment: `Cerrado automáticamente por sincronización con ServiceNow (state=${snState})`,
+                closeCategory: 'resolved',
+            });
+
+            if (closeResult.isFailure) {
+                this.logger.error(`SnowSyncJob: no se pudo cerrar incident=${incident.id}: ${closeResult.unwrapError().message}`);
+            } else {
+                this.logger.log(`SnowSyncJob: incident=${incident.id} cerrado exitosamente`);
+            }
+        }
+    }
+}

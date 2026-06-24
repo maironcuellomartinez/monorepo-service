@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@app/core": ["apps/monolith/src/core/index.ts"],
+      "@app/core/*": ["apps/monolith/src/core/*"],
+      "@app/shared": ["libs/shared/src/index.ts"],
+      "@app/shared/*": ["libs/shared/src/*"],
+      "@app/observability": ["libs/observability/index.ts"],
+      "@app/observability/*": ["libs/observability/*"],
+      "@app/date": ["libs/date-fns/src/index.ts"],
+      "@app/date/*": ["libs/date-fns/src/*"],
+      "@app/ed25519": ["libs/ed25519.service/src/index.ts"],
+      "@app/ed25519/*": ["libs/ed25519.service/src/*"],
+      "@app/result": ["libs/result/src/index.ts"],
+      "@app/result/*": ["libs/result/src/*"],
+      "@backendkit-labs/http-client/nestjs": ["node_modules/@backendkit-labs/http-client/dist/nestjs/index.d.ts"]
+    },
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "noFallthroughCasesInSwitch": false
+  }
+}

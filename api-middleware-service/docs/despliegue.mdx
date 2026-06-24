@@ -1,0 +1,235 @@
+# Despliegue
+
+## Requisitos
+
+- Node.js 20 LTS
+- MySQL 8+
+- npm
+
+## Variables de entorno
+
+Crear archivos `.env.<entorno>` en la raiz del proyecto:
+
+### development (`.env.development`)
+
+```env
+NODE_ENV=development
+PORT=3007
+
+DB_HOST=localhost
+DB_PORT=3306
+DB_USERNAME=root
+DB_PASSWORD=root
+DB_DATABASE=middleware_db
+
+JWT_SECRET=dev-only--replace-in-staging-and-production
+JWT_EXPIRATION=3600
+
+ADMIN_API_KEY=dev-only--replace-in-staging-and-production
+ADMIN_SESSION_SECRET=dev-only--replace-in-staging-and-production
+
+API_GATEWAY_URL=http://localhost:3000
+ABAC_M2M_TOKEN=dev-only--replace-in-staging-and-production
+
+HTTP_BULKHEAD_CONCURRENCY=50
+HTTP_BULKHEAD_MAX_QUEUE=100
+
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+```
+
+### production (`.env.production`)
+
+```env
+NODE_ENV=production
+PORT=3007
+
+DB_HOST=produccion-db.internal
+DB_PORT=3306
+DB_USERNAME=app_user
+DB_PASSWORD=<real-password>
+DB_DATABASE=middleware_db
+
+JWT_SECRET=<real-secret-min-32-chars>
+JWT_EXPIRATION=3600
+
+ADMIN_SESSION_SECRET=<real-secret-min-32-chars>
+
+API_GATEWAY_URL=https://api-gateway.internal
+ABAC_M2M_TOKEN=<real-m2m-token>
+
+HTTP_BULKHEAD_CONCURRENCY=50
+HTTP_BULKHEAD_MAX_QUEUE=100
+
+CORS_ALLOWED_ORIGINS=https://dashboard.midominio.com
+```
+
+## Instalacion
+
+```bash
+npm install
+```
+
+## Ejecucion
+
+### Desarrollo
+
+```bash
+npm run start:dev
+```
+
+Arranca con `--watch`, recarga automaticamente ante cambios. Swagger disponible en `/docs`.
+
+### Staging
+
+```bash
+npm run start:staging
+```
+
+Compila TypeScript y arranca el servicio. Swagger disponible en `/docs`. Validacion estricta de secretos.
+
+### Produccion
+
+```bash
+npm run start:prod
+```
+
+Compila TypeScript y arranca el servicio. Swagger **no** disponible. Validacion estricta de secretos.
+
+## Base de datos
+
+### Crear la base de datos
+
+```sql
+CREATE DATABASE IF NOT EXISTS middleware_db;
+```
+
+### Migraciones
+
+En development, TypeORM sincroniza automaticamente las entidades con la base de datos (`synchronize: true`).
+
+En staging/production, `synchronize` esta deshabilitado. Para aplicar cambios:
+
+```bash
+# Generar migracion
+npx typeorm migration:generate -d src/migrations/MigrationName
+
+# Ejecutar migraciones
+npx typeorm migration:run
+```
+
+## Verificacion post-despliegue
+
+```bash
+# 1. Health check
+curl http://localhost:3007/health/status
+# {"status":"ok","timestamp":"..."}
+
+# 2. Setup admin (primer despliegue)
+curl -X POST http://localhost:3007/admin/setup \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"<strong-password>"}'
+
+# 3. Login admin
+curl -X POST http://localhost:3007/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"<strong-password>"}'
+
+# 4. Crear cliente de prueba
+curl -X POST http://localhost:3007/clients \
+  -H "Content-Type: application/json" \
+  -H "Cookie: admin_session=<token>" \
+  -d '{"name":"Test App","description":"App de prueba"}'
+
+# 5. Obtener token
+curl -X POST http://localhost:3007/oauth/token \
+  -H "Authorization: Basic $(echo -n 'mc_xxx:secret' | base64)" \
+  -H "Content-Type: application/json" \
+  -d '{"grant_type":"client_credentials"}'
+
+# 6. Consultar datos
+curl http://localhost:3007/v1/requests \
+  -H "Authorization: Bearer <access_token>"
+```
+
+## Docker (opcional)
+
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY dist/ ./dist/
+COPY .env.production ./
+
+EXPOSE 3007
+
+CMD ["node", "dist/main"]
+```
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3007:3007"
+    env_file: .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: <password>
+      MYSQL_DATABASE: middleware_db
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+```
+
+## Monitoreo
+
+### Health endpoint
+
+`GET /health/status` — sin autenticacion, disenado para k8s/Prometheus:
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-05-07T12:00:00.000Z"
+}
+```
+
+### Metricas de resiliencia
+
+Disponibles en el mismo health endpoint (a traves de `GatewayClient.getStatus()` y `HttpBulkheadMiddleware.getStats()`):
+
+```json
+{
+  "circuitBreaker": {
+    "state": "CLOSED",
+    "stats": { "successes": 100, "failures": 2, ... }
+  },
+  "bulkhead": {
+    "high": { "pending": 0, "size": 0, "concurrency": 10 },
+    "low":  { "pending": 1, "size": 3, "concurrency": 5 }
+  }
+}
+```
+
+### Logging
+
+El servicio usa `Logger` de NestJS. Niveles:
+
+- **Log**: eventos normales (servicio iniciado, circuit breaker cerrado)
+- **Warn**: condiciones anormales (bulkhead saturado, circuit breaker abierto)
+- **Error**: fallos de operacion (api-gateway no disponible)

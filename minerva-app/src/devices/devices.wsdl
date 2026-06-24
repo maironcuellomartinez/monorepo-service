@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="DeviceInventoryService"
+  targetNamespace="http://minerva.eventcorner.com/devices"
+  xmlns:tns="http://minerva.eventcorner.com/devices"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns="http://schemas.xmlsoap.org/wsdl/">
+
+  <!-- Types -->
+  <types>
+    <xsd:schema targetNamespace="http://minerva.eventcorner.com/devices">
+      <!-- Create Device -->
+      <xsd:element name="createDevice">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="nombre" type="xsd:string"/>
+            <xsd:element name="serialNumber" type="xsd:string"/>
+            <xsd:element name="descripcion" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="tipo" type="xsd:string"/>
+            <xsd:element name="marca" type="xsd:string"/>
+            <xsd:element name="modelo" type="xsd:string"/>
+            <xsd:element name="usuarioId" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="usuarioNombre" type="xsd:string" minOccurs="0"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="createDeviceResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="deviceId" type="xsd:string"/>
+            <xsd:element name="serialNumber" type="xsd:string"/>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Get Device by Serial -->
+      <xsd:element name="getDeviceBySerial">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="serialNumber" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="getDeviceBySerialResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="device" type="tns:DeviceType" minOccurs="0"/>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Get Device -->
+      <xsd:element name="getDevice">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="deviceId" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="getDeviceResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="device" type="tns:DeviceType" minOccurs="0"/>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Get Devices by User -->
+      <xsd:element name="getDevicesByUser">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="usuarioId" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="getDevicesByUserResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="devices" type="tns:DeviceArrayType" minOccurs="0"/>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Get All Devices -->
+      <xsd:element name="getAllDevices">
+        <xsd:complexType/>
+      </xsd:element>
+
+      <xsd:element name="getAllDevicesResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="devices" type="tns:DeviceArrayType" minOccurs="0"/>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Update Device -->
+      <xsd:element name="updateDevice">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="deviceId" type="xsd:string"/>
+            <xsd:element name="nombre" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="descripcion" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="tipo" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="marca" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="modelo" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="usuarioId" type="xsd:string" minOccurs="0"/>
+            <xsd:element name="usuarioNombre" type="xsd:string" minOccurs="0"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="updateDeviceResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="deviceId" type="xsd:string"/>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Assign Device -->
+      <xsd:element name="assignDevice">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="serialNumber" type="xsd:string"/>
+            <xsd:element name="usuarioId" type="xsd:string"/>
+            <xsd:element name="usuarioNombre" type="xsd:string" minOccurs="0"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="assignDeviceResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="serialNumber" type="xsd:string"/>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Release Device -->
+      <xsd:element name="releaseDevice">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="serialNumber" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="releaseDeviceResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="serialNumber" type="xsd:string"/>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Delete Device -->
+      <xsd:element name="deleteDevice">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="deviceId" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="deleteDeviceResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="status" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Device Type -->
+      <xsd:complexType name="DeviceType">
+        <xsd:sequence>
+          <xsd:element name="deviceId" type="xsd:string"/>
+          <xsd:element name="nombre" type="xsd:string"/>
+          <xsd:element name="serialNumber" type="xsd:string"/>
+          <xsd:element name="descripcion" type="xsd:string" minOccurs="0"/>
+          <xsd:element name="tipo" type="xsd:string"/>
+          <xsd:element name="marca" type="xsd:string"/>
+          <xsd:element name="modelo" type="xsd:string"/>
+          <xsd:element name="usuarioId" type="xsd:string" minOccurs="0"/>
+          <xsd:element name="usuarioNombre" type="xsd:string" minOccurs="0"/>
+          <xsd:element name="createdAt" type="xsd:dateTime"/>
+          <xsd:element name="updatedAt" type="xsd:dateTime"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <!-- Device Array Type -->
+      <xsd:complexType name="DeviceArrayType">
+        <xsd:sequence>
+          <xsd:element name="device" type="tns:DeviceType" maxOccurs="unbounded"/>
+        </xsd:sequence>
+      </xsd:complexType>
+    </xsd:schema>
+  </types>
+
+  <!-- Messages -->
+  <message name="createDeviceRequest">
+    <part name="parameters" element="tns:createDevice"/>
+  </message>
+  <message name="createDeviceResponse">
+    <part name="parameters" element="tns:createDeviceResponse"/>
+  </message>
+
+  <message name="getDeviceBySerialRequest">
+    <part name="parameters" element="tns:getDeviceBySerial"/>
+  </message>
+  <message name="getDeviceBySerialResponse">
+    <part name="parameters" element="tns:getDeviceBySerialResponse"/>
+  </message>
+
+  <message name="getDeviceRequest">
+    <part name="parameters" element="tns:getDevice"/>
+  </message>
+  <message name="getDeviceResponse">
+    <part name="parameters" element="tns:getDeviceResponse"/>
+  </message>
+
+  <message name="getDevicesByUserRequest">
+    <part name="parameters" element="tns:getDevicesByUser"/>
+  </message>
+  <message name="getDevicesByUserResponse">
+    <part name="parameters" element="tns:getDevicesByUserResponse"/>
+  </message>
+
+  <message name="getAllDevicesRequest">
+    <part name="parameters" element="tns:getAllDevices"/>
+  </message>
+  <message name="getAllDevicesResponse">
+    <part name="parameters" element="tns:getAllDevicesResponse"/>
+  </message>
+
+  <message name="updateDeviceRequest">
+    <part name="parameters" element="tns:updateDevice"/>
+  </message>
+  <message name="updateDeviceResponse">
+    <part name="parameters" element="tns:updateDeviceResponse"/>
+  </message>
+
+  <message name="assignDeviceRequest">
+    <part name="parameters" element="tns:assignDevice"/>
+  </message>
+  <message name="assignDeviceResponse">
+    <part name="parameters" element="tns:assignDeviceResponse"/>
+  </message>
+
+  <message name="releaseDeviceRequest">
+    <part name="parameters" element="tns:releaseDevice"/>
+  </message>
+  <message name="releaseDeviceResponse">
+    <part name="parameters" element="tns:releaseDeviceResponse"/>
+  </message>
+
+  <message name="deleteDeviceRequest">
+    <part name="parameters" element="tns:deleteDevice"/>
+  </message>
+  <message name="deleteDeviceResponse">
+    <part name="parameters" element="tns:deleteDeviceResponse"/>
+  </message>
+
+  <!-- Port Type -->
+  <portType name="DeviceInventoryPortType">
+    <operation name="createDevice">
+      <input message="tns:createDeviceRequest"/>
+      <output message="tns:createDeviceResponse"/>
+    </operation>
+    <operation name="getDeviceBySerial">
+      <input message="tns:getDeviceBySerialRequest"/>
+      <output message="tns:getDeviceBySerialResponse"/>
+    </operation>
+    <operation name="getDevice">
+      <input message="tns:getDeviceRequest"/>
+      <output message="tns:getDeviceResponse"/>
+    </operation>
+    <operation name="getDevicesByUser">
+      <input message="tns:getDevicesByUserRequest"/>
+      <output message="tns:getDevicesByUserResponse"/>
+    </operation>
+    <operation name="getAllDevices">
+      <input message="tns:getAllDevicesRequest"/>
+      <output message="tns:getAllDevicesResponse"/>
+    </operation>
+    <operation name="updateDevice">
+      <input message="tns:updateDeviceRequest"/>
+      <output message="tns:updateDeviceResponse"/>
+    </operation>
+    <operation name="assignDevice">
+      <input message="tns:assignDeviceRequest"/>
+      <output message="tns:assignDeviceResponse"/>
+    </operation>
+    <operation name="releaseDevice">
+      <input message="tns:releaseDeviceRequest"/>
+      <output message="tns:releaseDeviceResponse"/>
+    </operation>
+    <operation name="deleteDevice">
+      <input message="tns:deleteDeviceRequest"/>
+      <output message="tns:deleteDeviceResponse"/>
+    </operation>
+  </portType>
+
+  <!-- Binding -->
+  <binding name="DeviceInventoryBinding" type="tns:DeviceInventoryPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="createDevice">
+      <soap:operation soapAction="createDevice"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="getDeviceBySerial">
+      <soap:operation soapAction="getDeviceBySerial"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="getDevice">
+      <soap:operation soapAction="getDevice"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="getDevicesByUser">
+      <soap:operation soapAction="getDevicesByUser"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="getAllDevices">
+      <soap:operation soapAction="getAllDevices"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="updateDevice">
+      <soap:operation soapAction="updateDevice"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="assignDevice">
+      <soap:operation soapAction="assignDevice"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="releaseDevice">
+      <soap:operation soapAction="releaseDevice"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="deleteDevice">
+      <soap:operation soapAction="deleteDevice"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+  </binding>
+
+  <!-- Service -->
+  <service name="DeviceInventoryService">
+    <documentation>Minerva Device Inventory Service</documentation>
+    <port name="DeviceInventoryPort" binding="tns:DeviceInventoryBinding">
+      <soap:address location="http://localhost:3016/devices"/>
+    </port>
+  </service>
+</definitions>

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snowq-config
+  namespace: event-corner
+data:
+  NODE_ENV: "production"
+  PORT: "3090"
+  HOST: "0.0.0.0"
+  RECONCILER_ENABLED: "true"
+  RECONCILER_INTERVAL_SECONDS: "300"
+  # BASE_URL_SERVICENOW → Secret snowq-secrets (URL real de SN)
+  # SN_AUTH → Secret snowq-secrets
+  # ABAC_M2M_TOKEN → Secret snowq-secrets

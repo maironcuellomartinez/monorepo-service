@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monolith-config
+  namespace: event-corner
+data:
+  NODE_ENV: "production"
+  MONOLITH_PORT: "3001"
+  HOST: "0.0.0.0"
+  DB_HOST: "mysql-main"
+  DB_PORT: "3306"
+  DB_DATABASE: "event_corner"
+  ABAC_URL: "http://abac-microservice:3005"
+  API_GATEWAY_URL: "http://api-gateway:3000"
+  RECONCILER_ENABLED: "true"
+  # ABAC_M2M_TOKEN, JWT_SECRET, DB_PASSWORD → Secret monolith-secrets

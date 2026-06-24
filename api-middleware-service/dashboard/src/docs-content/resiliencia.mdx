@@ -1,0 +1,208 @@
+# Resiliencia
+
+El servicio implementa resiliencia en **3 capas independientes**. Cada capa protege un recurso diferente y puede saturarse de forma aislada sin afectar a las demas.
+
+<BulkheadFlow />
+
+---
+
+## Capa 1: HTTP Bulkhead entrante
+
+Protege el servidor HTTP contra sobrecarga general. Es la primera linea de defensa antes de que cualquier request llegue a los controladores.
+
+### Implementacion
+
+`HttpBulkheadMiddleware` (NestMiddleware) usando `p-queue`:
+
+```typescript
+// src/recilience/bulkhead/http-bulkhead.middleware.ts
+const DEFAULT_CONCURRENCY = 50;
+const DEFAULT_MAX_QUEUE   = 100;
+```
+
+### Comportamiento
+
+<MermaidDiagram chart={`
+flowchart TD
+  REQ["Request HTTP entrante"] --> HEALTH{"ruta es\n/health/status?"}
+  HEALTH -->|Si| PASS_HEALTH["pasa directo\n(siempre disponible)"]
+  HEALTH -->|No| CHK_ACTIVE{"activos\n< concurrencia?"}
+  CHK_ACTIVE -->|Si| PROCESS["procesar inmediatamente"]
+  CHK_ACTIVE -->|No| CHK_QUEUE{"cola\n< maxQueueSize?"}
+  CHK_QUEUE -->|Si| ENQUEUE["encolar\n(espera slot libre)"]
+  ENQUEUE --> PROCESS
+  CHK_QUEUE -->|No| REJECT["429 Too Many Requests"]
+
+  style PASS_HEALTH fill:#d1fae5,stroke:#22c55e
+  style PROCESS fill:#d1fae5,stroke:#22c55e
+  style REJECT fill:#fee2e2,stroke:#ef4444
+`} />
+
+### Configuracion
+
+| Variable | Default | Descripcion |
+|---|---|---|
+| `HTTP_BULKHEAD_CONCURRENCY` | 50 | Max requests simultaneos |
+| `HTTP_BULKHEAD_MAX_QUEUE` | 100 | Max requests en espera |
+
+### Metricas
+
+Expuestas via `HttpBulkheadMiddleware.getStats()`:
+
+```json
+{
+  "active": 3,
+  "queued": 5,
+  "concurrency": 50,
+  "maxQueueSize": 100
+}
+```
+
+---
+
+## Capa 2: OAuth Bulkhead
+
+Protege el endpoint `POST /oauth/token` contra fuerza bruta y DoS via bcrypt.
+
+<Alert>
+  <AlertTitle>Por que bcrypt necesita proteccion especial</AlertTitle>
+  <AlertDescription>
+    Cada intento de autenticacion ejecuta bcrypt.compare() — una operacion CPU-bound de ~100ms con 10 rounds. Sin proteccion, un atacante puede saturar los cores del servidor enviando autenticaciones concurrentes sin privilegios especiales. La Capa 1 no es suficiente porque el costo no esta en la red sino en la CPU.
+  </AlertDescription>
+</Alert>
+
+### Solucion
+
+`OAuthBulkheadGuard` limita la concurrencia de operaciones bcrypt a nivel de proceso:
+
+| Parametro | Valor | Justificacion |
+|---|---|---|
+| maxConcurrentCalls | 3 | Maximo 3 bcrypt simultaneos |
+| maxQueueSize | 5 | Hasta 5 peticiones esperando |
+| queueTimeoutMs | 5000 | Timeout de espera en cola |
+| rejectWhenFull | true | 429 inmediato cuando la cola esta llena |
+
+### Comportamiento bajo ataque
+
+<MermaidDiagram chart={`
+flowchart TD
+  REQ["POST /oauth/token"] --> CHK_SLOTS{"slots bcrypt\nlibres < 3?"}
+  CHK_SLOTS -->|Si| BCRYPT["bcrypt.compare()\n~100ms CPU"]
+  BCRYPT --> RESULT{"credenciales\nvalidas?"}
+  RESULT -->|Si| TOKEN["emitir JWT\naccess + refresh"]
+  RESULT -->|No| DENY["401 Unauthorized"]
+
+  CHK_SLOTS -->|No| CHK_QUEUE{"cola\n< 5?"}
+  CHK_QUEUE -->|Si| WAIT["esperar slot\n(max 5000ms)"]
+  WAIT -->|slot disponible| BCRYPT
+  WAIT -->|timeout| TIMEOUT["408 Request Timeout"]
+  CHK_QUEUE -->|No| FULL["429 Too Many Requests\n(instantaneo, sin CPU)"]
+
+  style TOKEN fill:#d1fae5,stroke:#22c55e
+  style TIMEOUT fill:#fef3c7,stroke:#f59e0b
+  style FULL fill:#fee2e2,stroke:#ef4444
+  style DENY fill:#fee2e2,stroke:#ef4444
+`} />
+
+### Efectividad
+
+- **Contra fuerza bruta**: con maxConcurrent=3, cada intento ocupa un slot durante ~100ms. Los 5 slots de cola se saturan rapido bajo ataque — las peticiones extra reciben 429 instantaneo sin consumir CPU.
+- **Contra DoS via bcrypt**: maximo 3 cores ocupados con hashing. El resto del servicio (records, health, admin) sigue respondiendo normalmente.
+
+### Respuestas HTTP
+
+| Situacion | Status | Body |
+|---|---|---|
+| Cola llena | 429 | `{ error: "Too Many Requests", message: "Demasiados intentos de autenticacion..." }` |
+| Timeout en cola | 408 | `{ error: "Request Timeout", message: "El servidor esta procesando demasiadas solicitudes..." }` |
+
+---
+
+## Capa 3: Gateway saliente
+
+Protege las llamadas HTTP hacia el api-gateway interno. Combina colas de prioridad con circuit breaker.
+
+### PQueue (colas de prioridad)
+
+Dos colas separadas para distintos tipos de operacion:
+
+| Cola | Concurrencia | Uso |
+|---|---|---|
+| highPriority | 10 | Consultas puntuales por numero — latencia baja |
+| lowPriority | 5 | Listados con filtros — potencialmente costosos |
+
+### Circuit Breaker (opossum)
+
+<MermaidDiagram chart={`
+stateDiagram-v2
+  [*] --> CLOSED
+
+  CLOSED --> CLOSED: llamada exitosa o error 4xx
+  CLOSED --> OPEN: errores 5xx mayor al 50% en ventana de 5 llamadas
+
+  OPEN --> OPEN: llamadas rechazadas, 503 inmediato
+  OPEN --> HALF_OPEN: resetTimeout 30s
+
+  HALF_OPEN --> CLOSED: llamada de prueba exitosa
+  HALF_OPEN --> OPEN: llamada de prueba falla
+`} />
+
+| Parametro | Valor |
+|---|---|
+| timeout | 5000ms |
+| errorThresholdPercentage | 50% |
+| resetTimeout | 30000ms |
+| volumeThreshold | 5 llamadas |
+
+**Error filter**: los errores 4xx **no** cuentan como falla de infraestructura — solo los 5xx abren el circuito. Esto evita falsos positivos por requests invalidos de los clientes.
+
+| Evento | Accion |
+|---|---|
+| `open` | Log warn + fallback lanza `ServiceUnavailableException` inmediatamente |
+| `halfOpen` | Log info — permite una llamada de prueba hacia el api-gateway |
+| `close` | Log info — servicio restaurado, colas retoman operacion normal |
+
+### Fallback
+
+Cuando el circuito esta abierto, todas las llamadas lanzan `ServiceUnavailableException` sin tocar el api-gateway. El cliente recibe un error 503 rapido en lugar de esperar el timeout.
+
+---
+
+## Bulkhead Registry
+
+El `BulkheadRegistry` es un singleton que gestiona bulkheads nombrados y proporciona metodos de fabrica para distintos escenarios:
+
+```typescript
+registry.getOrCreate({ name: 'oauth:token', maxConcurrentCalls: 3, ... });
+registry.getForClient(clientId);           // Bulkhead por cliente
+registry.getForService(serviceName);       // Bulkhead por servicio
+registry.getForDatabase(schema);           // Bulkhead para DB
+registry.getForHttpExternal(serviceName);  // Bulkhead para HTTP externo
+```
+
+```typescript
+registry.getAllMetrics();
+// {
+//   "oauth:token": { activeCalls: 2, queuedCalls: 1, ... },
+//   "gateway:high": { activeCalls: 0, queuedCalls: 0, ... },
+// }
+
+registry.getOverloadedBulkheads();
+// Retorna solo los bulkheads con uso >= 80% de capacidad
+```
+
+---
+
+## Rate Limiting
+
+Ademas del bulkhead, se aplica rate limiting con `@nestjs/throttler` como segunda barrera contra abuso:
+
+| Endpoint | Limite | Ventana |
+|---|---|---|
+| Global (todos los endpoints) | 100 req | 60s |
+| POST /oauth/token | 10 req | 60s |
+| POST /oauth/refresh | 5 req | 60s |
+| POST /admin/login | 5 req | 60s |
+| GET /admin/setup-required | Sin limite | — |
+| POST /admin/setup | Sin limite | — |
+| POST /admin/logout | Sin limite | — |

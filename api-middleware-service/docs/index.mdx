@@ -1,0 +1,276 @@
+# API Middleware Service
+
+> Proxy OAuth2 para aplicaciones externas hacia Event Corner (api-gateway interno).
+
+---
+
+## Descripcion
+
+`api-middleware-service` es un middleware de autenticacion y autorizacion construido con **NestJS** que actua como intermediario entre aplicaciones externas y un api-gateway interno (Event Corner). Implementa el flujo **OAuth2 client_credentials** con JWT local, gestion de clientes externos con bcrypt, y una capa de resiliencia de 3 niveles.
+
+## Stack tecnologico
+
+| Componente | Tecnologia |
+|---|---|
+| Runtime | Node.js 20 LTS |
+| Framework | NestJS 10 + TypeScript 5 |
+| Base de datos | MySQL 8 via TypeORM |
+| Autenticacion | JWT local (bcrypt + @nestjs/jwt) |
+| Resiliencia | opossum (circuit breaker) + p-queue (bulkhead) |
+| Validacion | class-validator + class-transformer |
+| Documentacion | Swagger (@nestjs/swagger) |
+| Testing | Jest + ts-jest + supertest |
+| Seguridad | helmet, compression, @nestjs/throttler |
+
+## Arquitectura general
+
+```
+Aplicacion Externa
+       │
+       ▼
+┌─────────────────────────────────────────────┐
+│         api-middleware-service               │
+│                                             │
+│  POST /oauth/token  (client_credentials)    │
+│       │                                     │
+│       ▼                                     │
+│  AuthService → bcrypt.compare()             │
+│       │                                     │
+│       ▼                                     │
+│  JwtService.sign() → access_token + refresh │
+│                                             │
+│  GET /v1/requests/*  (Bearer token)         │
+│       │                                     │
+│       ▼                                     │
+│  AccessTokenGuard → JWT.verify()            │
+│       │                                     │
+│       ▼                                     │
+│  RecordsService → GatewayClient             │
+│       │                                     │
+│       ▼                                     │
+│  PQueue + Circuit Breaker                   │
+└───────┬─────────────────────────────────────┘
+        │
+        ▼
+┌──────────────────┐
+│  api-gateway     │
+│  (Event Corner)  │
+└──────────────────┘
+```
+
+## Modulos
+
+| Modulo | Descripcion |
+|---|---|
+| `AuthModule` | Emision y renovacion de tokens JWT (access + refresh) |
+| `ClientsModule` | CRUD de aplicaciones externas registradas |
+| `RecordsModule` | Consulta de solicitudes hacia el api-gateway |
+| `GatewayModule` | Cliente HTTP resiliente hacia api-gateway interno |
+| `AdminModule` | Autenticacion de administradores (dashboard) |
+| `BulkheadModule` | Sistema de bulkhead para proteccion contra sobrecarga |
+| `HealthModule` | Endpoint de salud sin autenticacion |
+
+## Endpoints
+
+### Autenticacion (`/oauth`)
+
+| Metodo | Ruta | Auth | Descripcion |
+|---|---|---|---|
+| POST | `/oauth/token` | Basic Auth | Emitir access token (client_credentials) |
+| POST | `/oauth/refresh` | - | Renovar access token via refresh token |
+
+### Clientes (`/clients`)
+
+| Metodo | Ruta | Auth | Descripcion |
+|---|---|---|---|
+| POST | `/clients` | AdminSession | Registrar aplicacion externa |
+| GET | `/clients` | AdminSession | Listar aplicaciones |
+| GET | `/clients/:clientId` | AdminSession | Detalle de aplicacion |
+| PATCH | `/clients/:clientId/rotate-secret` | AdminSession | Rotar client_secret |
+| PATCH | `/clients/:clientId/token-expiry` | AdminSession | Actualizar duracion del token |
+| DELETE | `/clients/:clientId` | AdminSession | Desactivar aplicacion |
+
+### Records (`/v1`)
+
+| Metodo | Ruta | Auth | Descripcion |
+|---|---|---|---|
+| GET | `/v1/requests/:number` | Bearer o AdminSession | Solicitud por numero |
+| GET | `/v1/requests` | Bearer o AdminSession | Listar solicitudes con filtros |
+
+### Admin (`/admin`)
+
+| Metodo | Ruta | Auth | Descripcion |
+|---|---|---|---|
+| GET | `/admin/setup-required` | - | Verificar si necesita configuracion inicial |
+| POST | `/admin/setup` | - | Crear primer administrador |
+| POST | `/admin/login` | - | Iniciar sesion |
+| POST | `/admin/logout` | - | Cerrar sesion |
+| GET | `/admin/me` | AdminSession | Usuario autenticado |
+
+### Health
+
+| Metodo | Ruta | Auth | Descripcion |
+|---|---|---|---|
+| GET | `/health/status` | - | Estado del servicio |
+
+## Flujo de autenticacion
+
+### 1. Registro de cliente
+
+Un administrador registra la aplicacion externa via `POST /clients`. Se genera:
+
+- `clientId` con prefijo `mc_` (ej: `mc_a1b2c3d4...`)
+- `clientSecret` de 32 bytes hex (se muestra una sola vez)
+- El secret se almacena como **bcrypt hash**
+
+### 2. Emision de token
+
+La aplicacion externa solicita un token via `POST /oauth/token` con **Basic Auth**:
+
+```
+Authorization: Basic base64(client_id:client_secret)
+```
+
+Response:
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "client_name": "Mi App"
+}
+```
+
+### 3. Acceso a datos
+
+La aplicacion externa usa el access token en requests subsecuentes:
+
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+```
+
+### 4. Refresh token rotation
+
+- El refresh token se almacena como **hash del jti** en la tabla `refresh_tokens`
+- Al refrescar, se revoca el token anterior y se emite uno nuevo
+- Si se detecta un **reuse attack** (hash no coincide), se revocan TODOS los tokens del cliente
+
+## Capa de resiliencia
+
+### Nivel 1: HTTP Bulkhead entrante
+
+Middleware que limita requests concurrentes entrantes (default: 50 concurrencia, 100 cola). Excluye `/health/status`.
+
+### Nivel 2: OAuth Bulkhead
+
+Guard especifico para `POST /oauth/token` que limita a **3 bcrypt simultaneos** (max 5 en cola, timeout 5s). Protege contra fuerza bruta y DoS via bcrypt.
+
+### Nivel 3: Gateway saliente
+
+- **PQueue**: colas de prioridad separadas (HP: concurrencia 10, LP: concurrencia 5)
+- **Circuit Breaker** (opossum): se abre si >50% de errores 5xx en ventana de 5 llamadas, reset a los 30s
+
+## Entidades
+
+### external_clients
+
+| Columna | Tipo | Descripcion |
+|---|---|---|
+| clientId | VARCHAR(64) PK | ID con prefijo `mc_` |
+| clientSecretHash | VARCHAR(128) | bcrypt del secret |
+| name | VARCHAR(100) | Nombre de la app |
+| description | VARCHAR(255) | Descripcion opcional |
+| tokenExpiresInSeconds | INT | Duracion del token (3600-604800) |
+| isActive | BOOLEAN | Si esta activo |
+| createdAt | DATETIME | Fecha de creacion |
+| updatedAt | DATETIME | Ultima actualizacion |
+
+### refresh_tokens
+
+| Columna | Tipo | Descripcion |
+|---|---|---|
+| id | INT PK | Auto-increment |
+| clientId | VARCHAR(64) | Cliente asociado |
+| tokenHash | VARCHAR(128) | bcrypt del jti del refresh token |
+| expiresAt | DATETIME | Fecha de expiracion (7 dias) |
+| revokedAt | DATETIME | Fecha de revocacion (nullable) |
+| createdAt | DATETIME | Fecha de creacion |
+
+### admins
+
+| Columna | Tipo | Descripcion |
+|---|---|---|
+| id | INT PK | Auto-increment |
+| username | VARCHAR(100) | Nombre de usuario |
+| passwordHash | VARCHAR(128) | bcrypt de la contrasena |
+| createdAt | DATETIME | Fecha de creacion |
+
+## Configuracion
+
+### Variables de entorno
+
+| Variable | Default | Descripcion |
+|---|---|---|
+| `NODE_ENV` | development | Entorno (development/staging/production) |
+| `PORT` | 3007 | Puerto del servidor |
+| `DB_HOST` | localhost | Host MySQL |
+| `DB_PORT` | 3306 | Puerto MySQL |
+| `DB_USERNAME` | root | Usuario MySQL |
+| `DB_PASSWORD` | root | Contrasena MySQL |
+| `DB_DATABASE` | middleware_db | Base de datos |
+| `JWT_SECRET` | - | Secreto para firmar JWT (requerido en prod) |
+| `JWT_EXPIRATION` | 3600 | Duracion default del access token (s) |
+| `ADMIN_API_KEY` | - | API key de admin (obsoleto) |
+| `ADMIN_SESSION_SECRET` | - | Secreto para JWT de sesion admin |
+| `API_GATEWAY_URL` | http://localhost:3000 | URL del api-gateway interno |
+| `ABAC_M2M_TOKEN` | - | Token M2M para autenticarse ante api-gateway |
+| `HTTP_BULKHEAD_CONCURRENCY` | 50 | Concurrencia maxima HTTP entrante |
+| `HTTP_BULKHEAD_MAX_QUEUE` | 100 | Cola maxima HTTP entrante |
+| `CORS_ALLOWED_ORIGINS` | - | Origenes CORS permitidos (separados por coma) |
+
+### Entornos
+
+| Entorno | Archivo .env | Caracteristicas |
+|---|---|---|
+| development | `.env.development` | Fallbacks locales, CORS abierto a localhost, Swagger habilitado, TypeORM synchronize |
+| staging | `.env.staging` | Validacion estricta de secretos, CORS restringido, Swagger habilitado |
+| production | `.env.production` | Validacion estricta de secretos, CORS restringido, Swagger deshabilitado |
+
+## Seguridad
+
+- **Helmet**: protege contra vulnerabilidades HTTP comunes (XSS, clickjacking, etc.)
+- **Compression**: respuestas gzip para rendimiento
+- **Rate limiting**: global (100 req/min) + especifico por endpoint (token: 10/min, refresh: 5/min, login: 5/min)
+- **Bulkhead**: 3 capas de proteccion contra sobrecarga
+- **bcrypt**: secrets almacenados con hash, nunca en texto plano
+- **Refresh token rotation**: cada refresh invalida el token anterior
+- **Reuse attack detection**: si se reusa un refresh token, se revocan todos los tokens del cliente
+- **CORS**: origenes explicitos, no wildcard
+- **Cookie httpOnly**: sesion de admin con cookie secure + sameSite strict
+- **Validacion de entorno**: `requiredSecret()` lanza error si faltan secretos en staging/production
+
+## Scripts
+
+```bash
+npm run start:dev      # Desarrollo con watch
+npm run start:staging  # Staging
+npm run start:prod     # Produccion
+npm run test           # Tests unitarios
+npm run test:cov       # Tests con cobertura
+npm run test:e2e       # Tests e2e
+npm run build          # Compilar a dist/
+```
+
+## Decisiones de diseno
+
+| Decision | Opcion elegida | Alternativa descartada |
+|---|---|---|
+| Autenticacion | JWT local + MySQL | OAuth introspection externa (se descarto por divergencia arquitectonica) |
+| Duracion de token | Configurable por cliente (1h-7d) | Fija global |
+| Refresh token | Rotation con deteccion de reuse | Sin refresh token |
+| Bulkhead OAuth | Implementacion casera con cola | Rate-limit por IP (requiere Redis) |
+| Circuit breaker | opossum | Implementacion propia |
+| Sesion admin | Cookie httpOnly + JWT | API key fija |
+| Documentacion | Swagger en no-prod | Documentacion estatica |

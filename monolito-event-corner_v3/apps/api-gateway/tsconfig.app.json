@@ -1,0 +1,46 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "declaration": false,
+    "baseUrl": ".",
+    "outDir": "../../dist/apps/api-gateway",
+    "paths": {
+      "@app/shared": [
+        "../../libs/shared/src/index.ts"
+      ],
+      "@app/shared/*": [
+        "../../libs/shared/src/*"
+      ],
+      "@app/observability": [
+        "../../libs/observability/index.ts"
+      ],
+      "@app/observability/*": [
+        "../../libs/observability/*"
+      ],
+      "@app/result": [
+        "../../libs/result/src/index.ts"
+      ],
+      "@app/result/*": [
+        "../../libs/result/src/*"
+      ],
+      "@app/ed25519": [
+        "../../libs/ed25519.service/src/index.ts"
+      ],
+      "@app/ed25519/*": [
+        "../../libs/ed25519.service/src/*"
+      ],
+      "@backendkit-labs/http-client/nestjs": [
+        "../../node_modules/@backendkit-labs/http-client/dist/nestjs/index.d.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "**/*spec.ts"
+  ]
+}

@@ -1,0 +1,235 @@
+# Seguridad
+
+Resumen de todas las medidas implementadas para proteger la API, los datos y las sesiones.
+
+<MermaidDiagram chart={`
+flowchart LR
+  subgraph Entrada["Entrada HTTP"]
+    HELMET["Helmet\nheaders de seguridad"]
+    CORS["CORS\norigenes permitidos"]
+    THROTTLE["Rate Limiting\n@nestjs/throttler"]
+    VALIDATION["ValidationPipe\nwhitelist + transform"]
+  end
+
+  subgraph Auth["Autenticacion"]
+    BULKHEAD["OAuth Bulkhead\nproteccion bcrypt"]
+    BCRYPT["bcrypt.compare()\nsecretHash"]
+    JWT["jwt.verify()\nJWT_SECRET"]
+    COOKIE["AdminSessionGuard\ncookie httpOnly"]
+  end
+
+  subgraph Datos["Proteccion de datos"]
+    HASH["secretHash bcrypt\nnunca texto plano"]
+    ROTATION["Refresh token rotation\nreuse attack detection"]
+    SECRETS["requiredSecret()\nvalidacion en arranque"]
+  end
+
+  Entrada --> Auth --> Datos
+
+  style Entrada fill:#eef2ff,stroke:#6366f1
+  style Auth fill:#f0fdf4,stroke:#22c55e
+  style Datos fill:#fef9c3,stroke:#ca8a04
+`} />
+
+---
+
+## Tabla de medidas de seguridad
+
+| Medida | Implementacion | Nivel |
+|---|---|---|
+| Headers HTTP | helmet() global en main.ts | Alto |
+| CORS | Lista blanca configurable por entorno | Alto |
+| Rate limiting global | 100 req/60s via @nestjs/throttler | Medio |
+| Rate limiting /oauth/token | 10 req/60s | Alto |
+| Rate limiting /oauth/refresh | 5 req/60s | Alto |
+| Rate limiting /admin/login | 5 req/60s | Alto |
+| Bulkhead bcrypt | OAuthBulkheadGuard, max 3 concurrentes | Alto |
+| Hash de secretos | bcrypt 10 rounds, nunca texto plano | Alto |
+| Refresh token rotation | OWASP recommended, reuse attack detection | Alto |
+| Cookie admin | httpOnly + sameSite: strict + secure en prod | Alto |
+| Validacion de input | ValidationPipe whitelist + forbidNonWhitelisted | Alto |
+| Secretos en arranque | requiredSecret() — falla si falta en staging/prod | Critico |
+| TypeORM synchronize | false en staging/prod — solo migraciones manuales | Alto |
+
+---
+
+## Helmet
+
+Protege contra vulnerabilidades HTTP comunes:
+
+- XSS (Cross-Site Scripting)
+- Clickjacking (X-Frame-Options)
+- MIME sniffing (X-Content-Type-Options)
+- Otros encabezados de seguridad
+
+Se aplica globalmente en `main.ts`:
+
+```typescript
+app.use(helmet());
+```
+
+---
+
+## CORS
+
+Configuracion dinamica segun entorno:
+
+```typescript
+const corsOrigins = env === 'development'
+  ? ['http://localhost:5173', 'http://localhost:3000']
+  : process.env.CORS_ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? [];
+app.enableCors({ origin: corsOrigins, credentials: true });
+```
+
+- **Development**: origenes fijos (localhost:5173 para el dashboard, localhost:3000)
+- **Staging/Production**: solo los definidos en `CORS_ALLOWED_ORIGINS`
+- **Sin wildcard**: no se permite `*` en ningun entorno
+
+---
+
+## Validacion de entorno
+
+La funcion `requiredSecret()` en `configuration.ts` protege contra configuraciones inseguras:
+
+```typescript
+function requiredSecret(key: string, fallback: string): string {
+  const env = process.env.NODE_ENV ?? 'development';
+  const value = process.env[key];
+
+  if (env !== 'development') {
+    if (!value) throw new Error(`Variable '${key}' no configurada`);
+    if (value.startsWith('dev-only--')) throw new Error(`Variable '${key}' tiene valor de desarrollo`);
+    return value;
+  }
+
+  return value ?? fallback;
+}
+```
+
+Variables protegidas: `JWT_SECRET`, `ADMIN_SESSION_SECRET`, `ABAC_M2M_TOKEN`.
+
+En staging/production, si alguna de estas variables falta o tiene el valor de desarrollo (`dev-only--...`), el servicio **no arranca**.
+
+---
+
+## Refresh token rotation
+
+<MermaidDiagram chart={`
+flowchart TD
+  REQ["POST /oauth/refresh\n{ refresh_token }"] --> VERIFY["jwt.verify(token)\nextrae jti + clientId"]
+  VERIFY --> FIND["DB: SELECT token WHERE\nclientId=? AND revokedAt IS NULL"]
+
+  FIND --> COMPARE["bcrypt.compare(jti, tokenHash)"]
+  COMPARE --> MATCH{"hash\ncoincide?"}
+
+  MATCH -->|Si, token valido| REVOKE["revocar token actual\nrevokedAt = NOW()"]
+  REVOKE --> NEW_TOKEN["emitir nuevo access_token\n+ nuevo refresh_token"]
+  NEW_TOKEN --> OK["200 OK\n{ access_token, refresh_token }"]
+
+  MATCH -->|No, reuse attack| REVOKE_ALL["revocar TODOS los tokens\ndel cliente"]
+  REVOKE_ALL --> ERR401["401 Unauthorized"]
+
+  FIND -->|no encontrado o expirado| ERR401_2["401 Token expired"]
+
+  style OK fill:#d1fae5,stroke:#22c55e
+  style ERR401 fill:#fee2e2,stroke:#ef4444
+  style ERR401_2 fill:#fee2e2,stroke:#ef4444
+  style REVOKE_ALL fill:#fee2e2,stroke:#ef4444
+`} />
+
+---
+
+## Sesion de administrador
+
+La sesion del dashboard se maneja con cookie httpOnly:
+
+```typescript
+res.cookie('admin_session', token, {
+  httpOnly: true,
+  sameSite: 'strict',
+  path: '/',
+  secure: env !== 'development',  // solo HTTPS en prod
+  maxAge: 24 * 60 * 60 * 1000,   // 24h
+});
+```
+
+- **httpOnly**: no accesible desde JavaScript — inmune a XSS
+- **sameSite: strict**: no se envia en requests cross-site — inmune a CSRF
+- **secure**: solo en HTTPS (excepto development)
+- **maxAge**: 24 horas
+
+---
+
+## Guards de autenticacion
+
+### AccessTokenGuard
+
+Valida el JWT de cliente externo en endpoints de datos:
+
+```typescript
+const payload = this.jwt.verify(token, { secret });
+if (payload.type !== 'external_client') {
+  throw new UnauthorizedException('Token no pertenece a una aplicacion externa');
+}
+```
+
+### AdminSessionGuard
+
+Valida la cookie de sesion de administrador en endpoints de gestion:
+
+```typescript
+const payload = this.jwtService.verify(token);
+(request as any).adminUser = { username: payload.username };
+```
+
+### AdminOrAccessGuard
+
+Guard compuesto que acepta ambos metodos (usado en `/v1/requests/*`):
+
+1. Intenta cookie de admin
+2. Si falla, intenta Bearer token de cliente externo
+3. Si ninguno es valido → 401
+
+### OAuthBulkheadGuard
+
+Protege `POST /oauth/token` contra fuerza bruta y DoS via bcrypt. Ver la seccion [Resiliencia](/docs/resiliencia) para detalles.
+
+---
+
+## Rate limiting
+
+```typescript
+// Global
+ThrottlerModule.forRoot([{
+  name: 'global',
+  ttl: 60000,
+  limit: 100,
+}])
+
+// Endpoints especificos
+@Throttle({ default: { limit: 10, ttl: 60000 } })  // /oauth/token
+@Throttle({ default: { limit: 5, ttl: 60000 } })   // /oauth/refresh
+@Throttle({ default: { limit: 5, ttl: 60000 } })   // /admin/login
+```
+
+---
+
+## Validacion de input
+
+```typescript
+app.useGlobalPipes(new ValidationPipe({
+  whitelist: true,              // elimina propiedades no declaradas en DTO
+  forbidNonWhitelisted: true,   // lanza error si envian propiedades extra
+  transform: true,              // transforma tipos (string -> number, etc.)
+}));
+```
+
+---
+
+## TypeORM synchronize
+
+```typescript
+synchronize: config.get('app.env') === 'development',
+```
+
+`synchronize: true` solo en development. En staging y production se usa `false` y las migraciones se ejecutan manualmente para evitar cambios de esquema no intencionados.
