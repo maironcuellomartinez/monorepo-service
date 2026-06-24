@@ -1,4 +1,4 @@
-import * as Transport from 'winston-transport';
+import Transport = require('winston-transport');
 import { MetricsProducerService } from '../services/metrics-producer.service';
 import { OnModuleDestroy } from '@nestjs/common';
 

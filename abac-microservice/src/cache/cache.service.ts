@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as NodeCache from 'node-cache';
+import NodeCache = require('node-cache');
 
 @Injectable()
 export class CacheService {
