@@ -1,4 +1,4 @@
-# Integration Docs — Workspace Santander
+# Integration Docs — Workspace
 
 Contexto global de integración entre todos los servicios del ecosistema.
 Este directorio es la fuente de verdad sobre decisiones, flujos, y estado de integración.
