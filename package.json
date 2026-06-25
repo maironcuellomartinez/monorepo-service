@@ -20,6 +20,6 @@
     "sim:cascade": "node simulators/combined-simulator.js scenario --name cascade-failure",
     "sim:parallel": "node simulators/combined-simulator.js scenario --name parallel-storm",
 
-    "sim:list": "node simulators/snow-request-simulator.js scenario --list 2>/dev/null; node simulators/thruk-simulator.js scenario --list 2>/dev/null; node simulators/combined-simulator.js list"
+    "sim:list": "node simulators/combined-simulator.js list"
   }
 }

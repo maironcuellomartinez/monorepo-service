@@ -9,7 +9,7 @@ export class SyncUserDto {
     /** ABAC userId — se usa como externalId en el monolith */
     @IsString()
     @IsNotEmpty()
-    external_id: string;
+    external_id!: string;
 
     @IsEmail()
     @IsOptional()

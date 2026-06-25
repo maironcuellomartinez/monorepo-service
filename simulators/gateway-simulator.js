@@ -104,33 +104,32 @@ function info(label, value) { console.log(`${C.gray}    ${label}: ${value}${C.re
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-/**
- * Construye un token de simulación Entra ID para entornos dev sin Azure real.
- * Formato: "dev:<base64url-json>" — abac lo acepta cuando AZURE_TENANT_ID está vacío.
- */
-function buildDevEntraToken(oid, email, name) {
-    const payload = JSON.stringify({ oid, email, name: name ?? email.split('@')[0] });
-    const b64 = Buffer.from(payload).toString('base64url');
-    return `dev:${b64}`;
-}
-
 async function login(email, password, devOid) {
-    // Modo dev-entra: sin Azure real, sin password — token local
+    // Modo dev (sin Azure real): POST /api/auth/dev/login — solo funciona con NODE_ENV=development
     if (devOid) {
-        const token = buildDevEntraToken(devOid, email);
-        ok('Login (dev-entra bypass)', email);
+        const res = await post('/api/auth/dev/login', { email, oid: devOid });
+        if (res.status !== 200 || !res.body?.accessToken) {
+            throw new Error(
+                `Dev login fallido [${res.status}]: ${JSON.stringify(res.body)}\n` +
+                '  Verifica que api-gateway y abac-microservice estén corriendo con NODE_ENV=development.'
+            );
+        }
+        ok('Login (dev/sin Azure)', email);
         info('oid', devOid);
-        info('token-prefix', token.substring(0, 40) + '...');
-        return token;
+        info('userId', res.body.userId ?? '?');
+        return res.body.accessToken;
     }
 
-    // Modo normal: email/password (requiere endpoint /api/auth/login activo)
-    const res = await post('/api/auth/login', { email, password });
-    if (res.status !== 200 || !res.body?.accessToken) {
-        throw new Error(`Login fallido [${res.status}]: ${JSON.stringify(res.body)}`);
+    // Modo producción: el usuario aporta un Bearer de Azure AD directamente
+    if (password) {
+        throw new Error(
+            'El login por email/password no está disponible.\n' +
+            '  En dev usa --dev-oid <oid>  →  POST /api/auth/dev/login\n' +
+            '  En prod pasa el Bearer de Azure AD con --token <jwt>'
+        );
     }
-    ok('Login', email);
-    return res.body.accessToken;
+
+    throw new Error('--dev-oid o --token es requerido');
 }
 
 // ─── Discovery ────────────────────────────────────────────────────────────────
@@ -216,7 +215,8 @@ async function cmdIncidents(args) {
     const email      = requireArg(args, 'email');
     const customerId = requireArg(args, 'customer-id');
     const devOid     = args['dev-oid'] ?? null;
-    const password   = devOid ? null : requireArg(args, 'password');
+    const bearerToken = args['token'] ?? null;
+    const password   = null; // login por password eliminado — usar --dev-oid o --token
     const count        = parseInt(args.count    ?? '1');
     const date         = args.date              ?? new Date().toISOString().substring(0, 10);
     const duration     = parseInt(args.duration ?? '60');
@@ -226,7 +226,7 @@ async function cmdIncidents(args) {
     printHeader(`INCIDENTS via api-gateway — count=${count}  date=${date}  parallel=${parallel}`);
 
     // 1. Auth
-    const token = await login(email, password, devOid);
+    const token = bearerToken ?? await login(email, password, devOid);
 
     // 2. Discover
     const cornerId    = await discoverCorner(token, args['corner-id']);
@@ -320,9 +320,9 @@ Comandos:
 
 Opciones de incidents:
   --email           Email del usuario                             (requerido)
-  --password        Contraseña  (requerido si no se usa --dev-oid)
-  --dev-oid         OID simulado para bypass Entra ID en dev      (alternativa a --password)
-  --customer-id     UUID del usuario/cliente                      (requerido)
+  --dev-oid         OID simulado (dev sin Azure) — llama POST /api/auth/dev/login
+  --token           Bearer JWT de Azure AD (prod) — se usa directamente, sin login
+  --customer-id     UUID del usuario/cliente (monolithUserId)     (requerido)
   --count           Cantidad de incidencias a crear  (default: 1)
   --date            Fecha YYYY-MM-DD                 (default: hoy)
   --duration        Duración en minutos              (default: 60)
@@ -334,13 +334,15 @@ Opciones de incidents:
 Env:
   GATEWAY_URL   URL del api-gateway  (default: http://localhost:3000)
 
-Ejemplos (dev sin Azure real):
+Ejemplos (dev sin Azure — requiere NODE_ENV=development en gateway y abac):
   node gateway-simulator.js incidents --email user@eventcorner.com --dev-oid dev-user-001 --customer-id <uuid>
   node gateway-simulator.js incidents --email user@eventcorner.com --dev-oid dev-user-001 --customer-id <uuid> --count 3
 
-Ejemplos (con Azure real):
-  node gateway-simulator.js incidents --email admin@test.com --password 123456 --customer-id <uuid>
-  node gateway-simulator.js incidents --email admin@test.com --password 123456 --customer-id <uuid> --count 5 --parallel
+Ejemplos (prod/staging — pasar el Bearer de Azure AD):
+  node gateway-simulator.js incidents --email admin@test.com --token <azure-jwt> --customer-id <uuid>
+  node gateway-simulator.js incidents --email admin@test.com --token <azure-jwt> --customer-id <uuid> --count 5 --parallel
+
+Nota: obtén el customer-id con GET /api/auth/me tras el login (campo monolithUserId).
 `);
         return;
     }

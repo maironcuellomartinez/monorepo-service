@@ -11,7 +11,7 @@ export class DevicesController {
     constructor(private readonly monolith: MonolithClient) {}
 
     @Get()
-    @Permission('incident', 'create')
+    @Permission('device', 'read')
     @ApiOperation({ summary: 'Listar dispositivos de un usuario (desde DB local)' })
     @ApiQuery({ name: 'userId', required: true })
     listByUser(@Query('userId') userId: string) {
@@ -20,7 +20,7 @@ export class DevicesController {
 
     @Post('sync-user/:userId')
     @HttpCode(HttpStatus.OK)
-    @Permission('incident', 'create')
+    @Permission('device', 'sync')
     @ApiOperation({ summary: 'Sincronizar dispositivos de un usuario desde Minerva', description: 'Trae los dispositivos del usuario desde el inventario externo (Minerva) y los upsertea en la DB local.' })
     @ApiParam({ name: 'userId', description: 'ID del usuario en el monolith' })
     syncForUser(@Param('userId') userId: string) {
@@ -29,7 +29,7 @@ export class DevicesController {
 
     @Post('virtual')
     @HttpCode(HttpStatus.CREATED)
-    @Permission('incident', 'create')
+    @Permission('device', 'create-virtual')
     @ApiOperation({ summary: 'Crear dispositivo virtual para un usuario' })
     @ApiBody({ schema: { properties: { userId: { type: 'string' }, deviceType: { type: 'string' }, model: { type: 'string' }, serialNumber: { type: 'string' } }, required: ['userId', 'deviceType'] } })
     createVirtual(@Body() body: { userId: string; deviceType: string; model?: string; serialNumber?: string }) {
@@ -38,7 +38,7 @@ export class DevicesController {
 
     @Patch('virtual/:deviceId')
     @HttpCode(HttpStatus.OK)
-    @Permission('incident', 'create')
+    @Permission('device', 'create-virtual')
     @ApiOperation({ summary: 'Editar dispositivo virtual' })
     @ApiParam({ name: 'deviceId' })
     @ApiBody({ schema: { properties: { serialNumber: { type: 'string' }, deviceType: { type: 'string' }, model: { type: 'string' }, brand: { type: 'string' } } } })
@@ -48,7 +48,7 @@ export class DevicesController {
 
     @Post(':deviceId/disable')
     @HttpCode(HttpStatus.OK)
-    @Permission('incident', 'create')
+    @Permission('device', 'sync')
     @ApiOperation({ summary: 'Deshabilitar dispositivo' })
     @ApiParam({ name: 'deviceId' })
     disableDevice(@Param('deviceId') deviceId: string) {
@@ -57,7 +57,7 @@ export class DevicesController {
 
     @Post(':deviceId/enable')
     @HttpCode(HttpStatus.OK)
-    @Permission('incident', 'create')
+    @Permission('device', 'sync')
     @ApiOperation({ summary: 'Habilitar dispositivo deshabilitado' })
     @ApiParam({ name: 'deviceId' })
     enableDevice(@Param('deviceId') deviceId: string) {
@@ -66,7 +66,7 @@ export class DevicesController {
 
     @Delete('virtual/:deviceId')
     @HttpCode(HttpStatus.OK)
-    @Permission('incident', 'create')
+    @Permission('device', 'create-virtual')
     @ApiOperation({ summary: 'Eliminar dispositivo virtual' })
     @ApiParam({ name: 'deviceId' })
     deleteVirtual(@Param('deviceId') deviceId: string) {

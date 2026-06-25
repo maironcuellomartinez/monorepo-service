@@ -169,14 +169,16 @@ export class WinstonHttpTransport extends Transport implements OnModuleDestroy {
         this.flushing = true;
 
         const batch = this.buffer.splice(0, this.BATCH_SIZE);
+        const cbOpen = this.cb.getState() === CircuitBreakerState.OPEN;
 
         this.send(batch)
             .then(({ ok, failed }) => {
-                if (failed > 0) {
-                    this.logger.warn(`Log transport: ${ok} sent, ${failed} dropped`);
+                // No loguear fallo si el CB ya está abierto — el onStateChange ya avisó
+                if (failed > 0 && !cbOpen) {
+                    this.logger.warn(`Log transport: ${ok} sent, ${failed} failed (observability-service unreachable)`);
                 }
                 if (this.droppedCount > 0) {
-                    this.logger.warn(`Log transport: ${this.droppedCount} logs dropped (buffer cap)`);
+                    this.logger.warn(`Log transport: ${this.droppedCount} logs discarded (buffer cap reached)`);
                     this.droppedCount = 0;
                 }
             })
