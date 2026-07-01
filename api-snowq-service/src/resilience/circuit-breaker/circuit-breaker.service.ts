@@ -1,74 +1,90 @@
-import { Injectable, Logger } from '@nestjs/common';
-import CircuitBreaker, { Options, Status } from 'opossum';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import {
+    CircuitBreaker,
+    CircuitBreakerOpenError,
+    CircuitBreakerRegistry,
+    type CircuitBreakerMetrics,
+} from '@backendkit-labs/circuit-breaker';
 import { ServiceNowFatalError, ServiceNowAuthError } from 'src/common';
 
+export { CircuitBreakerOpenError };
+
+// Fatal y auth errors son errores de negocio — no indican que SN esté caído.
+// Solo los 5xx y timeouts deben abrir el circuito.
+const isSnFailure = (error: unknown): boolean =>
+    !(error instanceof ServiceNowFatalError) && !(error instanceof ServiceNowAuthError);
+
+/**
+ * Tres circuit breakers independientes por flujo:
+ *
+ *   sn:monitoring — alertas Nagios/Thruk → SN (threshold más alto: el tráfico es ruidoso)
+ *   sn:queue      — cola asíncrona (monolito, integration-service) → SN
+ *   sn:immediate  — modo inmediato (llamadas síncronas) → SN
+ *
+ * Un breaker abierto por tormenta de Nagios no afecta al flujo del monolito.
+ */
 @Injectable()
-export class CircuitBreakerService {
+export class CircuitBreakerService implements OnModuleDestroy {
     private readonly logger = new Logger(CircuitBreakerService.name);
-    private breakers = new Map<string, CircuitBreaker<any, any>>();
+    private readonly registry = new CircuitBreakerRegistry();
 
-    create<T extends (...args: any[]) => Promise<any>>(
-        key: string,
-        action: T,
-        options?: Options
-    ): CircuitBreaker<any> {
-        if (this.breakers.has(key)) {
-            return this.breakers.get(key) as CircuitBreaker<any>;
-        }
-
-        const breaker = new CircuitBreaker<any>(action, {
-            timeout: 10000,
-            errorThresholdPercentage: 50,
-            resetTimeout: 30000,
-            // Errores fatales (4xx) y de auth (401/403) no indican que SN esté caído
-            // — no deben contar como falla para el circuit breaker.
-            // Solo los errores temporales (5xx, timeouts) abren el circuito.
-            errorFilter: (error) =>
-                error instanceof ServiceNowFatalError ||
-                error instanceof ServiceNowAuthError,
-            ...options
+    constructor() {
+        this.registry.getOrCreate({
+            name: 'sn:monitoring',
+            failureThreshold: 60,
+            minimumCalls: 5,
+            slidingWindowSize: 10,
+            openTimeoutMs: 30_000,
+            isFailure: isSnFailure,
+            onStateChange: (from, to) => this.logStateChange('sn:monitoring', from, to),
         });
 
-        breaker.on('open', () => {
-            this.logger.warn(`🔴 Circuit breaker [${key}] OPEN`);
+        this.registry.getOrCreate({
+            name: 'sn:queue',
+            failureThreshold: 50,
+            minimumCalls: 5,
+            slidingWindowSize: 10,
+            openTimeoutMs: 30_000,
+            isFailure: isSnFailure,
+            onStateChange: (from, to) => this.logStateChange('sn:queue', from, to),
         });
 
-        breaker.on('halfOpen', () => {
-            this.logger.log(`🟠 Circuit breaker [${key}] HALF-OPEN`);
+        this.registry.getOrCreate({
+            name: 'sn:immediate',
+            failureThreshold: 50,
+            minimumCalls: 3,
+            slidingWindowSize: 5,
+            openTimeoutMs: 15_000,
+            isFailure: isSnFailure,
+            onStateChange: (from, to) => this.logStateChange('sn:immediate', from, to),
         });
-
-        breaker.on('close', () => {
-            this.logger.log(`🟢 Circuit breaker [${key}] CLOSED`);
-        });
-
-        breaker.on('fallback', (result) => {
-            this.logger.warn(`⚠️ Circuit breaker [${key}] FALLBACK result: ${result}`);
-        });
-
-        this.breakers.set(key, breaker);
-        return breaker;
     }
 
-    isOpened(key: string): boolean {
-        const breaker = this.breakers.get(key);
-        return breaker ? breaker.opened : false;
+    getBreaker(name: string): CircuitBreaker {
+        return this.registry.getOrCreate({ name });
     }
 
-    isClosed(key: string): boolean {
-        const breaker = this.breakers.get(key);
-        return breaker ? breaker.closed : false;
+    getAllMetrics(): Record<string, CircuitBreakerMetrics> {
+        return this.registry.getAllMetrics();
     }
 
-    status(key: string): Status | null {
-        const breaker = this.breakers.get(key);
-        return breaker ? breaker.status : null;
+    getOpenBreakers(): CircuitBreakerMetrics[] {
+        return this.registry.getOpenBreakers();
     }
 
-    getBreaker(key: string) {
-        return this.breakers.get(key);
+    reset(name: string): void {
+        this.registry.reset(name);
     }
 
-    getAllBreakers(): Map<string, CircuitBreaker<any, any>> {
-        return this.breakers;
+    resetAll(): void {
+        this.registry.resetAll();
     }
+
+    private logStateChange(name: string, from: string, to: string): void {
+        if (to === 'open')      this.logger.warn(`Circuit breaker [${name}] OPEN (from: ${from})`);
+        else if (to === 'half_open') this.logger.log(`Circuit breaker [${name}] HALF-OPEN`);
+        else if (to === 'closed')    this.logger.log(`Circuit breaker [${name}] CLOSED`);
+    }
+
+    onModuleDestroy(): void {}
 }

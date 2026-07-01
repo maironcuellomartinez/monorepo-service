@@ -1,4 +1,5 @@
 import { Injectable, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import { CircuitBreakerOpenError } from '@backendkit-labs/circuit-breaker';
 import PQueue from 'p-queue';
 import { SnowRequestEntity } from '../entities/snow-request.entity';
 import { SnowRequestService } from './snow-request.service';
@@ -94,7 +95,7 @@ export class SnowRequestQueueService implements OnModuleInit {
                 snowNumber: result.result.number,
             };
         } catch (error) {
-            if (error?.name === 'OpenCircuitError') {
+            if (error instanceof CircuitBreakerOpenError) {
                 throw new ServiceUnavailableException('ServiceNow no disponible temporalmente — intente de nuevo en unos momentos');
             }
             throw error;
@@ -140,9 +141,9 @@ export class SnowRequestQueueService implements OnModuleInit {
         } catch (error) {
             const message = error?.message ?? String(error);
 
-            if (error?.name === 'OpenCircuitError') {
-                // Circuit breaker abierto: ServiceNow no disponible — el resetTimeout del CB es 30s,
-                // que coincide con el base delay de getRetryDelay para no desperdiciar reintentos.
+            if (error instanceof CircuitBreakerOpenError) {
+                // Circuit breaker abierto: SN no disponible — openTimeoutMs=30s coincide con
+                // el base delay de getRetryDelay para no desperdiciar reintentos.
                 await this.snowRequestService.markAsRetry(entity.correlationId, message);
                 this.logger.warn(
                     `Circuit breaker ABIERTO para ${entity.internalNumber} [tipo=${entity.type}] — ServiceNow no disponible, reintentando con backoff`,

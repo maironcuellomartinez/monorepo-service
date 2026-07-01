@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { HttpModule } from '@nestjs/axios';
+import { ScheduleModule } from '@nestjs/schedule';
 import { SnowRequestsModule } from './snow-requests/snow-requests.module';
 import { BulkheadModule } from './resilience/bulkhead/bulkhead.module';
 import { CircuitBreakerModule } from './resilience/circuit-breaker/circuit-breaker.module';
@@ -14,6 +15,7 @@ import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 @Module({
     imports: [
         CommonModule,
+        ScheduleModule.forRoot(),
         CircuitBreakerModule,   // global — CircuitBreakerService injectable en todos los módulos
         HttpModule.register({ global: true }),
         BulkheadModule,
@@ -27,10 +29,11 @@ import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 })
 export class AppModule implements NestModule {
     configure(consumer: MiddlewareConsumer) {
-        // CorrelationMiddleware primero: extrae x-correlation-id y establece contexto ALS
         consumer.apply(CorrelationMiddleware).forRoutes('*');
-        // El bulkhead de /snow-requests protege el flujo estándar (monolito, otras apps)
-        // /monitoring tiene su propia ruta — sin bulkhead aquí, Thruk siempre llega
-        consumer.apply(BulkheadMiddleware).forRoutes('snow-requests');
+
+        // BulkheadMiddleware cubre ambos flujos — cada uno con su propio pool:
+        //   /monitoring/*    → monitoring:alerts   (30c / 200q)  — aislado de snow-requests
+        //   /snow-requests/* → snow-requests:async  o :immediate  (según path)
+        consumer.apply(BulkheadMiddleware).forRoutes('snow-requests', 'monitoring');
     }
 }

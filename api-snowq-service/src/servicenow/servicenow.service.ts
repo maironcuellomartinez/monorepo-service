@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { HttpService } from "@nestjs/axios";
+import { CircuitBreakerOpenError } from '@backendkit-labs/circuit-breaker';
 import { ResponseServiceNowSuccess } from 'src/common';
-import { ServiceNowBreakerFactory } from "./client/servicenow-breaker.factory";
-import { ServiceNowClientService } from "./client/servicenow-client.service";
-import { SnowRequestEntity } from "src/snow-requests/entities/snow-request.entity";
+import { ServiceNowBreakerFactory } from './client/servicenow-breaker.factory';
+import { ServiceNowClientService } from './client/servicenow-client.service';
+import { SnowRequestEntity } from 'src/snow-requests/entities/snow-request.entity';
 
 @Injectable()
 export class ServiceNowService {
@@ -12,34 +12,23 @@ export class ServiceNowService {
     constructor(
         private readonly breakerFactory: ServiceNowBreakerFactory,
         private readonly serviceNowClient: ServiceNowClientService,
+    ) {}
 
-    ) { }
-
-    /**
-     * Envía una incidencia a ServiceNow
-     * @example
-     * const response = await serviceNowService.sendRequest(incidence, payload);
-     * @param incidence Incidencia a enviar
-     * @param payload Payload de la incidencia
-     * @returns ResponseServiceNowSuccess
-     */
-    async sendRequest(incidence: SnowRequestEntity, payload: Record<string, any>): Promise<ResponseServiceNowSuccess> {
-        const breaker = this.breakerFactory.createBreakerForRequestType(
-            incidence.type,
-            () => this.serviceNowClient.postToServiceNow(incidence.type, payload),
-            {
-                timeout: 10000,
-                errorThresholdPercentage: 50,
-                resetTimeout: 30000
-            }
-        );
+    async sendRequest(entity: SnowRequestEntity, payload: Record<string, any>): Promise<ResponseServiceNowSuccess> {
+        const breaker = this.breakerFactory.getBreakerForEntity(entity);
 
         try {
-            const result = await breaker.fire();
-            this.logger.log(`✔️ ${incidence.internalNumber} enviado a ServiceNow → sys_id: ${result.result.sys_id} | number: ${result.result.number}`);
+            const result = await breaker.execute(
+                () => this.serviceNowClient.postToServiceNow(entity.type, payload),
+            );
+            this.logger.log(`✔️ ${entity.internalNumber} → sys_id=${result.result.sys_id} number=${result.result.number} [cb=${breaker.getMetrics().name}]`);
             return result;
         } catch (error) {
-            this.logger.error(`❌ Error enviando ${incidence.internalNumber} → ${error.message}`);
+            if (error instanceof CircuitBreakerOpenError) {
+                this.logger.warn(`🔴 Circuit abierto [${breaker.getMetrics().name}] — ${entity.internalNumber} rechazado`);
+            } else {
+                this.logger.error(`❌ ${entity.internalNumber} → ${error?.message}`);
+            }
             throw error;
         }
     }

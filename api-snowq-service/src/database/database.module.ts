@@ -5,6 +5,7 @@ import * as Joi from 'joi';
 import { databaseConnection } from 'src/common';
 import { SnowRequestEntity } from 'src/snow-requests/entities/snow-request.entity';
 import { SnowRequestLog } from 'src/snow-requests/entities/snow-request-log.entity';
+import { SnowRequestArchive } from 'src/snow-requests/entities/snow-request-archive.entity';
 
 @Module({
     imports: [
@@ -26,6 +27,7 @@ import { SnowRequestLog } from 'src/snow-requests/entities/snow-request-log.enti
                 RECONCILER_ENABLED: Joi.boolean().default(false),
                 RECONCILER_INTERVAL_SECONDS: Joi.number().min(30).default(300),
                 RECONCILER_BATCH_SIZE: Joi.number().min(1).default(20),
+                ARCHIVE_RETENTION_DAYS: Joi.number().min(1).default(30),
             }),
             load: [databaseConnection],
         }),
@@ -39,7 +41,7 @@ import { SnowRequestLog } from 'src/snow-requests/entities/snow-request-log.enti
                 username: configService.get<string>('username_database'),
                 password: configService.get<string>('password_database'),
                 database: configService.get<string>('database_database'),
-                entities: [SnowRequestEntity, SnowRequestLog],
+                entities: [SnowRequestEntity, SnowRequestLog, SnowRequestArchive],
                 synchronize: configService.get<boolean>('synchronize_database'),
                 logging: configService.get<boolean>('logging_database'),
                 extra: {

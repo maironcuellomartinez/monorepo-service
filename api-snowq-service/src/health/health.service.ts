@@ -21,14 +21,13 @@ export class HealthService {
     }
 
     getCircuitBreakerSummary(): { status: 'up' | 'down'; state: string; breakers: Record<string, string> } {
-        const allBreakers = this.circuitBreakerService.getAllBreakers();
+        const all = this.circuitBreakerService.getAllMetrics();
         const breakers: Record<string, string> = {};
         let anyOpen = false;
 
-        for (const [key, breaker] of allBreakers) {
-            const state = breaker.opened ? 'open' : breaker.halfOpen ? 'half-open' : 'closed';
-            breakers[key] = state;
-            if (state === 'open') anyOpen = true;
+        for (const [name, metrics] of Object.entries(all)) {
+            breakers[name] = metrics.state;
+            if (metrics.state === 'open') anyOpen = true;
         }
 
         return {

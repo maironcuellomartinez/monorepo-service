@@ -22,6 +22,10 @@
     "test:integration": "jest --config ./test/jest-integration.json"
   },
   "dependencies": {
+    "@backendkit-labs/bulkhead": "^0.2.1",
+    "@backendkit-labs/circuit-breaker": "^0.3.1",
+    "@backendkit-labs/result": "^0.2.1",
+    "@backendkit-labs/retry": "^0.1.2",
     "@nestjs/axios": "^4.0.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",

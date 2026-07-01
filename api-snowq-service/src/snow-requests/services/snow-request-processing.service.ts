@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { randomUUID } from 'crypto';
+import { retry, FixedBackoff, type RetryErrorPayload } from '@backendkit-labs/retry';
 import { BaseSnowRequestDto, RequestType, ServiceNowTemporalError, STATUS } from 'src/common';
 import { SnowRequestService } from './snow-request.service';
 import { SnowRequestQueueService } from './snow-request-queue.service';
@@ -89,6 +90,10 @@ export class SnowRequestProcessingService {
     /**
      * Procesa la solicitud de forma sincrónica — no pasa por la cola.
      * No aplica deduplicación: el modo inmediato es intencional y fire-once.
+     *
+     * Usa @backendkit-labs/retry con FixedBackoff(500ms) para hasta 2 intentos.
+     * Solo reintenta en ServiceNowTemporalError (5xx, 408, 429).
+     * Errores fatales (4xx) y de auth abortan de inmediato.
      */
     async processImmediate(type: RequestType, dto: BaseSnowRequestDto): Promise<{ sys_id: string; snowNumber: string }> {
         return TracingClient.getInstance().run(
@@ -115,26 +120,23 @@ export class SnowRequestProcessingService {
             expiresAt: null,
         });
 
-        // Un único reintento rápido ante errores transitorios (blips de red, SN sobrecargado).
-        // Los errores fatales (4xx) y de auth se propagan directamente sin reintentar.
-        let lastError: any;
-        for (let attempt = 0; attempt < 2; attempt++) {
-            if (attempt > 0) await new Promise(r => setTimeout(r, 500));
-            try {
-                const result = await this.queueService.sendToServiceNow(entity);
-                await this.snowRequestService.markAsDelivered(correlationId, result.sys_id, result.snowNumber);
-                return { sys_id: result.sys_id, snowNumber: result.snowNumber };
-            } catch (error) {
-                if (error instanceof ServiceNowTemporalError) {
-                    lastError = error;
-                    continue;
-                }
-                await this.snowRequestService.markAsFailed(correlationId, error?.message);
-                throw error;
-            }
+        const result = await retry(
+            () => this.queueService.sendToServiceNow(entity),
+            {
+                maxAttempts: 2,
+                backoff: new FixedBackoff({ baseDelay: 500 }),
+                abortIf: (payload: RetryErrorPayload) => !(payload.cause instanceof ServiceNowTemporalError),
+            },
+        );
+
+        if (result.ok) {
+            await this.snowRequestService.markAsDelivered(correlationId, result.value.sys_id, result.value.snowNumber);
+            return result.value;
         }
-        await this.snowRequestService.markAsFailed(correlationId, lastError?.message);
-        throw lastError;
+
+        const cause = result.error.cause instanceof Error ? result.error.cause : undefined;
+        await this.snowRequestService.markAsFailed(correlationId, cause?.message ?? result.error.message);
+        throw cause ?? new Error(result.error.message);
     }
 
     // =====================

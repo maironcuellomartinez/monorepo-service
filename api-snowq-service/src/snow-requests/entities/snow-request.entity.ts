@@ -1,6 +1,10 @@
 import { RequestType, STATUS } from 'src/common';
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
+@Index(['status', 'nextRetryAt'])   // worker poll: WHERE status=QUEUED AND nextRetryAt <= now
+@Index(['fingerprint', 'status'])   // monitoring dedup: findActiveByFingerprint
+@Index(['status', 'updatedAt'])     // DLQ queries, bulk filter ops
+@Index(['status', 'expiresAt'])     // TTL expiry check cada 30s
 @Entity('snow_requests')
 export class SnowRequestEntity {
     @PrimaryGeneratedColumn()

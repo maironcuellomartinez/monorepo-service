@@ -1,59 +1,51 @@
 import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { M2mJwtGuard } from 'src/common/guards/m2m-jwt.guard';
 import { CircuitBreakerService } from './circuit-breaker/circuit-breaker.service';
+import { BulkheadRegistry } from './bulkhead/bulkhead.registry';
 import { TracingClient } from '../common/tracing.client';
 
 @UseGuards(M2mJwtGuard)
 @Controller('resilience')
 export class ResilienceController {
-    constructor(private readonly circuitBreakerService: CircuitBreakerService) {}
+    constructor(
+        private readonly circuitBreakerService: CircuitBreakerService,
+        private readonly bulkheadRegistry: BulkheadRegistry,
+    ) {}
 
     @Get('circuit-breaker/status')
-    getStatus() {
-        const allBreakers = this.circuitBreakerService.getAllBreakers();
-        const breakerDetails: Record<string, any> = {};
-
-        let totalRequests = 0;
-        let totalFailures = 0;
-        let totalSuccesses = 0;
-        let anyOpen = false;
-
-        for (const [key, breaker] of allBreakers) {
-            const stats = breaker.status.stats;
-            const state = breaker.opened ? 'open' : breaker.halfOpen ? 'half-open' : 'closed';
-            if (state === 'open') anyOpen = true;
-
-            breakerDetails[key] = {
-                state,
-                failures: stats.failures,
-                successes: stats.successes,
-                requests: stats.fires,
-                timeouts: stats.timeouts,
-                rejects: stats.rejects,
-            };
-
-            totalRequests += stats.fires ?? 0;
-            totalFailures += stats.failures ?? 0;
-            totalSuccesses += stats.successes ?? 0;
-        }
-
-        const overallState = anyOpen ? 'open' : allBreakers.size === 0 ? 'closed' : 'closed';
-        const failureRate = totalRequests > 0 ? Math.round((totalFailures / totalRequests) * 100) : 0;
+    getCircuitBreakerStatus() {
+        const all = this.circuitBreakerService.getAllMetrics();
+        const open = this.circuitBreakerService.getOpenBreakers();
 
         return {
-            state: overallState,
-            failureRate,
-            failureCount: totalFailures,
-            successCount: totalSuccesses,
-            totalRequests,
-            totalFailures,
-            totalSuccesses,
-            breakers: breakerDetails,
+            state: open.length > 0 ? 'open' : 'closed',
+            openCount: open.length,
+            breakers: Object.fromEntries(
+                Object.entries(all).map(([name, m]) => [name, {
+                    state: m.state,
+                    failureRate: `${m.failureRate.toFixed(1)}%`,
+                    totalCalls: m.totalCalls,
+                    failedCalls: m.failedCalls,
+                    notPermittedCalls: m.notPermittedCalls,
+                    bufferedCalls: m.bufferedCalls,
+                }]),
+            ),
+        };
+    }
+
+    @Get('bulkhead/status')
+    getBulkheadStatus() {
+        const all = this.bulkheadRegistry.getAllMetrics();
+        const overloaded = this.bulkheadRegistry.getOverloadedBulkheads();
+
+        return {
+            overloadedCount: overloaded.length,
+            bulkheads: all,
         };
     }
 
     @Post('circuit-breaker/reset')
-    reset() {
+    resetCircuitBreakers() {
         return TracingClient.getInstance().run(
             'snowq.controller.resilience.reset',
             { kind: 'server' },
@@ -61,11 +53,9 @@ export class ResilienceController {
         );
     }
 
-    private _reset() {
-        const allBreakers = this.circuitBreakerService.getAllBreakers();
-        for (const [, breaker] of allBreakers) {
-            breaker.close();
-        }
-        return { reset: true, count: allBreakers.size };
+    private async _reset() {
+        this.circuitBreakerService.resetAll();
+        const all = this.circuitBreakerService.getAllMetrics();
+        return { reset: true, breakers: Object.keys(all) };
     }
 }
