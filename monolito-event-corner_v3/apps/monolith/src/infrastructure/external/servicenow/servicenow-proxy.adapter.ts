@@ -4,7 +4,7 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { Result } from '@app/result';
-import { CorrelationIdService } from '@app/observability';
+import { CorrelationIdService, TracingService } from '@app/observability';
 import {
     IServiceNowClient,
     ServiceNowIncidentPayload,
@@ -32,6 +32,7 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
         private readonly http: HttpService,
         private readonly config: ConfigService,
         private readonly correlation: CorrelationIdService,
+        private readonly tracing: TracingService,
     ) {
         const gatewayUrl = this.config.get<string>('API_GATEWAY_URL', 'http://localhost:3000');
         this.baseUrl = `${gatewayUrl}/outbound/servicenow`;
@@ -47,6 +48,10 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
 
     async createIncident(payload: ServiceNowIncidentPayload): Promise<Result<ServiceNowTicketResult>> {
+        return this.tracing.run('monolith.proxy.sn.createIncident', { kind: 'client' }, () => this._createIncident(payload));
+    }
+
+    private async _createIncident(payload: ServiceNowIncidentPayload): Promise<Result<ServiceNowTicketResult>> {
         try {
             const { data } = await firstValueFrom(
                 this.http.post<ServiceNowTicketResult>(`${this.baseUrl}/incidents`, payload, { headers: this.headers }),
@@ -58,6 +63,10 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
 
     async createRequest(payload: ServiceNowRequestPayload): Promise<Result<ServiceNowTicketResult>> {
+        return this.tracing.run('monolith.proxy.sn.createRequest', { kind: 'client' }, () => this._createRequest(payload));
+    }
+
+    private async _createRequest(payload: ServiceNowRequestPayload): Promise<Result<ServiceNowTicketResult>> {
         try {
             const { data } = await firstValueFrom(
                 this.http.post<ServiceNowTicketResult>(`${this.baseUrl}/requests`, payload, { headers: this.headers }),
@@ -69,6 +78,10 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
 
     async enqueueIncident(payload: ServiceNowIncidentPayload): Promise<Result<SnowqCorrelationResult>> {
+        return this.tracing.run('monolith.proxy.sn.enqueueIncident', { kind: 'client' }, () => this._enqueueIncident(payload));
+    }
+
+    private async _enqueueIncident(payload: ServiceNowIncidentPayload): Promise<Result<SnowqCorrelationResult>> {
         try {
             const { data } = await firstValueFrom(
                 this.http.post<SnowqCorrelationResult>(`${this.baseUrl}/incidents/enqueue`, payload, { headers: this.headers }),
@@ -80,6 +93,10 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
 
     async enqueueRequest(payload: ServiceNowRequestPayload): Promise<Result<SnowqCorrelationResult>> {
+        return this.tracing.run('monolith.proxy.sn.enqueueRequest', { kind: 'client' }, () => this._enqueueRequest(payload));
+    }
+
+    private async _enqueueRequest(payload: ServiceNowRequestPayload): Promise<Result<SnowqCorrelationResult>> {
         try {
             const { data } = await firstValueFrom(
                 this.http.post<SnowqCorrelationResult>(`${this.baseUrl}/requests/enqueue`, payload, { headers: this.headers }),
@@ -91,6 +108,14 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
 
     async getReconcileStatus(correlationId: string): Promise<Result<SnowqStatusResult | null>> {
+        return this.tracing.run(
+            'monolith.proxy.sn.getReconcileStatus',
+            { kind: 'client', attributes: { 'sn.correlationId': correlationId } },
+            () => this._getReconcileStatus(correlationId),
+        );
+    }
+
+    private async _getReconcileStatus(correlationId: string): Promise<Result<SnowqStatusResult | null>> {
         try {
             const { data } = await firstValueFrom(
                 this.http.get<SnowqStatusResult | null>(`${this.baseUrl}/reconcile/${correlationId}`, { headers: this.headers }),
@@ -103,6 +128,14 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
 
     async retrySnowqEntry(correlationId: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.proxy.sn.retrySnowqEntry',
+            { kind: 'client', attributes: { 'sn.correlationId': correlationId } },
+            () => this._retrySnowqEntry(correlationId),
+        );
+    }
+
+    private async _retrySnowqEntry(correlationId: string): Promise<Result<void>> {
         try {
             await firstValueFrom(
                 this.http.post(`${this.baseUrl}/reconcile/${correlationId}/retry`, {}, { headers: this.headers }),
@@ -114,6 +147,14 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
 
     async updateTicket(table: string, sysId: string, fields: Record<string, any>): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.proxy.sn.updateTicket',
+            { kind: 'client', attributes: { 'sn.table': table, 'sn.sysId': sysId } },
+            () => this._updateTicket(table, sysId, fields),
+        );
+    }
+
+    private async _updateTicket(table: string, sysId: string, fields: Record<string, any>): Promise<Result<void>> {
         try {
             await firstValueFrom(
                 this.http.patch(`${this.baseUrl}/${table}/${sysId}`, fields, { headers: this.headers }),
@@ -125,6 +166,14 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
 
     async closeIncident(sysId: string, closeCategory: string, closeNotes = 'Cerrado desde Event Corner'): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.proxy.sn.closeIncident',
+            { kind: 'client', attributes: { 'sn.sysId': sysId, 'sn.closeCategory': closeCategory } },
+            () => this._closeIncident(sysId, closeCategory, closeNotes),
+        );
+    }
+
+    private async _closeIncident(sysId: string, closeCategory: string, closeNotes: string): Promise<Result<void>> {
         try {
             await firstValueFrom(
                 this.http.post(`${this.baseUrl}/incidents/${sysId}/close`, { closeCategory, closeNotes }, { headers: this.headers }),
@@ -136,6 +185,14 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
 
     async queryIncidentState(sysId: string): Promise<Result<string | null>> {
+        return this.tracing.run(
+            'monolith.proxy.sn.queryIncidentState',
+            { kind: 'client', attributes: { 'sn.sysId': sysId } },
+            () => this._queryIncidentState(sysId),
+        );
+    }
+
+    private async _queryIncidentState(sysId: string): Promise<Result<string | null>> {
         try {
             const { data } = await firstValueFrom(
                 this.http.get<{ state: string }>(`${this.baseUrl}/incidents/${sysId}/state`, { headers: this.headers }),
