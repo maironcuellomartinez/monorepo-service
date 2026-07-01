@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsArray } from 'class-validator';
+import { TracingService } from '@app/observability';
 import { COMPANY_SERVICE, ICompanyService } from '../../core/ports';
 import { IIssueTypeTreeRepository, ISSUE_TYPE_TREE_REPOSITORY } from '../../core/ports/outgoing/repositories/issue-type-tree-repository.port';
 import { IServiceNowProfileRepository } from '../../core/ports/outgoing/repositories/servicenow-profile-repository.port';
@@ -23,6 +24,14 @@ class CreateCompanyDto {
 
     @IsOptional() @IsString()
     profileId?: string | null;
+
+    /** sys_id de la empresa en ServiceNow — crea el perfil SN automáticamente */
+    @IsOptional() @IsString()
+    snowCompanySysId?: string;
+
+    /** Nombre de la empresa en ServiceNow */
+    @IsOptional() @IsString()
+    snowCompanyName?: string;
 }
 
 class UpdateCompanyDto {
@@ -78,6 +87,7 @@ export class InternalCompaniesController {
         @Inject(ISSUE_TYPE_TREE_REPOSITORY) private readonly treeRepo: IIssueTypeTreeRepository,
         @Inject(SERVICE_NOW_PROFILE_REPOSITORY) private readonly snProfileRepo: IServiceNowProfileRepository,
         @Inject(SERVICENOW_PROFILE_SERVICE) private readonly snProfileService: IServiceNowProfileService,
+        private readonly tracing: TracingService,
     ) {}
 
     @Get()
@@ -113,6 +123,10 @@ export class InternalCompaniesController {
     @HttpCode(HttpStatus.CREATED)
     @ApiOperation({ summary: 'Crear perfil de ServiceNow' })
     async createSnProfile(@Body() dto: CreateSnProfileDto) {
+        return this.tracing.run('monolith.controller.companies.createSnProfile', { kind: 'server' }, () => this._createSnProfile(dto));
+    }
+
+    private async _createSnProfile(dto: CreateSnProfileDto) {
         const result = await this.snProfileService.createProfile({
             name: dto.name,
             snowCompanySysId: dto.snowCompanySysId as any,
@@ -124,6 +138,14 @@ export class InternalCompaniesController {
     @Post('sn-profiles/bulk')
     @ApiOperation({ summary: 'Importar perfiles de ServiceNow en masa' })
     async bulkImportSnProfiles(@Body() dto: BulkSnProfileDto) {
+        return this.tracing.run(
+            'monolith.controller.companies.bulkImportSnProfiles',
+            { kind: 'server', attributes: { 'bulk.count': dto.profiles.length } },
+            () => this._bulkImportSnProfiles(dto),
+        );
+    }
+
+    private async _bulkImportSnProfiles(dto: BulkSnProfileDto) {
         const created: ReturnType<typeof this.toSnProfileDto>[] = [];
         const errors: Array<{ row: number; message: string }> = [];
         for (let i = 0; i < dto.profiles.length; i++) {
@@ -146,6 +168,14 @@ export class InternalCompaniesController {
     @ApiOperation({ summary: 'Actualizar perfil de ServiceNow' })
     @ApiParam({ name: 'id' })
     async updateSnProfile(@Param('id') id: string, @Body() dto: UpdateSnProfileDto) {
+        return this.tracing.run(
+            'monolith.controller.companies.updateSnProfile',
+            { kind: 'server', attributes: { 'snProfile.id': id } },
+            () => this._updateSnProfile(id, dto),
+        );
+    }
+
+    private async _updateSnProfile(id: string, dto: UpdateSnProfileDto) {
         const result = await this.snProfileService.updateProfile(id as any, {
             name: dto.name,
             snowCompanySysId: dto.snowCompanySysId,
@@ -160,6 +190,14 @@ export class InternalCompaniesController {
     @ApiOperation({ summary: 'Desactivar perfil de ServiceNow' })
     @ApiParam({ name: 'id' })
     async deleteSnProfile(@Param('id') id: string) {
+        return this.tracing.run(
+            'monolith.controller.companies.deleteSnProfile',
+            { kind: 'server', attributes: { 'snProfile.id': id } },
+            () => this._deleteSnProfile(id),
+        );
+    }
+
+    private async _deleteSnProfile(id: string) {
         const result = await this.snProfileService.updateProfile(id as any, { isActive: false });
         unwrapOrThrow(result);
     }
@@ -177,6 +215,14 @@ export class InternalCompaniesController {
     @Post('bulk')
     @ApiOperation({ summary: 'Crear empresas en masa' })
     async bulkCreate(@Body() dto: { companies: CreateCompanyDto[] }) {
+        return this.tracing.run(
+            'monolith.controller.companies.bulkCreate',
+            { kind: 'server', attributes: { 'bulk.count': dto.companies.length } },
+            () => this._bulkCreate(dto),
+        );
+    }
+
+    private async _bulkCreate(dto: { companies: CreateCompanyDto[] }) {
         const created: ReturnType<typeof this.toDto>[] = [];
         const errors: Array<{ row: number; message: string }> = [];
         for (let i = 0; i < dto.companies.length; i++) {
@@ -197,12 +243,32 @@ export class InternalCompaniesController {
 
     @Post()
     @HttpCode(HttpStatus.CREATED)
-    @ApiOperation({ summary: 'Crear empresa' })
+    @ApiOperation({
+        summary: 'Crear empresa',
+        description: 'Si se provee snowCompanySysId + snowCompanyName, crea el perfil SN automáticamente y lo vincula.',
+    })
     async create(@Body() dto: CreateCompanyDto) {
+        return this.tracing.run('monolith.controller.companies.create', { kind: 'server' }, () => this._create(dto));
+    }
+
+    private async _create(dto: CreateCompanyDto) {
+        let resolvedProfileId = dto.profileId ?? null;
+
+        // Creación atómica de perfil SN si se proveen los datos de ServiceNow
+        if (dto.snowCompanySysId && dto.snowCompanyName && !resolvedProfileId) {
+            const profileResult = await this.snProfileService.createProfile({
+                name: dto.snowCompanyName,
+                snowCompanySysId: dto.snowCompanySysId as any,
+                snowCompanyName: dto.snowCompanyName,
+            });
+            const profile = unwrapOrThrow(profileResult);
+            resolvedProfileId = profile.id.toString();
+        }
+
         const result = await this.companyService.createCompany({
             name: dto.name,
             treeId: dto.treeId,
-            profileId: dto.profileId ?? null,
+            profileId: resolvedProfileId,
         });
         return this.toDto(unwrapOrThrow(result));
     }
@@ -211,6 +277,14 @@ export class InternalCompaniesController {
     @ApiOperation({ summary: 'Actualizar empresa' })
     @ApiParam({ name: 'id' })
     async update(@Param('id') id: string, @Body() dto: UpdateCompanyDto) {
+        return this.tracing.run(
+            'monolith.controller.companies.update',
+            { kind: 'server', attributes: { 'company.id': id } },
+            () => this._update(id, dto),
+        );
+    }
+
+    private async _update(id: string, dto: UpdateCompanyDto) {
         const result = await this.companyService.updateCompany(id, {
             name: dto.name,
             treeId: dto.treeId,
@@ -225,6 +299,14 @@ export class InternalCompaniesController {
     @ApiOperation({ summary: 'Desactivar empresa (soft delete)' })
     @ApiParam({ name: 'id' })
     async delete(@Param('id') id: string) {
+        return this.tracing.run(
+            'monolith.controller.companies.delete',
+            { kind: 'server', attributes: { 'company.id': id } },
+            () => this._delete(id),
+        );
+    }
+
+    private async _delete(id: string) {
         const result = await this.companyService.updateCompany(id, { isActive: false });
         unwrapOrThrow(result);
     }
