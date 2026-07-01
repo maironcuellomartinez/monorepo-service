@@ -9,6 +9,7 @@ import { Locker } from '../../domain/entities/locker.entity';
 import { LockerId, CornerId, IncidentId } from '../../domain/value-objects/ids';
 import { DomainError } from '../../domain/errors/domain-error';
 import { LockerStatus } from '../../domain/enums/locker-status.enum';
+import { TracingService } from '@app/observability';
 
 @Injectable()
 export class LockerService implements ILockerService {
@@ -16,9 +17,18 @@ export class LockerService implements ILockerService {
         private readonly lockerRepo: ILockerRepository,
         private readonly cornerRepo: ICornerRepository,
         private readonly incidentRepo: IIncidentRepository,
+        private readonly tracing: TracingService,
     ) { }
 
     async createLocker(command: CreateLockerCommand): Promise<Result<Locker>> {
+        return this.tracing.run(
+            'monolith.createLocker',
+            { kind: 'server', attributes: { 'locker.cornerId': `${command.cornerId}` } },
+            () => this._createLocker(command),
+        );
+    }
+
+    private async _createLocker(command: CreateLockerCommand): Promise<Result<Locker>> {
         const cornerResult = await this.cornerRepo.findById(command.cornerId);
         if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
 
@@ -44,6 +54,14 @@ export class LockerService implements ILockerService {
     }
 
     async updateLockerStatus(id: LockerId, status: LockerStatus): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.updateLockerStatus',
+            { kind: 'server', attributes: { 'locker.id': `${id}` } },
+            () => this._updateLockerStatus(id, status),
+        );
+    }
+
+    private async _updateLockerStatus(id: LockerId, status: LockerStatus): Promise<Result<void>> {
         const lockerResult = await this.lockerRepo.findById(id);
         if (lockerResult.isFailure) return Result.err(lockerResult.unwrapError());
         const locker = lockerResult.unwrap();
@@ -59,6 +77,14 @@ export class LockerService implements ILockerService {
     }
 
     async assignLockerToIncident(lockerId: LockerId, incidentId: IncidentId): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.assignLockerToIncident',
+            { kind: 'server', attributes: { 'locker.lockerId': `${lockerId}`, 'locker.incidentId': `${incidentId}` } },
+            () => this._assignLockerToIncident(lockerId, incidentId),
+        );
+    }
+
+    private async _assignLockerToIncident(lockerId: LockerId, incidentId: IncidentId): Promise<Result<void>> {
         const lockerResult = await this.lockerRepo.findById(lockerId);
         if (lockerResult.isFailure) return Result.err(lockerResult.unwrapError());
         const locker = lockerResult.unwrap();
@@ -92,6 +118,14 @@ export class LockerService implements ILockerService {
     }
 
     async releaseLocker(lockerId: LockerId, incidentId: IncidentId): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.releaseLocker',
+            { kind: 'server', attributes: { 'locker.lockerId': `${lockerId}`, 'locker.incidentId': `${incidentId}` } },
+            () => this._releaseLocker(lockerId, incidentId),
+        );
+    }
+
+    private async _releaseLocker(lockerId: LockerId, incidentId: IncidentId): Promise<Result<void>> {
         const lockerResult = await this.lockerRepo.findById(lockerId);
         if (lockerResult.isFailure) return Result.err(lockerResult.unwrapError());
         const locker = lockerResult.unwrap();

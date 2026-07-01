@@ -10,6 +10,7 @@ import { Result } from '@app/result';
 import { Device } from '../../domain/entities/device.entity';
 import { DeviceId } from '@app/shared/types/branded-ids';
 import { SerialNumber } from '../../domain/value-objects/serial-number.value';
+import { TracingService } from '@app/observability';
 
 @Injectable()
 export class DeviceService implements IDeviceService {
@@ -19,6 +20,7 @@ export class DeviceService implements IDeviceService {
         private readonly deviceRepo: IDeviceRepository,
         private readonly inventoryService: IExternalInventoryService,
         private readonly incidentRepo: IIncidentRepository,
+        private readonly tracing: TracingService,
     ) { }
 
     /**
@@ -107,6 +109,14 @@ export class DeviceService implements IDeviceService {
     }
 
     async createVirtualDevice(customerId: string, deviceType: string, model?: string, serialNumber?: string): Promise<Result<Device>> {
+        return this.tracing.run(
+            'monolith.createVirtualDevice',
+            { kind: 'server', attributes: { 'device.customerId': customerId, 'device.deviceType': deviceType } },
+            () => this._createVirtualDevice(customerId, deviceType, model, serialNumber),
+        );
+    }
+
+    private async _createVirtualDevice(customerId: string, deviceType: string, model?: string, serialNumber?: string): Promise<Result<Device>> {
         const id = crypto.randomUUID() as unknown as DeviceId;
         const serial = serialNumber
             ? SerialNumber.reconstitute(serialNumber.trim().toUpperCase())
@@ -118,6 +128,17 @@ export class DeviceService implements IDeviceService {
     }
 
     async updateVirtualDevice(
+        deviceId: DeviceId,
+        data: { serialNumber?: string; deviceType?: string; model?: string | null; brand?: string | null },
+    ): Promise<Result<Device>> {
+        return this.tracing.run(
+            'monolith.updateVirtualDevice',
+            { kind: 'server', attributes: { 'device.deviceId': `${deviceId}` } },
+            () => this._updateVirtualDevice(deviceId, data),
+        );
+    }
+
+    private async _updateVirtualDevice(
         deviceId: DeviceId,
         data: { serialNumber?: string; deviceType?: string; model?: string | null; brand?: string | null },
     ): Promise<Result<Device>> {
@@ -145,6 +166,14 @@ export class DeviceService implements IDeviceService {
     }
 
     async disableDevice(deviceId: DeviceId): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.disableDevice',
+            { kind: 'server', attributes: { 'device.deviceId': `${deviceId}` } },
+            () => this._disableDevice(deviceId),
+        );
+    }
+
+    private async _disableDevice(deviceId: DeviceId): Promise<Result<void>> {
         const found = await this.deviceRepo.findById(deviceId);
         if (found.isFailure) return Result.err(found.unwrapError());
         const device = found.unwrap();
@@ -154,6 +183,14 @@ export class DeviceService implements IDeviceService {
     }
 
     async enableDevice(deviceId: DeviceId): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.enableDevice',
+            { kind: 'server', attributes: { 'device.deviceId': `${deviceId}` } },
+            () => this._enableDevice(deviceId),
+        );
+    }
+
+    private async _enableDevice(deviceId: DeviceId): Promise<Result<void>> {
         const found = await this.deviceRepo.findById(deviceId);
         if (found.isFailure) return Result.err(found.unwrapError());
         const device = found.unwrap();
@@ -164,6 +201,14 @@ export class DeviceService implements IDeviceService {
     }
 
     async completeVirtualDevice(deviceId: DeviceId): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.completeVirtualDevice',
+            { kind: 'server', attributes: { 'device.deviceId': `${deviceId}` } },
+            () => this._completeVirtualDevice(deviceId),
+        );
+    }
+
+    private async _completeVirtualDevice(deviceId: DeviceId): Promise<Result<void>> {
         const found = await this.deviceRepo.findById(deviceId);
         if (found.isFailure) return Result.err(found.unwrapError());
 
@@ -203,6 +248,14 @@ export class DeviceService implements IDeviceService {
      * con el serial provisto para que aparezca en futuros listados.
      */
     async resolveAndLinkDevice(serialNumber: string, customerId: string): Promise<Result<Device>> {
+        return this.tracing.run(
+            'monolith.resolveAndLinkDevice',
+            { kind: 'server', attributes: { 'device.serialNumber': serialNumber, 'device.customerId': customerId } },
+            () => this._resolveAndLinkDevice(serialNumber, customerId),
+        );
+    }
+
+    private async _resolveAndLinkDevice(serialNumber: string, customerId: string): Promise<Result<Device>> {
         // 1. Intentar resolver desde DB / Minerva
         const resolved = await this.resolveDevice(serialNumber);
 

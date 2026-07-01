@@ -16,6 +16,7 @@ import { SpareMinutes } from '@app/core/domain/value-objects/spare-minutes.value
 import { CloseMinutes } from '@app/core/domain/value-objects/close-minutes.value';
 import { ServiceNowCategory } from '@app/core/domain/value-objects/servicenow-category.value';
 import { IssueTypeNotFoundError, IssueTypeTreeNotFoundError } from '@app/shared/errors/domain-error';
+import { TracingService } from '@app/observability';
 
 @Injectable()
 export class IssueTypeService implements IIssueTypeService {
@@ -23,9 +24,18 @@ export class IssueTypeService implements IIssueTypeService {
         @Inject(ISSUE_TYPE_REPOSITORY) private readonly issueTypeRepo: IIssueTypeRepository,
         @Inject(ISSUE_TYPE_TREE_REPOSITORY) private readonly treeRepo: IIssueTypeTreeRepository,
         private readonly eventBus: IEventBus,
+        private readonly tracing: TracingService,
     ) { }
 
     async createIssueType(command: CreateIssueTypeCommand): Promise<Result<IssueType>> {
+        return this.tracing.run(
+            'monolith.createIssueType',
+            { kind: 'server', attributes: { 'issueType.name': command.name } },
+            () => this._createIssueType(command),
+        );
+    }
+
+    private async _createIssueType(command: CreateIssueTypeCommand): Promise<Result<IssueType>> {
         // 1. Resolver árbol — usa el provisto o el primero disponible
         let resolvedTreeId = command.treeId;
         if (!resolvedTreeId) {
@@ -102,6 +112,14 @@ export class IssueTypeService implements IIssueTypeService {
     }
 
     async updateIssueType(command: UpdateIssueTypeCommand): Promise<Result<IssueType>> {
+        return this.tracing.run(
+            'monolith.updateIssueType',
+            { kind: 'server', attributes: { 'issueType.id': command.id } },
+            () => this._updateIssueType(command),
+        );
+    }
+
+    private async _updateIssueType(command: UpdateIssueTypeCommand): Promise<Result<IssueType>> {
         // 1. Obtener el tipo existente
         const existingResult = await this.issueTypeRepo.findById(command.id);
         if (existingResult.isFailure) return Result.err(existingResult.unwrapError());
@@ -178,6 +196,14 @@ export class IssueTypeService implements IIssueTypeService {
     }
 
     async deleteIssueType(id: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.deleteIssueType',
+            { kind: 'server', attributes: { 'issueType.id': id } },
+            () => this._deleteIssueType(id),
+        );
+    }
+
+    private async _deleteIssueType(id: string): Promise<Result<void>> {
         // 1. Verificar que existe
         const existingResult = await this.issueTypeRepo.findById(id);
         if (existingResult.isFailure) return Result.err(existingResult.unwrapError());

@@ -8,6 +8,7 @@ import { DomainEvent } from '@app/shared/domain-event';
 import { Result } from '@app/result';
 import { Corner } from '../../domain/entities/corner.entity';
 import { CornerId, ScheduleId } from '../../domain/value-objects/ids';
+import { TracingService } from '@app/observability';
 
 @Injectable()
 export class CornerService implements ICornerService {
@@ -15,9 +16,18 @@ export class CornerService implements ICornerService {
         private readonly cornerRepo: ICornerRepository,
         private readonly scheduleRepo: IScheduleRepository,
         private readonly eventBus: IEventBus,
+        private readonly tracing: TracingService,
     ) { }
 
     async createCorner(command: CreateCornerCommand): Promise<Result<Corner>> {
+        return this.tracing.run(
+            'monolith.createCorner',
+            { kind: 'server', attributes: { 'corner.name': command.name } },
+            () => this._createCorner(command),
+        );
+    }
+
+    private async _createCorner(command: CreateCornerCommand): Promise<Result<Corner>> {
         const cornerId = crypto.randomUUID() as unknown as CornerId;
         const cornerResult = Corner.create(
             cornerId,
@@ -38,6 +48,14 @@ export class CornerService implements ICornerService {
     }
 
     async updateCorner(id: string, command: UpdateCornerCommand): Promise<Result<Corner>> {
+        return this.tracing.run(
+            'monolith.updateCorner',
+            { kind: 'server', attributes: { 'corner.id': id } },
+            () => this._updateCorner(id, command),
+        );
+    }
+
+    private async _updateCorner(id: string, command: UpdateCornerCommand): Promise<Result<Corner>> {
         const cornerResult = await this.cornerRepo.findById(CornerId(id));
         if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
         const corner = cornerResult.unwrap();
@@ -78,6 +96,14 @@ export class CornerService implements ICornerService {
     }
 
     async addSchedule(command: AddScheduleCommand): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.addSchedule',
+            { kind: 'server', attributes: { 'corner.cornerId': command.cornerId } },
+            () => this._addSchedule(command),
+        );
+    }
+
+    private async _addSchedule(command: AddScheduleCommand): Promise<Result<void>> {
         const cornerResult = await this.cornerRepo.findById(CornerId(command.cornerId));
         if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
         const corner = cornerResult.unwrap();
@@ -98,6 +124,14 @@ export class CornerService implements ICornerService {
     }
 
     async removeSchedule(scheduleId: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.removeSchedule',
+            { kind: 'server', attributes: { 'corner.scheduleId': scheduleId } },
+            () => this._removeSchedule(scheduleId),
+        );
+    }
+
+    private async _removeSchedule(scheduleId: string): Promise<Result<void>> {
         // Necesitamos buscar el corner que contiene este schedule
         // Podríamos tener un repositorio de schedules directamente
         const scheduleResult = await this.scheduleRepo.findById(ScheduleId(scheduleId));

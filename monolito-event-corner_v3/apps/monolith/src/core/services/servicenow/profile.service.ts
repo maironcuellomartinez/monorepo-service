@@ -7,12 +7,24 @@ import { ServiceNowProfile } from '../../domain/entities/servicenow-profile.enti
 import { ServiceNowProfileId } from '../../domain/value-objects/ids';
 import { ServiceNowId } from '../../domain/value-objects/servicenow-id.value';
 import { DomainError } from '../../domain/errors/domain-error';
+import { TracingService } from '@app/observability';
 
 @Injectable()
 export class ServiceNowProfileService implements IServiceNowProfileService {
-    constructor(private readonly profileRepo: IServiceNowProfileRepository) { }
+    constructor(
+        private readonly profileRepo: IServiceNowProfileRepository,
+        private readonly tracing: TracingService,
+    ) { }
 
     async createProfile(command: CreateProfileCommand): Promise<Result<ServiceNowProfile>> {
+        return this.tracing.run(
+            'monolith.createProfile',
+            { kind: 'server', attributes: { 'profile.name': command.name } },
+            () => this._createProfile(command),
+        );
+    }
+
+    private async _createProfile(command: CreateProfileCommand): Promise<Result<ServiceNowProfile>> {
         const snowCompanySysIdResult = ServiceNowId.create(command.snowCompanySysId);
         if (snowCompanySysIdResult.isFailure) return Result.err(snowCompanySysIdResult.unwrapError());
 
@@ -33,6 +45,14 @@ export class ServiceNowProfileService implements IServiceNowProfileService {
     }
 
     async updateProfile(id: ServiceNowProfileId, command: UpdateProfileCommand): Promise<Result<ServiceNowProfile>> {
+        return this.tracing.run(
+            'monolith.updateProfile',
+            { kind: 'server', attributes: { 'profile.id': `${id}` } },
+            () => this._updateProfile(id, command),
+        );
+    }
+
+    private async _updateProfile(id: ServiceNowProfileId, command: UpdateProfileCommand): Promise<Result<ServiceNowProfile>> {
         const profileResult = await this.profileRepo.findById(id);
         if (profileResult.isFailure) return Result.err(profileResult.unwrapError());
 

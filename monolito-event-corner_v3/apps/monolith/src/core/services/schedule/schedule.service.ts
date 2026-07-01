@@ -14,6 +14,7 @@ import { DayOfWeek } from '../../domain/enums/day-of-week.enum';
 import { HolidayProvider } from '@app/date';
 import { getDay } from 'date-fns';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { TracingService } from '@app/observability';
 
 @Injectable()
 export class ScheduleService implements IScheduleService {
@@ -23,7 +24,8 @@ export class ScheduleService implements IScheduleService {
         private readonly technicianRepo: ITechnicianRepository,
         private readonly slotRepo: ISlotRepository,
         private readonly eventBus: IEventBus,
-        private readonly holidayProvider?: HolidayProvider,
+        private readonly holidayProvider: HolidayProvider | null,
+        private readonly tracing: TracingService,
     ) { }
 
     /**
@@ -35,6 +37,14 @@ export class ScheduleService implements IScheduleService {
         new Date(`${dateStr}T12:00:00Z`);
 
     async createSchedule(command: CreateScheduleCommand): Promise<Result<CornerSchedule>> {
+        return this.tracing.run(
+            'monolith.createSchedule',
+            { kind: 'server', attributes: { 'schedule.cornerId': command.cornerId } },
+            () => this._createSchedule(command),
+        );
+    }
+
+    private async _createSchedule(command: CreateScheduleCommand): Promise<Result<CornerSchedule>> {
         /** Validar corner */
         const cornerResult = await this.cornerRepo.findById(command.cornerId);
         if (isFail(cornerResult)) return Result.err(cornerResult.unwrapError());
@@ -88,6 +98,14 @@ export class ScheduleService implements IScheduleService {
     }
 
     async updateSchedule(id: ScheduleId, command: UpdateScheduleCommand): Promise<Result<CornerSchedule>> {
+        return this.tracing.run(
+            'monolith.updateSchedule',
+            { kind: 'server', attributes: { 'schedule.id': `${id}` } },
+            () => this._updateSchedule(id, command),
+        );
+    }
+
+    private async _updateSchedule(id: ScheduleId, command: UpdateScheduleCommand): Promise<Result<CornerSchedule>> {
         const scheduleResult = await this.scheduleRepo.findById(id);
         if (isFail(scheduleResult)) return Result.err(scheduleResult.unwrapError());
         const schedule = scheduleResult.unwrap();
@@ -146,6 +164,14 @@ export class ScheduleService implements IScheduleService {
     }
 
     async assignTechnicians(scheduleId: ScheduleId, technicianIds: TechnicianId[]): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.assignTechnicians',
+            { kind: 'server', attributes: { 'schedule.scheduleId': `${scheduleId}` } },
+            () => this._assignTechnicians(scheduleId, technicianIds),
+        );
+    }
+
+    private async _assignTechnicians(scheduleId: ScheduleId, technicianIds: TechnicianId[]): Promise<Result<void>> {
         const scheduleResult = await this.scheduleRepo.findById(scheduleId);
         if (isFail(scheduleResult)) return Result.err(scheduleResult.unwrapError());
 
@@ -173,6 +199,14 @@ export class ScheduleService implements IScheduleService {
     }
 
     async deleteSchedule(id: ScheduleId): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.deleteSchedule',
+            { kind: 'server', attributes: { 'schedule.id': `${id}` } },
+            () => this._deleteSchedule(id),
+        );
+    }
+
+    private async _deleteSchedule(id: ScheduleId): Promise<Result<void>> {
         const scheduleResult = await this.scheduleRepo.findById(id);
         if (scheduleResult.isFailure) return Result.err(scheduleResult.unwrapError());
         const schedule = scheduleResult.unwrap();
@@ -193,6 +227,14 @@ export class ScheduleService implements IScheduleService {
     }
 
     async removeTechnician(scheduleId: ScheduleId, technicianId: TechnicianId): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.removeTechnician',
+            { kind: 'server', attributes: { 'schedule.scheduleId': `${scheduleId}`, 'schedule.technicianId': `${technicianId}` } },
+            () => this._removeTechnician(scheduleId, technicianId),
+        );
+    }
+
+    private async _removeTechnician(scheduleId: ScheduleId, technicianId: TechnicianId): Promise<Result<void>> {
         const scheduleResult = await this.scheduleRepo.findById(scheduleId);
         if (scheduleResult.isFailure) return Result.err(scheduleResult.unwrapError());
         const schedule = scheduleResult.unwrap();

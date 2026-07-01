@@ -6,14 +6,24 @@ import { Result } from '@app/result';
 import { User } from '../../domain/entities/user.entity';
 import { UserId, CompanyId } from '../../domain/value-objects/ids';
 import { Email } from '../../domain/value-objects/email.value';
+import { TracingService } from '@app/observability';
 
 @Injectable()
 export class UserService implements IUserService {
     constructor(
         private readonly userRepo: IUserRepository,
+        private readonly tracing: TracingService,
     ) { }
 
     async syncUser(providerData: any): Promise<Result<User>> {
+        return this.tracing.run(
+            'monolith.syncUser',
+            { kind: 'server', attributes: { 'user.externalId': providerData.external_id } },
+            () => this._syncUser(providerData),
+        );
+    }
+
+    private async _syncUser(providerData: any): Promise<Result<User>> {
         const existingResult = await this.userRepo.findByExternalId(providerData.external_id);
         if (existingResult.isFailure) return Result.err(existingResult.unwrapError());
         const existing = existingResult.unwrap();
@@ -70,6 +80,14 @@ export class UserService implements IUserService {
     }
 
     async assignCompany(userId: string, companyId: string | null): Promise<Result<User>> {
+        return this.tracing.run(
+            'monolith.assignCompany',
+            { kind: 'server', attributes: { 'user.userId': userId } },
+            () => this._assignCompany(userId, companyId),
+        );
+    }
+
+    private async _assignCompany(userId: string, companyId: string | null): Promise<Result<User>> {
         const result = await this.userRepo.findById(userId as unknown as UserId);
         if (result.isFailure) return Result.err(result.unwrapError());
         const user = result.unwrap();
@@ -86,6 +104,14 @@ export class UserService implements IUserService {
     }
 
     async updateUserProfile(userId: string, command: UpdateUserProfileCommand): Promise<Result<User>> {
+        return this.tracing.run(
+            'monolith.updateUserProfile',
+            { kind: 'server', attributes: { 'user.userId': userId } },
+            () => this._updateUserProfile(userId, command),
+        );
+    }
+
+    private async _updateUserProfile(userId: string, command: UpdateUserProfileCommand): Promise<Result<User>> {
         const result = await this.userRepo.findById(userId as unknown as UserId);
         if (result.isFailure) return Result.err(result.unwrapError());
         const user = result.unwrap();
@@ -108,6 +134,14 @@ export class UserService implements IUserService {
     }
 
     async deactivateUser(userId: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.deactivateUser',
+            { kind: 'server', attributes: { 'user.userId': userId } },
+            () => this._deactivateUser(userId),
+        );
+    }
+
+    private async _deactivateUser(userId: string): Promise<Result<void>> {
         const result = await this.userRepo.findById(userId as unknown as UserId);
         if (result.isFailure) return Result.err(result.unwrapError());
         const user = result.unwrap();
@@ -119,6 +153,14 @@ export class UserService implements IUserService {
     }
 
     async activateUser(userId: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.activateUser',
+            { kind: 'server', attributes: { 'user.userId': userId } },
+            () => this._activateUser(userId),
+        );
+    }
+
+    private async _activateUser(userId: string): Promise<Result<void>> {
         const result = await this.userRepo.findById(userId as unknown as UserId);
         if (result.isFailure) return Result.err(result.unwrapError());
         const user = result.unwrap();
@@ -130,6 +172,14 @@ export class UserService implements IUserService {
     }
 
     async deleteUser(userId: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.deleteUser',
+            { kind: 'server', attributes: { 'user.userId': userId } },
+            () => this._deleteUser(userId),
+        );
+    }
+
+    private async _deleteUser(userId: string): Promise<Result<void>> {
         return this.userRepo.delete(userId as unknown as UserId);
     }
 }

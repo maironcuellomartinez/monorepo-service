@@ -4,6 +4,7 @@ import { ICompanyIssueConfigRepository } from '../../ports/outgoing/repositories
 import { CompanyIssueConfig } from '../../domain/entities/corner-issue-config.entity';
 import { ServiceNowGroup } from '../../domain/value-objects/servicenow-group.value';
 import { CompanyId, CompanyIssueConfigId, IssueTypeId } from '@app/shared/types/branded-ids';
+import { TracingService } from '@app/observability';
 
 export interface CreateCompanyIssueConfigCommand {
     companyId: string;
@@ -19,9 +20,20 @@ export interface UpdateCompanyIssueConfigCommand {
 
 @Injectable()
 export class CompanyIssueConfigService {
-    constructor(private readonly repo: ICompanyIssueConfigRepository) {}
+    constructor(
+        private readonly repo: ICompanyIssueConfigRepository,
+        private readonly tracing: TracingService,
+    ) {}
 
     async create(command: CreateCompanyIssueConfigCommand): Promise<Result<CompanyIssueConfig>> {
+        return this.tracing.run(
+            'monolith.create',
+            { kind: 'server', attributes: { 'cic.companyId': command.companyId, 'cic.issueTypeId': command.issueTypeId } },
+            () => this._create(command),
+        );
+    }
+
+    private async _create(command: CreateCompanyIssueConfigCommand): Promise<Result<CompanyIssueConfig>> {
         const groupResult = ServiceNowGroup.create(command.servicenowGroup);
         if (groupResult.isFailure) return Result.err(groupResult.unwrapError());
 
@@ -56,6 +68,14 @@ export class CompanyIssueConfigService {
     }
 
     async update(id: string, command: UpdateCompanyIssueConfigCommand): Promise<Result<CompanyIssueConfig>> {
+        return this.tracing.run(
+            'monolith.update',
+            { kind: 'server', attributes: { 'cic.id': id } },
+            () => this._update(id, command),
+        );
+    }
+
+    private async _update(id: string, command: UpdateCompanyIssueConfigCommand): Promise<Result<CompanyIssueConfig>> {
         const configResult = await this.repo.findById(id);
         if (configResult.isFailure) return Result.err(configResult.unwrapError());
         const config = configResult.unwrap();
@@ -78,6 +98,14 @@ export class CompanyIssueConfigService {
     }
 
     async delete(id: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.delete',
+            { kind: 'server', attributes: { 'cic.id': id } },
+            () => this._delete(id),
+        );
+    }
+
+    private async _delete(id: string): Promise<Result<void>> {
         const configResult = await this.repo.findById(id);
         if (configResult.isFailure) return Result.err(configResult.unwrapError());
         if (!configResult.unwrap()) return Result.err(new Error(`CompanyIssueConfig ${id} not found`));

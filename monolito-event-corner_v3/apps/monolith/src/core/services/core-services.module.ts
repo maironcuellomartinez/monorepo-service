@@ -61,8 +61,8 @@ import { EVENT_BUS, CACHE, SERVICENOW_CLIENT, EXTERNAL_INVENTORY_SERVICE, HOLIDA
     providers: [
         {
             provide: ISSUE_TYPE_SERVICE,
-            useFactory: (repo, treeRepo, eventBus) => new IssueTypeService(repo, treeRepo, eventBus),
-            inject: [ISSUE_TYPE_REPOSITORY, ISSUE_TYPE_TREE_REPOSITORY, EVENT_BUS],
+            useFactory: (repo, treeRepo, eventBus, tracing) => new IssueTypeService(repo, treeRepo, eventBus, tracing),
+            inject: [ISSUE_TYPE_REPOSITORY, ISSUE_TYPE_TREE_REPOSITORY, EVENT_BUS, TracingService],
         },
         {
             provide: INCIDENT_SERVICE,
@@ -84,48 +84,48 @@ import { EVENT_BUS, CACHE, SERVICENOW_CLIENT, EXTERNAL_INVENTORY_SERVICE, HOLIDA
         },
         {
             provide: CORNER_SERVICE,
-            useFactory: (cornerRepo, scheduleRepo, eventBus) =>
-                new CornerService(cornerRepo, scheduleRepo, eventBus),
-            inject: [CORNER_REPOSITORY, SCHEDULE_REPOSITORY, EVENT_BUS],
+            useFactory: (cornerRepo, scheduleRepo, eventBus, tracing) =>
+                new CornerService(cornerRepo, scheduleRepo, eventBus, tracing),
+            inject: [CORNER_REPOSITORY, SCHEDULE_REPOSITORY, EVENT_BUS, TracingService],
         },
         {
             provide: SCHEDULE_SERVICE,
-            useFactory: (scheduleRepo, cornerRepo, technicianRepo, slotRepo, eventBus, holidayProvider) =>
-                new ScheduleService(scheduleRepo, cornerRepo, technicianRepo, slotRepo, eventBus, holidayProvider),
-            inject: [SCHEDULE_REPOSITORY, CORNER_REPOSITORY, TECHNICIAN_REPOSITORY, SLOT_REPOSITORY, EVENT_BUS, HOLIDAY_PROVIDER],
+            useFactory: (scheduleRepo, cornerRepo, technicianRepo, slotRepo, eventBus, holidayProvider, tracing) =>
+                new ScheduleService(scheduleRepo, cornerRepo, technicianRepo, slotRepo, eventBus, holidayProvider, tracing),
+            inject: [SCHEDULE_REPOSITORY, CORNER_REPOSITORY, TECHNICIAN_REPOSITORY, SLOT_REPOSITORY, EVENT_BUS, HOLIDAY_PROVIDER, TracingService],
         },
         {
             provide: TECHNICIAN_SERVICE,
-            useFactory: (technicianRepo, cornerRepo, eventBus) =>
-                new TechnicianService(technicianRepo, cornerRepo, eventBus),
-            inject: [TECHNICIAN_REPOSITORY, CORNER_REPOSITORY, EVENT_BUS],
+            useFactory: (technicianRepo, cornerRepo, eventBus, tracing) =>
+                new TechnicianService(technicianRepo, cornerRepo, eventBus, tracing),
+            inject: [TECHNICIAN_REPOSITORY, CORNER_REPOSITORY, EVENT_BUS, TracingService],
         },
         {
             provide: LOCKER_SERVICE,
-            useFactory: (lockerRepo, cornerRepo, incidentRepo) =>
-                new LockerService(lockerRepo, cornerRepo, incidentRepo),
-            inject: [LOCKER_REPOSITORY, CORNER_REPOSITORY, INCIDENT_REPOSITORY],
+            useFactory: (lockerRepo, cornerRepo, incidentRepo, tracing) =>
+                new LockerService(lockerRepo, cornerRepo, incidentRepo, tracing),
+            inject: [LOCKER_REPOSITORY, CORNER_REPOSITORY, INCIDENT_REPOSITORY, TracingService],
         },
         {
             provide: DEVICE_SERVICE,
-            useFactory: (deviceRepo, inventoryService, incidentRepo) => new DeviceService(deviceRepo, inventoryService, incidentRepo),
-            inject: [DEVICE_REPOSITORY, EXTERNAL_INVENTORY_SERVICE, INCIDENT_REPOSITORY],
+            useFactory: (deviceRepo, inventoryService, incidentRepo, tracing) => new DeviceService(deviceRepo, inventoryService, incidentRepo, tracing),
+            inject: [DEVICE_REPOSITORY, EXTERNAL_INVENTORY_SERVICE, INCIDENT_REPOSITORY, TracingService],
         },
         {
             provide: USER_SERVICE,
-            useFactory: (userRepo) => new UserService(userRepo),
-            inject: [USER_REPOSITORY],
+            useFactory: (userRepo, tracing) => new UserService(userRepo, tracing),
+            inject: [USER_REPOSITORY, TracingService],
         },
         {
             provide: COMPANY_SERVICE,
-            useFactory: (companyRepo, treeRepo) =>
-                new CompanyService(companyRepo, treeRepo),
-            inject: [COMPANY_REPOSITORY, ISSUE_TYPE_TREE_REPOSITORY],
+            useFactory: (companyRepo, treeRepo, tracing) =>
+                new CompanyService(companyRepo, treeRepo, tracing),
+            inject: [COMPANY_REPOSITORY, ISSUE_TYPE_TREE_REPOSITORY, TracingService],
         },
         {
             provide: SERVICENOW_PROFILE_SERVICE,
-            useFactory: (profileRepo) => new ServiceNowProfileService(profileRepo),
-            inject: [SERVICE_NOW_PROFILE_REPOSITORY],
+            useFactory: (profileRepo, tracing) => new ServiceNowProfileService(profileRepo, tracing),
+            inject: [SERVICE_NOW_PROFILE_REPOSITORY, TracingService],
         },
         {
             provide: SERVICENOW_INTEGRATION_SERVICE,
@@ -135,13 +135,13 @@ import { EVENT_BUS, CACHE, SERVICENOW_CLIENT, EXTERNAL_INVENTORY_SERVICE, HOLIDA
         },
         {
             provide: CORNER_ISSUE_CONFIG_SERVICE,
-            useFactory: (repo) => new CompanyIssueConfigService(repo),
-            inject: [CORNER_ISSUE_CONFIG_REPOSITORY],
+            useFactory: (repo, tracing) => new CompanyIssueConfigService(repo, tracing),
+            inject: [CORNER_ISSUE_CONFIG_REPOSITORY, TracingService],
         },
         {
             provide: SERVICENOW_GROUP_SERVICE,
-            useFactory: (repo) => new ServiceNowGroupService(repo),
-            inject: [SERVICENOW_GROUP_REPOSITORY],
+            useFactory: (repo, tracing) => new ServiceNowGroupService(repo, tracing),
+            inject: [SERVICENOW_GROUP_REPOSITORY, TracingService],
         },
     ],
     exports: [

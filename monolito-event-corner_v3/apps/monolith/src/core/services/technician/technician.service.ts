@@ -9,6 +9,7 @@ import { Result } from '@app/result';
 import { Technician } from '../../domain/entities/technician.entity';
 import { TechnicianId, CornerId, UserId } from '../../domain/value-objects/ids';
 import { DomainError } from '../../domain/errors/domain-error';
+import { TracingService } from '@app/observability';
 
 @Injectable()
 export class TechnicianService implements ITechnicianService {
@@ -16,9 +17,18 @@ export class TechnicianService implements ITechnicianService {
         private readonly technicianRepo: ITechnicianRepository,
         private readonly cornerRepo: ICornerRepository,
         private readonly eventBus: IEventBus,
+        private readonly tracing: TracingService,
     ) { }
 
     async createTechnician(command: CreateTechnicianCommand): Promise<Result<Technician>> {
+        return this.tracing.run(
+            'monolith.createTechnician',
+            { kind: 'server', attributes: { 'technician.name': command.name } },
+            () => this._createTechnician(command),
+        );
+    }
+
+    private async _createTechnician(command: CreateTechnicianCommand): Promise<Result<Technician>> {
         // Validar corner si se proporcionó
         let cornerId: CornerId | null = null;
         if (command.cornerId) {
@@ -55,6 +65,14 @@ export class TechnicianService implements ITechnicianService {
     }
 
     async updateTechnician(id: TechnicianId, command: UpdateTechnicianCommand): Promise<Result<Technician>> {
+        return this.tracing.run(
+            'monolith.updateTechnician',
+            { kind: 'server', attributes: { 'technician.id': `${id}` } },
+            () => this._updateTechnician(id, command),
+        );
+    }
+
+    private async _updateTechnician(id: TechnicianId, command: UpdateTechnicianCommand): Promise<Result<Technician>> {
         const techResult = await this.technicianRepo.findById(id);
         if (techResult.isFailure) return Result.err(techResult.unwrapError());
         const technician = techResult.unwrap();
@@ -88,6 +106,14 @@ export class TechnicianService implements ITechnicianService {
     }
 
     async disableTechnician(id: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.disableTechnician',
+            { kind: 'server', attributes: { 'technician.id': id } },
+            () => this._disableTechnician(id),
+        );
+    }
+
+    private async _disableTechnician(id: string): Promise<Result<void>> {
         const techResult = await this.technicianRepo.findById(TechnicianId(id));
         if (techResult.isFailure) return Result.err(techResult.unwrapError());
         const technician = techResult.unwrap();
@@ -101,6 +127,14 @@ export class TechnicianService implements ITechnicianService {
     }
 
     async enableTechnician(id: TechnicianId): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.enableTechnician',
+            { kind: 'server', attributes: { 'technician.id': `${id}` } },
+            () => this._enableTechnician(id),
+        );
+    }
+
+    private async _enableTechnician(id: TechnicianId): Promise<Result<void>> {
         const techResult = await this.technicianRepo.findById(id);
 
         if (techResult.isFailure) return Result.err(techResult.unwrapError());
@@ -120,6 +154,14 @@ export class TechnicianService implements ITechnicianService {
     }
 
     async deleteTechnician(id: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.deleteTechnician',
+            { kind: 'server', attributes: { 'technician.id': id } },
+            () => this._deleteTechnician(id),
+        );
+    }
+
+    private async _deleteTechnician(id: string): Promise<Result<void>> {
         const techResult = await this.technicianRepo.findById(TechnicianId(id));
         if (techResult.isFailure) return Result.err(techResult.unwrapError());
         const technician = techResult.unwrap();
