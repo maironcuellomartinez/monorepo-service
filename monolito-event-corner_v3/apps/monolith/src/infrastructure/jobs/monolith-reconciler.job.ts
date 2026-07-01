@@ -1,7 +1,7 @@
 // infrastructure/jobs/monolith-reconciler.job.ts
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { CorrelationIdService } from '@app/observability';
+import { CorrelationIdService, TracingService } from '@app/observability';
 import { IIncidentRepository } from '../../core/ports/outgoing/repositories/incident-repository.port';
 import { IRequestRepository } from '../../core/ports/outgoing/repositories/request-repository.port';
 import { IServiceNowClient, SnowqStatusResult } from '../../core/ports/outgoing/servicenow/servicenow-client.port';
@@ -36,10 +36,19 @@ export class MonolithReconcilerJob {
         @Inject(SERVICENOW_INTEGRATION_SERVICE) private readonly snService: ServiceNowIntegrationService,
         @Inject(SERVICENOW_CLIENT) private readonly snClient: IServiceNowClient,
         private readonly correlation: CorrelationIdService,
+        private readonly tracing: TracingService,
     ) { }
 
     @Interval(RECONCILE_INTERVAL_MS)
     async reconcile(): Promise<void> {
+        return this.tracing.run(
+            'monolith.job.reconciler',
+            { kind: 'internal' },
+            () => this._reconcile(),
+        );
+    }
+
+    private async _reconcile(): Promise<void> {
         this.logger.debug('ReconcilerJob: iniciando ciclo de reconciliación');
         await Promise.all([
             this.reconcileIncidents(),
