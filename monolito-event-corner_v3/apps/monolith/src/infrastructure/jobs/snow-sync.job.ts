@@ -1,6 +1,7 @@
 // infrastructure/jobs/snow-sync.job.ts
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
+import { TracingService } from '@app/observability';
 import { IIncidentRepository } from '../../core/ports/outgoing/repositories/incident-repository.port';
 import { IServiceNowClient } from '../../core/ports/outgoing/servicenow/servicenow-client.port';
 import { IIncidentService } from '../../core/ports/incoming/incident/incident-service.port';
@@ -32,10 +33,19 @@ export class SnowSyncJob {
         @Inject(INCIDENT_REPOSITORY) private readonly incidentRepo: IIncidentRepository,
         @Inject(SERVICENOW_CLIENT) private readonly snClient: IServiceNowClient,
         @Inject(INCIDENT_SERVICE) private readonly incidentService: IIncidentService,
+        private readonly tracing: TracingService,
     ) {}
 
     @Interval(SYNC_INTERVAL_MS)
     async sync(): Promise<void> {
+        return this.tracing.run(
+            'monolith.job.snowSync',
+            { kind: 'internal' },
+            () => this._sync(),
+        );
+    }
+
+    private async _sync(): Promise<void> {
         this.logger.debug('SnowSyncJob: iniciando ciclo de sincronización SN → monolith');
 
         const result = await this.incidentRepo.findActiveWithServiceNowId();
