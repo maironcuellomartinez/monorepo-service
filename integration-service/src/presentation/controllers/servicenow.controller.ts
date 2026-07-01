@@ -18,6 +18,7 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { InternalTokenGuard } from '../../shared/guards/internal-token.guard';
 import { SnowqConnector } from '../../infrastructure/external/connectors/snowq.connector';
+import { TracingService } from '../../infrastructure/monitoring/tracing.service';
 
 /** Prefijo para distinguir correlationIds generados por snowq de otros IDs del sistema. */
 const SNOWQ_PREFIX = 'snowq:';
@@ -55,6 +56,7 @@ export class ServiceNowController {
         private readonly snowq: SnowqConnector,
         private readonly httpService: HttpService,
         private readonly config: ConfigService,
+        private readonly tracing: TracingService,
     ) { }
 
     private get simulatorUrl(): string {
@@ -110,6 +112,10 @@ export class ServiceNowController {
     @HttpCode(HttpStatus.CREATED)
     @ApiOperation({ summary: 'Create ServiceNow incident (two-phase: sync → async fallback)' })
     async createIncident(@Body() payload: Record<string, any>): Promise<ServiceNowTicketResult> {
+        return this.tracing.run('integration.controller.servicenow.createIncident', { kind: 'server' }, () => this._createIncident(payload));
+    }
+
+    private async _createIncident(payload: Record<string, any>): Promise<ServiceNowTicketResult> {
         this.logger.log(`→ createIncident | caller=${payload?.caller_id} | group=${payload?.assignment_group}`);
         const body = this.buildIncidentBody(payload);
 
@@ -144,6 +150,10 @@ export class ServiceNowController {
     @HttpCode(HttpStatus.CREATED)
     @ApiOperation({ summary: 'Create ServiceNow service catalog request (two-phase: sync → async fallback)' })
     async createRequest(@Body() payload: Record<string, any>): Promise<ServiceNowTicketResult> {
+        return this.tracing.run('integration.controller.servicenow.createRequest', { kind: 'server' }, () => this._createRequest(payload));
+    }
+
+    private async _createRequest(payload: Record<string, any>): Promise<ServiceNowTicketResult> {
         this.logger.log(`→ createRequest | caller=${payload?.caller_id} | group=${payload?.assignment_group}`);
         const body = this.buildRequestBody(payload);
 
@@ -181,6 +191,10 @@ export class ServiceNowController {
         @Param('sysId') sysId: string,
         @Body() fields: Record<string, any>,
     ) {
+        return this.tracing.run('integration.controller.servicenow.updateTicket', { kind: 'server', attributes: { 'sn.table': table, 'sn.sysId': sysId } }, () => this._updateTicket(table, sysId, fields));
+    }
+
+    private async _updateTicket(table: string, sysId: string, fields: Record<string, any>) {
         this.logger.log(`→ updateTicket | table=${table} sysId=${sysId} fields=${Object.keys(fields).join(',')}`);
         try {
             await firstValueFrom(
@@ -225,6 +239,10 @@ export class ServiceNowController {
     @HttpCode(HttpStatus.ACCEPTED)
     @ApiOperation({ summary: 'Queue an incident in snowq (async only — no immediate attempt)' })
     async enqueueIncident(@Body() payload: Record<string, any>): Promise<{ correlationId: string; internalNumber: string }> {
+        return this.tracing.run('integration.controller.servicenow.enqueueIncident', { kind: 'server' }, () => this._enqueueIncident(payload));
+    }
+
+    private async _enqueueIncident(payload: Record<string, any>): Promise<{ correlationId: string; internalNumber: string }> {
         this.logger.log(`→ enqueueIncident | caller=${payload?.caller_id}`);
         const body = this.buildIncidentBody(payload);
 
@@ -247,6 +265,10 @@ export class ServiceNowController {
     @HttpCode(HttpStatus.ACCEPTED)
     @ApiOperation({ summary: 'Queue a service catalog request in snowq (async only — no immediate attempt)' })
     async enqueueRequest(@Body() payload: Record<string, any>): Promise<{ correlationId: string; internalNumber: string }> {
+        return this.tracing.run('integration.controller.servicenow.enqueueRequest', { kind: 'server' }, () => this._enqueueRequest(payload));
+    }
+
+    private async _enqueueRequest(payload: Record<string, any>): Promise<{ correlationId: string; internalNumber: string }> {
         this.logger.log(`→ enqueueRequest | caller=${payload?.caller_id}`);
         const body = this.buildRequestBody(payload);
 
@@ -288,6 +310,10 @@ export class ServiceNowController {
     @HttpCode(HttpStatus.OK)
     @ApiOperation({ summary: 'Retry a FAILED snowq entry — resets retryCount and puts it back to QUEUED' })
     async retrySnowqEntry(@Param('correlationId') correlationId: string) {
+        return this.tracing.run('integration.controller.servicenow.retrySnowqEntry', { kind: 'server', attributes: { 'sn.correlationId': correlationId } }, () => this._retrySnowqEntry(correlationId));
+    }
+
+    private async _retrySnowqEntry(correlationId: string) {
         const rawId = this.stripCorrelationPrefix(correlationId);
         this.logger.log(`→ retrySnowqEntry | correlationId=${correlationId} → rawId=${rawId}`);
         try {
@@ -313,6 +339,10 @@ export class ServiceNowController {
         @Param('sysId') sysId: string,
         @Body() body: { closeCategory: string; closeNotes?: string },
     ) {
+        return this.tracing.run('integration.controller.servicenow.closeIncident', { kind: 'server', attributes: { 'sn.sysId': sysId } }, () => this._closeIncident(sysId, body));
+    }
+
+    private async _closeIncident(sysId: string, body: { closeCategory: string; closeNotes?: string }) {
         this.logger.log(`→ closeIncident | sysId=${sysId} | closeCategory=${body.closeCategory}`);
         try {
             await firstValueFrom(

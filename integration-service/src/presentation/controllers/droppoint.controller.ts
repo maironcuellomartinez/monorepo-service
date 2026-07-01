@@ -22,6 +22,7 @@ import {
     CreateShipmentRequest,
     UpdateShipmentRequest,
 } from '../../infrastructure/external/connectors/droppoint.connector';
+import { TracingService } from '../../infrastructure/monitoring/tracing.service';
 
 @ApiTags('Droppoint')
 @ApiBearerAuth()
@@ -29,7 +30,10 @@ import {
 @UseGuards(InternalTokenGuard, ThrottlerGuard)
 @UseInterceptors(LoggingInterceptor)
 export class DroppointController {
-    constructor(private readonly droppointConnector: DroppointConnector) {}
+    constructor(
+        private readonly droppointConnector: DroppointConnector,
+        private readonly tracing: TracingService,
+    ) {}
 
     @Get('boxes/free')
     @ApiOperation({ summary: 'Get available locker boxes for a machine' })
@@ -57,6 +61,10 @@ export class DroppointController {
     @ApiOperation({ summary: 'Create a new shipment (reserve locker slot)' })
     @ApiResponse({ status: HttpStatus.OK, description: 'Shipment created' })
     async createShipment(@Body() dto: CreateShipmentRequest) {
+        return this.tracing.run('integration.controller.droppoint.createShipment', { kind: 'server' }, () => this._createShipment(dto));
+    }
+
+    private async _createShipment(dto: CreateShipmentRequest) {
         return this.droppointConnector.createShipment(dto);
     }
 
@@ -65,6 +73,10 @@ export class DroppointController {
     @ApiOperation({ summary: 'Update shipment state' })
     @ApiResponse({ status: HttpStatus.OK, description: 'Shipment state updated' })
     async updateShipmentState(@Body() dto: UpdateShipmentRequest) {
+        return this.tracing.run('integration.controller.droppoint.updateShipmentState', { kind: 'server' }, () => this._updateShipmentState(dto));
+    }
+
+    private async _updateShipmentState(dto: UpdateShipmentRequest) {
         return this.droppointConnector.updateShipmentState(dto);
     }
 
@@ -78,6 +90,10 @@ export class DroppointController {
         @Param('externalId') externalId: string,
         @Query('machineRef') machineRef: string,
     ) {
+        return this.tracing.run('integration.controller.droppoint.cancelShipment', { kind: 'server' }, () => this._cancelShipment(externalId, machineRef));
+    }
+
+    private async _cancelShipment(externalId: string, machineRef: string) {
         await this.droppointConnector.cancelShipment(externalId, machineRef);
         return { externalId, cancelled: true };
     }

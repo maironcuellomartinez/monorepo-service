@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MinervaSoapClient, SoapDevice } from './minerva-soap.client';
+import { TracingService } from '../../monitoring/tracing.service';
 
 export interface MinervaDevice {
   serialNumber: string;
@@ -33,6 +34,7 @@ export class MinervaConnector {
   constructor(
     private readonly soapClient: MinervaSoapClient,
     private readonly configService: ConfigService,
+    private readonly tracing: TracingService,
   ) {}
 
   private mapDevice(raw: SoapDevice): MinervaDevice {
@@ -85,6 +87,10 @@ export class MinervaConnector {
   }
 
   async assignDevice(request: MinervaAssignmentRequest): Promise<MinervaAssignmentResponse> {
+    return this.tracing.run('integration.connector.minerva.assignDevice', { kind: 'client', attributes: { 'device.serial': request.serialNumber } }, () => this._assignDevice(request));
+  }
+
+  private async _assignDevice(request: MinervaAssignmentRequest): Promise<MinervaAssignmentResponse> {
     try {
       const response = await this.soapClient.assignDevice(
         request.serialNumber,
@@ -107,6 +113,10 @@ export class MinervaConnector {
   }
 
   async releaseDevice(serialNumber: string): Promise<void> {
+    return this.tracing.run('integration.connector.minerva.releaseDevice', { kind: 'client', attributes: { 'device.serial': serialNumber } }, () => this._releaseDevice(serialNumber));
+  }
+
+  private async _releaseDevice(serialNumber: string): Promise<void> {
     try {
       const response = await this.soapClient.releaseDevice(serialNumber);
       if (response.status === 'ERROR') {

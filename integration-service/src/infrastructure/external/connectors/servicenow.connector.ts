@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { HealthCheckResult, IExternalConnector } from 'src/domain/interfaces/external-connector.interface';
+import { TracingService } from '../../monitoring/tracing.service';
 
 @Injectable()
 export class ServiceNowConnector implements Partial<IExternalConnector> {
@@ -14,6 +15,7 @@ export class ServiceNowConnector implements Partial<IExternalConnector> {
     constructor(
         private readonly configService: ConfigService,
         private readonly httpService: HttpService,
+        private readonly tracing: TracingService,
     ) {
         this.baseUrl = this.configService.get<string>('servicenow.baseUrl') ?? '';
         const username = this.configService.get<string>('servicenow.username') ?? '';
@@ -22,6 +24,10 @@ export class ServiceNowConnector implements Partial<IExternalConnector> {
     }
 
     async createIncident(payload: any): Promise<any> {
+        return this.tracing.run('integration.connector.servicenow.createIncident', { kind: 'client' }, () => this._createIncident(payload));
+    }
+
+    private async _createIncident(payload: any): Promise<any> {
         try {
             const incidentData = this.transformToServiceNowFormat(payload);
 
@@ -82,6 +88,10 @@ export class ServiceNowConnector implements Partial<IExternalConnector> {
     }
 
     async updateIncident(incidentId: string, updates: Record<string, any>): Promise<void> {
+        return this.tracing.run('integration.connector.servicenow.updateIncident', { kind: 'client', attributes: { 'sn.incidentId': incidentId } }, () => this._updateIncident(incidentId, updates));
+    }
+
+    private async _updateIncident(incidentId: string, updates: Record<string, any>): Promise<void> {
         try {
             await firstValueFrom(
                 this.httpService.patch(

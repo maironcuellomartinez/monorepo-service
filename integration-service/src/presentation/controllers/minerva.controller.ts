@@ -16,6 +16,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { LoggingInterceptor } from '../../shared/interceptors/logging.interceptor';
 import { InternalTokenGuard } from '../../shared/guards/internal-token.guard';
 import { MinervaConnector, MinervaAssignmentRequest } from '../../infrastructure/external/connectors/minerva.connector';
+import { TracingService } from '../../infrastructure/monitoring/tracing.service';
 
 class AssignDeviceDto implements MinervaAssignmentRequest {
     serialNumber: string;
@@ -35,7 +36,10 @@ class ReleaseDeviceDto {
 @UseGuards(InternalTokenGuard, ThrottlerGuard)
 @UseInterceptors(LoggingInterceptor)
 export class MinervaController {
-    constructor(private readonly minervaConnector: MinervaConnector) {}
+    constructor(
+        private readonly minervaConnector: MinervaConnector,
+        private readonly tracing: TracingService,
+    ) {}
 
     @Get('devices')
     @ApiOperation({ summary: 'List available devices by type' })
@@ -67,6 +71,10 @@ export class MinervaController {
         @Param('serial') serial: string,
         @Body() dto: AssignDeviceDto,
     ) {
+        return this.tracing.run('integration.controller.minerva.assignDevice', { kind: 'server', attributes: { 'device.serial': serial } }, () => this._assignDevice(serial, dto));
+    }
+
+    private async _assignDevice(serial: string, dto: AssignDeviceDto) {
         return this.minervaConnector.assignDevice({ ...dto, serialNumber: serial });
     }
 
@@ -76,6 +84,10 @@ export class MinervaController {
     @ApiParam({ name: 'serial', description: 'Device serial number' })
     @ApiResponse({ status: HttpStatus.OK, description: 'Device released' })
     async releaseDevice(@Param('serial') serial: string) {
+        return this.tracing.run('integration.controller.minerva.releaseDevice', { kind: 'server', attributes: { 'device.serial': serial } }, () => this._releaseDevice(serial));
+    }
+
+    private async _releaseDevice(serial: string) {
         await this.minervaConnector.releaseDevice(serial);
         return { serialNumber: serial, released: true };
     }

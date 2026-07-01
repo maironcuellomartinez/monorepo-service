@@ -9,6 +9,7 @@ import {
     ConnectorError,
     OperationContext,
 } from 'src/domain/interfaces/external-connector.interface';
+import { TracingService } from '../../monitoring/tracing.service';
 
 export type DroppointState =
     | 'RESERVADO'
@@ -65,6 +66,7 @@ export class DroppointConnector extends BaseExternalConnector {
     constructor(
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
+        private readonly tracing: TracingService,
     ) {
         const baseUrl = configService.get<string>(
             'droppoint.baseUrl',
@@ -245,6 +247,10 @@ export class DroppointConnector extends BaseExternalConnector {
      * Droppoint assigns box_name and returns QR codes.
      */
     async createShipment(request: CreateShipmentRequest): Promise<DroppointShipment> {
+        return this.tracing.run('integration.connector.droppoint.createShipment', { kind: 'client' }, () => this._createShipment(request));
+    }
+
+    private async _createShipment(request: CreateShipmentRequest): Promise<DroppointShipment> {
         try {
             const response = await firstValueFrom(
                 this.httpService.post(
@@ -277,6 +283,10 @@ export class DroppointConnector extends BaseExternalConnector {
      * Common transitions: RESERVADO → AUTORIZADO (tech authorizes pickup)
      */
     async updateShipmentState(request: UpdateShipmentRequest): Promise<DroppointShipment> {
+        return this.tracing.run('integration.connector.droppoint.updateShipmentState', { kind: 'client' }, () => this._updateShipmentState(request));
+    }
+
+    private async _updateShipmentState(request: UpdateShipmentRequest): Promise<DroppointShipment> {
         try {
             const response = await firstValueFrom(
                 this.httpService.put(
@@ -304,7 +314,11 @@ export class DroppointConnector extends BaseExternalConnector {
      * Cancels a shipment (releases the locker slot).
      */
     async cancelShipment(externalId: string, machineRef: string): Promise<void> {
-        await this.updateShipmentState({
+        return this.tracing.run('integration.connector.droppoint.cancelShipment', { kind: 'client', attributes: { 'droppoint.externalId': externalId } }, () => this._cancelShipment(externalId, machineRef));
+    }
+
+    private async _cancelShipment(externalId: string, machineRef: string): Promise<void> {
+        await this._updateShipmentState({
             external_id: externalId,
             machine_ref: machineRef,
             state: 'CANCELADO',

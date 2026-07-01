@@ -19,6 +19,7 @@ import { InternalTokenGuard } from '../../shared/guards/internal-token.guard';
 import { ProcessIntegrationDto } from '../../application/dto/process-integration.dto';
 import { ProcessAppointmentCreatedUseCase } from '../../application/use-cases/process-appointment-created.usecase';
 import { IIntegrationEventRepository } from '../../domain/interfaces/repository.interface';
+import { TracingService } from '../../infrastructure/monitoring/tracing.service';
 
 @ApiTags('Integration')
 @ApiBearerAuth()
@@ -30,6 +31,7 @@ export class IntegrationController {
         private readonly processAppointmentUseCase: ProcessAppointmentCreatedUseCase,
         @Inject('IIntegrationEventRepository')
         private readonly integrationEventRepository: IIntegrationEventRepository,
+        private readonly tracing: TracingService,
     ) { }
 
     @Post('appointments')
@@ -38,6 +40,10 @@ export class IntegrationController {
     @ApiResponse({ status: HttpStatus.OK, description: 'Integration result' })
     @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid request data' })
     async processAppointment(@Body() dto: ProcessIntegrationDto) {
+        return this.tracing.run('integration.controller.integration.processAppointment', { kind: 'server' }, () => this._processAppointment(dto));
+    }
+
+    private async _processAppointment(dto: ProcessIntegrationDto) {
         return this.processAppointmentUseCase.execute(dto);
     }
 

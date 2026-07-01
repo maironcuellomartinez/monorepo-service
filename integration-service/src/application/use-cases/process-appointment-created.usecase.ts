@@ -11,6 +11,7 @@ import { ProcessIntegrationDto } from '../dto/process-integration.dto';
 import { MinervaConnector } from '../../infrastructure/external/connectors/minerva.connector';
 import { IServiceNowRoutingStrategy } from '../../infrastructure/external/strategies/servicenow-routing.strategy';
 import { CircuitBreakerService } from 'src/infrastructure/services';
+import { TracingService } from '../../infrastructure/monitoring/tracing.service';
 
 @Injectable()
 export class ProcessAppointmentCreatedUseCase {
@@ -26,9 +27,14 @@ export class ProcessAppointmentCreatedUseCase {
         private readonly circuitBreaker: CircuitBreakerService,
         private readonly configService: ConfigService,
         private readonly publisher: EventPublisher,
+        private readonly tracing: TracingService,
     ) { }
 
     async execute(dto: ProcessIntegrationDto): Promise<void> {
+        return this.tracing.run('integration.usecase.processAppointment', { kind: 'internal', attributes: { 'appointment.correlationId': dto.correlationId ?? '' } }, () => this._execute(dto));
+    }
+
+    private async _execute(dto: ProcessIntegrationDto): Promise<void> {
         const { eventType, source, payload, correlationId } = dto;
 
         try {
