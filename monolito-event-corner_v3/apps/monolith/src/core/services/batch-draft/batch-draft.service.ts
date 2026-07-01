@@ -6,6 +6,7 @@ import { ISlotRepository } from '../../ports/outgoing/repositories/slot-reposito
 import { SLOT_REPOSITORY } from '../../ports/outgoing/repositories/tokens';
 import { INCIDENT_SERVICE } from '../../ports/incoming/service-tokens';
 import { IIncidentService } from '../../ports/incoming/incident/incident-service.port';
+import { TracingService } from '@app/observability';
 import { TypeOrmBatchDraftRepository } from '../../../infrastructure/persistence/typeorm/repositories/batch-draft.repository';
 import {
     BatchDraftData,
@@ -26,6 +27,7 @@ export class BatchDraftService {
         private readonly repo: TypeOrmBatchDraftRepository,
         @Inject(SLOT_REPOSITORY) private readonly slotRepo: ISlotRepository,
         @Inject(INCIDENT_SERVICE) private readonly incidentService: IIncidentService,
+        private readonly tracing: TracingService,
     ) {}
 
     async getMyDraft(userId: string): Promise<Result<BatchDraftData | null>> {
@@ -33,6 +35,14 @@ export class BatchDraftService {
     }
 
     async addItem(userId: string, cmd: AddBatchItemCommand): Promise<Result<BatchDraftItemData>> {
+        return this.tracing.run(
+            'monolith.batchDraft.addItem',
+            { kind: 'server', attributes: { 'batchDraft.userId': userId, 'batchDraft.localId': cmd.localId } },
+            () => this._addItem(userId, cmd),
+        );
+    }
+
+    private async _addItem(userId: string, cmd: AddBatchItemCommand): Promise<Result<BatchDraftItemData>> {
         const draftResult = await this.repo.getOrCreateDraft(userId);
         if (draftResult.isFailure) return Result.err(draftResult.unwrapError());
         const draft = draftResult.unwrap();
@@ -86,6 +96,14 @@ export class BatchDraftService {
     }
 
     async editItem(userId: string, itemId: string, cmd: EditBatchItemCommand): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.batchDraft.editItem',
+            { kind: 'server', attributes: { 'batchDraft.userId': userId, 'batchDraft.itemId': itemId } },
+            () => this._editItem(userId, itemId, cmd),
+        );
+    }
+
+    private async _editItem(userId: string, itemId: string, cmd: EditBatchItemCommand): Promise<Result<void>> {
         const itemResult = await this.repo.findItemById(itemId);
         if (itemResult.isFailure) return Result.err(itemResult.unwrapError());
         const item = itemResult.unwrap();
@@ -123,6 +141,14 @@ export class BatchDraftService {
     }
 
     async removeItem(userId: string, itemId: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.batchDraft.removeItem',
+            { kind: 'server', attributes: { 'batchDraft.userId': userId, 'batchDraft.itemId': itemId } },
+            () => this._removeItem(userId, itemId),
+        );
+    }
+
+    private async _removeItem(userId: string, itemId: string): Promise<Result<void>> {
         const itemResult = await this.repo.findItemById(itemId);
         if (itemResult.isFailure) return Result.err(itemResult.unwrapError());
         const item = itemResult.unwrap();
@@ -142,6 +168,14 @@ export class BatchDraftService {
     }
 
     async submit(userId: string): Promise<Result<BatchSubmitResultItem[]>> {
+        return this.tracing.run(
+            'monolith.batchDraft.submit',
+            { kind: 'server', attributes: { 'batchDraft.userId': userId } },
+            () => this._submit(userId),
+        );
+    }
+
+    private async _submit(userId: string): Promise<Result<BatchSubmitResultItem[]>> {
         const draftResult = await this.repo.findByUserId(userId);
         if (draftResult.isFailure) return Result.err(draftResult.unwrapError());
         const draft = draftResult.unwrap();
@@ -201,6 +235,14 @@ export class BatchDraftService {
     }
 
     async discard(userId: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.batchDraft.discard',
+            { kind: 'server', attributes: { 'batchDraft.userId': userId } },
+            () => this._discard(userId),
+        );
+    }
+
+    private async _discard(userId: string): Promise<Result<void>> {
         const draftResult = await this.repo.findByUserId(userId);
         if (draftResult.isFailure) return Result.err(draftResult.unwrapError());
         const draft = draftResult.unwrap();
