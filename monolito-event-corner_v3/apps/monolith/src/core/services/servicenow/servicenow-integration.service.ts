@@ -1,5 +1,6 @@
 // core/services/servicenow/servicenow-integration.service.ts
 import { Injectable, Logger } from '@nestjs/common';
+import { TracingService } from '@app/observability';
 import { IIssueTypeRepository } from '../../ports/outgoing/repositories/issue-type-repository.port';
 import { ICornerRepository } from '../../ports/outgoing/repositories/corner-repository.port';
 import { IServiceNowProfileRepository } from '../../ports/outgoing/repositories/servicenow-profile-repository.port';
@@ -24,6 +25,7 @@ export class ServiceNowIntegrationService {
         private readonly profileRepo: IServiceNowProfileRepository,
         private readonly snClient: IServiceNowClient,
         private readonly companyIssueConfigRepo: ICompanyIssueConfigRepository,
+        private readonly tracing: TracingService,
     ) { }
 
     /** Resuelve el sys_id de empresa en SN: perfil asignado → fallback env DEFAULT. */
@@ -48,6 +50,14 @@ export class ServiceNowIntegrationService {
 
     /** Construye el payload, crea el ticket de Incident en ServiceNow y actualiza la entidad. */
     async createIncidentTicket(incident: Incident, company: Company): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.sn.createIncidentTicket',
+            { kind: 'server', attributes: { 'sn.incidentId': String(incident.id), 'sn.companyId': String(company.id) } },
+            () => this._createIncidentTicket(incident, company),
+        );
+    }
+
+    private async _createIncidentTicket(incident: Incident, company: Company): Promise<Result<void>> {
         const issueTypeResult = await this.issueTypeRepo.findById(incident.issueTypeId);
         if (issueTypeResult.isFailure) return Result.err(issueTypeResult.unwrapError());
         const issueType = issueTypeResult.unwrap();
@@ -104,6 +114,14 @@ export class ServiceNowIntegrationService {
 
     /** Construye el payload, crea el ticket de Request en ServiceNow y actualiza la entidad. */
     async createRequestTicket(request: Request, company: Company): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.sn.createRequestTicket',
+            { kind: 'server', attributes: { 'sn.requestId': String(request.id), 'sn.companyId': String(company.id) } },
+            () => this._createRequestTicket(request, company),
+        );
+    }
+
+    private async _createRequestTicket(request: Request, company: Company): Promise<Result<void>> {
         const issueTypeResult = await this.issueTypeRepo.findById(request.issueTypeId);
         if (issueTypeResult.isFailure) return Result.err(issueTypeResult.unwrapError());
         const issueType = issueTypeResult.unwrap();
@@ -164,6 +182,14 @@ export class ServiceNowIntegrationService {
      * obtendrá sysId + number cuando snowq lo procese sin forzar un nuevo ticket.
      */
     async reQueueIncidentTicket(incident: Incident, company: Company): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.sn.reQueueIncidentTicket',
+            { kind: 'server', attributes: { 'sn.incidentId': String(incident.id), 'sn.companyId': String(company.id) } },
+            () => this._reQueueIncidentTicket(incident, company),
+        );
+    }
+
+    private async _reQueueIncidentTicket(incident: Incident, company: Company): Promise<Result<void>> {
         const issueTypeResult = await this.issueTypeRepo.findById(incident.issueTypeId);
         if (issueTypeResult.isFailure) return Result.err(issueTypeResult.unwrapError());
         const issueType = issueTypeResult.unwrap();
@@ -207,6 +233,14 @@ export class ServiceNowIntegrationService {
      * Re-encola una request huérfana en snowq (async only, sin intento inmediato).
      */
     async reQueueRequestTicket(request: Request, company: Company): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.sn.reQueueRequestTicket',
+            { kind: 'server', attributes: { 'sn.requestId': String(request.id), 'sn.companyId': String(company.id) } },
+            () => this._reQueueRequestTicket(request, company),
+        );
+    }
+
+    private async _reQueueRequestTicket(request: Request, company: Company): Promise<Result<void>> {
         const issueTypeResult = await this.issueTypeRepo.findById(request.issueTypeId);
         if (issueTypeResult.isFailure) return Result.err(issueTypeResult.unwrapError());
         const issueType = issueTypeResult.unwrap();
@@ -248,6 +282,14 @@ export class ServiceNowIntegrationService {
 
     /** Cierra un ticket de Incident en ServiceNow. */
     async closeIncidentTicket(sysId: string, closeCategory: string, closeNotes?: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.sn.closeIncidentTicket',
+            { kind: 'server', attributes: { 'sn.sysId': sysId, 'sn.closeCategory': closeCategory } },
+            () => this._closeIncidentTicket(sysId, closeCategory, closeNotes),
+        );
+    }
+
+    private async _closeIncidentTicket(sysId: string, closeCategory: string, closeNotes?: string): Promise<Result<void>> {
         this.logger.log(`[close] sysId=${sysId} | closeCategory=${closeCategory}`);
         const result = await this.snClient.closeIncident(sysId, closeCategory, closeNotes);
         if (result.isFailure) {
@@ -258,6 +300,14 @@ export class ServiceNowIntegrationService {
 
     /** Actualiza campos arbitrarios de un ticket existente. */
     async updateTicket(table: string, sysId: string, fields: Record<string, any>): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.sn.updateTicket',
+            { kind: 'server', attributes: { 'sn.table': table, 'sn.sysId': sysId } },
+            () => this._updateTicket(table, sysId, fields),
+        );
+    }
+
+    private async _updateTicket(table: string, sysId: string, fields: Record<string, any>): Promise<Result<void>> {
         this.logger.log(`[update] table=${table} | sysId=${sysId} | fields=${Object.keys(fields).join(',')}`);
         const result = await this.snClient.updateTicket(table, sysId, fields);
         if (result.isFailure) {

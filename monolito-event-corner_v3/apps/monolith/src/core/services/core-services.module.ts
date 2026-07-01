@@ -129,9 +129,9 @@ import { EVENT_BUS, CACHE, SERVICENOW_CLIENT, EXTERNAL_INVENTORY_SERVICE, HOLIDA
         },
         {
             provide: SERVICENOW_INTEGRATION_SERVICE,
-            useFactory: (issueTypeRepo, cornerRepo, profileRepo, snClient, cornerIssueConfigRepo) =>
-                new ServiceNowIntegrationService(issueTypeRepo, cornerRepo, profileRepo, snClient, cornerIssueConfigRepo),
-            inject: [ISSUE_TYPE_REPOSITORY, CORNER_REPOSITORY, SERVICE_NOW_PROFILE_REPOSITORY, SERVICENOW_CLIENT, CORNER_ISSUE_CONFIG_REPOSITORY],
+            useFactory: (issueTypeRepo, cornerRepo, profileRepo, snClient, cornerIssueConfigRepo, tracing) =>
+                new ServiceNowIntegrationService(issueTypeRepo, cornerRepo, profileRepo, snClient, cornerIssueConfigRepo, tracing),
+            inject: [ISSUE_TYPE_REPOSITORY, CORNER_REPOSITORY, SERVICE_NOW_PROFILE_REPOSITORY, SERVICENOW_CLIENT, CORNER_ISSUE_CONFIG_REPOSITORY, TracingService],
         },
         {
             provide: CORNER_ISSUE_CONFIG_SERVICE,
