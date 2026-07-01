@@ -231,6 +231,14 @@ export class IncidentService implements IIncidentService {
     }
 
     async deliverIncident(command: DeliverIncidentCommand): Promise<Result<Incident>> {
+        return this.tracing.run(
+            'monolith.deliverIncident',
+            { kind: 'server', attributes: { 'incident.incidentId': command.incidentId, 'incident.technicianId': command.technicianId } },
+            () => this._deliverIncident(command),
+        );
+    }
+
+    private async _deliverIncident(command: DeliverIncidentCommand): Promise<Result<Incident>> {
         const incidentResult = await this.incidentRepository.findById(command.incidentId);
         if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
 
@@ -256,6 +264,14 @@ export class IncidentService implements IIncidentService {
     }
 
     async takeIncident(command: TakeIncidentCommand): Promise<Result<Incident>> {
+        return this.tracing.run(
+            'monolith.takeIncident',
+            { kind: 'server', attributes: { 'incident.incidentId': command.incidentId, 'incident.technicianId': command.technicianId } },
+            () => this._takeIncident(command),
+        );
+    }
+
+    private async _takeIncident(command: TakeIncidentCommand): Promise<Result<Incident>> {
         // 1. Obtener incidencia
         const incidentResult = await this.incidentRepository.findById(command.incidentId);
         if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
@@ -291,6 +307,14 @@ export class IncidentService implements IIncidentService {
     }
 
     async releaseIncident(command: ReleaseIncidentCommand): Promise<Result<Incident>> {
+        return this.tracing.run(
+            'monolith.releaseIncident',
+            { kind: 'server', attributes: { 'incident.incidentId': command.incidentId, 'incident.technicianId': command.technicianId } },
+            () => this._releaseIncident(command),
+        );
+    }
+
+    private async _releaseIncident(command: ReleaseIncidentCommand): Promise<Result<Incident>> {
         // Similar a takeIncident
         const incidentResult = await this.incidentRepository.findById(command.incidentId);
         if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
@@ -318,6 +342,14 @@ export class IncidentService implements IIncidentService {
     }
 
     async changeStatus(command: ChangeIncidentStatusCommand): Promise<Result<Incident>> {
+        return this.tracing.run(
+            'monolith.changeStatus',
+            { kind: 'server', attributes: { 'incident.incidentId': command.incidentId, 'incident.newStatus': command.newStatus } },
+            () => this._changeStatus(command),
+        );
+    }
+
+    private async _changeStatus(command: ChangeIncidentStatusCommand): Promise<Result<Incident>> {
         const incidentResult = await this.incidentRepository.findById(command.incidentId);
         if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
 
@@ -361,6 +393,14 @@ export class IncidentService implements IIncidentService {
     }
 
     async validateIncident(command: ValidateIncidentCommand): Promise<Result<Incident>> {
+        return this.tracing.run(
+            'monolith.validateIncident',
+            { kind: 'server', attributes: { 'incident.incidentId': command.incidentId } },
+            () => this._validateIncident(command),
+        );
+    }
+
+    private async _validateIncident(command: ValidateIncidentCommand): Promise<Result<Incident>> {
         const incidentResult = await this.incidentRepository.findById(command.incidentId);
         if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
         const incident = incidentResult.unwrap();
@@ -379,6 +419,14 @@ export class IncidentService implements IIncidentService {
     }
 
     async reopenIncident(command: ReopenIncidentCommand): Promise<Result<Incident>> {
+        return this.tracing.run(
+            'monolith.reopenIncident',
+            { kind: 'server', attributes: { 'incident.incidentId': command.incidentId } },
+            () => this._reopenIncident(command),
+        );
+    }
+
+    private async _reopenIncident(command: ReopenIncidentCommand): Promise<Result<Incident>> {
         const incidentResult = await this.incidentRepository.findById(command.incidentId);
         if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
         const incident = incidentResult.unwrap();
@@ -399,6 +447,14 @@ export class IncidentService implements IIncidentService {
     }
 
     async cancelIncident(command: CancelIncidentCommand): Promise<Result<Incident>> {
+        return this.tracing.run(
+            'monolith.cancelIncident',
+            { kind: 'server', attributes: { 'incident.incidentId': command.incidentId, 'incident.customerId': command.customerId } },
+            () => this._cancelIncident(command),
+        );
+    }
+
+    private async _cancelIncident(command: CancelIncidentCommand): Promise<Result<Incident>> {
         const incidentResult = await this.incidentRepository.findById(command.incidentId);
         if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
         const incident = incidentResult.unwrap();
