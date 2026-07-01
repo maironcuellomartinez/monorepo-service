@@ -2,6 +2,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { TracingService } from '@app/observability';
 import { IEventBus } from '@app/core/ports/outgoing/event-bus/event-bus.port';
 import { DomainEvent } from '@app/shared/domain-event';
 import { IN_MEMORY_EVENT_BUS } from '@app/core/ports/outgoing/infrastructure-tokens';
@@ -25,9 +26,18 @@ export class OutboxEventBusAdapter implements IEventBus {
         private readonly outboxRepo: Repository<OutboxEventEntity>,
         @Inject(IN_MEMORY_EVENT_BUS)
         private readonly inMemoryBus: InMemoryEventBusAdapter,
+        private readonly tracing: TracingService,
     ) { }
 
     async publish(event: DomainEvent): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.outbox.publish',
+            { kind: 'internal', attributes: { 'event.type': event.type, 'event.aggregateId': event.aggregateId } },
+            () => this._publish(event),
+        );
+    }
+
+    private async _publish(event: DomainEvent): Promise<Result<void>> {
         try {
             const entity = this.toEntity(event);
             await this.outboxRepo.save(entity);
@@ -38,6 +48,14 @@ export class OutboxEventBusAdapter implements IEventBus {
     }
 
     async publishMany(events: DomainEvent[]): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.outbox.publishMany',
+            { kind: 'internal', attributes: { 'event.count': events.length } },
+            () => this._publishMany(events),
+        );
+    }
+
+    private async _publishMany(events: DomainEvent[]): Promise<Result<void>> {
         if (events.length === 0) return Result.ok(undefined);
         try {
             const entities = events.map(e => this.toEntity(e));
