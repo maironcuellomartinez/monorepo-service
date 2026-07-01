@@ -1,7 +1,7 @@
 ﻿// infrastructure/event-handlers/incident-servicenow.handler.ts
 import { Injectable, Inject, Logger, OnModuleInit } from '@nestjs/common';
 import { DomainEvent } from '@app/shared/domain-event';
-import { CorrelationIdService } from '@app/observability';
+import { CorrelationIdService, TracingService } from '@app/observability';
 import { IEventBus } from '@app/core/ports/outgoing/event-bus/event-bus.port';
 import { IIncidentRepository } from '@app/core/ports/outgoing/repositories/incident-repository.port';
 import { ICompanyRepository } from '@app/core/ports/outgoing/repositories/company-repository.port';
@@ -23,6 +23,7 @@ export class IncidentServiceNowHandler implements OnModuleInit {
         @Inject(USER_REPOSITORY) private readonly userRepository: IUserRepository,
         @Inject(COMPANY_REPOSITORY) private readonly companyRepository: ICompanyRepository,
         private readonly correlation: CorrelationIdService,
+        private readonly tracing: TracingService,
     ) { }
 
     onModuleInit(): void {
@@ -36,6 +37,14 @@ export class IncidentServiceNowHandler implements OnModuleInit {
     }
 
     private async handle(event: DomainEvent): Promise<void> {
+        return this.tracing.run(
+            'monolith.handler.incidentCreated',
+            { kind: 'server', attributes: { 'handler.aggregateId': event.aggregateId } },
+            () => this._handle(event),
+        );
+    }
+
+    private async _handle(event: DomainEvent): Promise<void> {
         const incidentResult = await this.incidentRepository.findById(event.aggregateId as IncidentId);
         if (incidentResult.isFailure) {
             this.logger.error(`[INCIDENT_CREATED] Could not load incident ${event.aggregateId}: ${incidentResult.unwrapError().message}`);
@@ -76,7 +85,7 @@ export class IncidentServiceNowHandler implements OnModuleInit {
             return;
         }
 
-        const result = await this.serviceNowService.createIncidentTicket(incident, company);
+        const result = await this.serviceNowService.createIncidentTicket(incident, company, user.principalName ?? undefined);
         if (result.isFailure) {
             const msg = `[INCIDENT_CREATED] Failed to create SN ticket for incident ${event.aggregateId}: ${result.unwrapError().message}`;
             this.logger.error(msg);

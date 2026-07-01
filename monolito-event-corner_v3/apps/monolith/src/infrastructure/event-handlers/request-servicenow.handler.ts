@@ -1,12 +1,14 @@
 ﻿// infrastructure/event-handlers/request-servicenow.handler.ts
 import { Injectable, Inject, Logger, OnModuleInit } from '@nestjs/common';
 import { DomainEvent } from '@app/shared/domain-event';
+import { TracingService } from '@app/observability';
 import { IEventBus } from '@app/core/ports/outgoing/event-bus/event-bus.port';
 import { IRequestRepository } from '@app/core/ports/outgoing/repositories/request-repository.port';
 import { ICompanyRepository } from '@app/core/ports/outgoing/repositories/company-repository.port';
+import { IUserRepository } from '@app/core/ports/outgoing/repositories/user-repository.port';
 import { ServiceNowIntegrationService } from '@app/core/services/servicenow/servicenow-integration.service';
 import { IN_MEMORY_EVENT_BUS } from '@app/core/ports/outgoing/infrastructure-tokens';
-import { REQUEST_REPOSITORY, COMPANY_REPOSITORY } from '@app/core/ports/outgoing/repositories/tokens';
+import { REQUEST_REPOSITORY, COMPANY_REPOSITORY, USER_REPOSITORY } from '@app/core/ports/outgoing/repositories/tokens';
 import { SERVICENOW_INTEGRATION_SERVICE } from '@app/core/ports/incoming/service-tokens';
 import { RequestId } from '@app/shared/types/branded-ids';
 
@@ -19,6 +21,8 @@ export class RequestServiceNowHandler implements OnModuleInit {
         @Inject(SERVICENOW_INTEGRATION_SERVICE) private readonly snService: ServiceNowIntegrationService,
         @Inject(REQUEST_REPOSITORY) private readonly requestRepo: IRequestRepository,
         @Inject(COMPANY_REPOSITORY) private readonly companyRepo: ICompanyRepository,
+        @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
+        private readonly tracing: TracingService,
     ) { }
 
     onModuleInit(): void {
@@ -30,6 +34,14 @@ export class RequestServiceNowHandler implements OnModuleInit {
     }
 
     private async handle(event: DomainEvent): Promise<void> {
+        return this.tracing.run(
+            'monolith.handler.requestCreated',
+            { kind: 'server', attributes: { 'handler.aggregateId': event.aggregateId } },
+            () => this._handle(event),
+        );
+    }
+
+    private async _handle(event: DomainEvent): Promise<void> {
         const requestResult = await this.requestRepo.findById(event.aggregateId as RequestId);
         if (requestResult.isFailure) {
             this.logger.error(`[REQUEST_CREATED] Could not load request ${event.aggregateId}: ${requestResult.unwrapError().message}`);
@@ -58,7 +70,14 @@ export class RequestServiceNowHandler implements OnModuleInit {
             return;
         }
 
-        const result = await this.snService.createRequestTicket(request, company);
+        // Resolver principalName del cliente para requested_for
+        // (caller_id del técnico requiere technicianId → userId, se resuelve en el servicio SN como fallback)
+        const customerResult = await this.userRepo.findById(request.customerId);
+        const requestedForPrincipalName = !customerResult.isFailure
+            ? customerResult.unwrap()?.principalName ?? undefined
+            : undefined;
+
+        const result = await this.snService.createRequestTicket(request, company, undefined, requestedForPrincipalName);
         if (result.isFailure) {
             const msg = `[REQUEST_CREATED] Failed to create SN ticket for request ${event.aggregateId}: ${result.unwrapError().message}`;
             this.logger.error(msg);

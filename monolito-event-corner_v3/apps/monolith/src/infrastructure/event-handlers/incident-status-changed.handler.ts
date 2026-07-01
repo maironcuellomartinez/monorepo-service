@@ -1,6 +1,7 @@
 // infrastructure/event-handlers/incident-status-changed.handler.ts
 import { Injectable, Inject, Logger, OnModuleInit } from '@nestjs/common';
 import { DomainEvent } from '@app/shared/domain-event';
+import { TracingService } from '@app/observability';
 import { IEventBus } from '@app/core/ports/outgoing/event-bus/event-bus.port';
 import { IIncidentRepository } from '@app/core/ports/outgoing/repositories/incident-repository.port';
 import { ServiceNowIntegrationService } from '@app/core/services/servicenow/servicenow-integration.service';
@@ -18,6 +19,7 @@ export class IncidentStatusChangedHandler implements OnModuleInit {
         @Inject(IN_MEMORY_EVENT_BUS) private readonly eventBus: IEventBus,
         @Inject(SERVICENOW_INTEGRATION_SERVICE) private readonly snService: ServiceNowIntegrationService,
         @Inject(INCIDENT_REPOSITORY) private readonly incidentRepo: IIncidentRepository,
+        private readonly tracing: TracingService,
     ) { }
 
     onModuleInit(): void {
@@ -26,6 +28,14 @@ export class IncidentStatusChangedHandler implements OnModuleInit {
     }
 
     private async handleStatusChanged(event: DomainEvent): Promise<void> {
+        return this.tracing.run(
+            'monolith.handler.incidentStatusChanged',
+            { kind: 'server', attributes: { 'handler.aggregateId': event.aggregateId } },
+            () => this._handleStatusChanged(event),
+        );
+    }
+
+    private async _handleStatusChanged(event: DomainEvent): Promise<void> {
         const newStatus: IncidentStatus = event.data?.newStatus;
 
         // Only CLOSED needs a ServiceNow call; other transitions are internal state changes
@@ -59,6 +69,14 @@ export class IncidentStatusChangedHandler implements OnModuleInit {
     }
 
     private async handleReopened(event: DomainEvent): Promise<void> {
+        return this.tracing.run(
+            'monolith.handler.incidentReopened',
+            { kind: 'server', attributes: { 'handler.aggregateId': event.aggregateId } },
+            () => this._handleReopened(event),
+        );
+    }
+
+    private async _handleReopened(event: DomainEvent): Promise<void> {
         const incident = await this.loadIncident(event.aggregateId, 'INCIDENT_REOPENED');
         if (!incident) return;
 
