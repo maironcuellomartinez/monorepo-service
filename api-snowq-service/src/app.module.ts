@@ -1,4 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { HttpModule } from '@nestjs/axios';
 import { SnowRequestsModule } from './snow-requests/snow-requests.module';
 import { BulkheadModule } from './resilience/bulkhead/bulkhead.module';
@@ -8,6 +9,7 @@ import { MonitoringModule } from './monitoring/monitoring.module';
 import { CommonModule } from './common/common.module';
 import { CorrelationMiddleware } from './common/middleware/correlation.middleware';
 import { HealthModule } from './health/health.module';
+import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 
 @Module({
     imports: [
@@ -18,6 +20,9 @@ import { HealthModule } from './health/health.module';
         SnowRequestsModule,
         MonitoringModule,
         HealthModule,
+    ],
+    providers: [
+        { provide: APP_INTERCEPTOR, useClass: TracingInterceptor },
     ],
 })
 export class AppModule implements NestModule {

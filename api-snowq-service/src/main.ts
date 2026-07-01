@@ -9,6 +9,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { TracingClient } from './common/tracing.client';
 
 function validateConfig(): void {
     if (env === 'development') return;
@@ -77,6 +78,7 @@ async function bootstrap() {
     for (const signal of shutdownSignals) {
         process.once(signal, async () => {
             logger.log(`Senal ${signal} recibida — iniciando shutdown graceful`);
+            await TracingClient.getInstance().shutdown();
             await app.close();
             logger.log('api-snowq-service detenido limpiamente');
             process.exit(0);
