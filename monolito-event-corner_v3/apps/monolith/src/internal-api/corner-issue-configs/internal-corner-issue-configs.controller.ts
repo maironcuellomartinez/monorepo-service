@@ -5,6 +5,7 @@ import { CORNER_ISSUE_CONFIG_SERVICE } from '@app/core/ports/incoming/service-to
 import { CompanyIssueConfigService } from '@app/core/services/corner-issue-config/corner-issue-config.service';
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
 import { CreateCompanyIssueConfigDto, UpdateCompanyIssueConfigDto } from './dto/company-issue-configs.dto';
+import { TracingService } from '@app/observability';
 
 @ApiTags('Company Issue Configs')
 @ApiBearerAuth()
@@ -12,6 +13,7 @@ import { CreateCompanyIssueConfigDto, UpdateCompanyIssueConfigDto } from './dto/
 export class InternalCompanyIssueConfigsController {
     constructor(
         @Inject(CORNER_ISSUE_CONFIG_SERVICE) private readonly service: CompanyIssueConfigService,
+        private readonly tracing: TracingService,
     ) {}
 
     @Get('company/:companyId')
@@ -42,6 +44,10 @@ export class InternalCompanyIssueConfigsController {
     @ApiOperation({ summary: 'Crear configuración empresa + tipo de incidencia', description: 'Define qué grupo de ServiceNow atiende una combinación empresa/tipo y el tiempo de trabajo estimado.' })
     @ApiResponse({ status: 201, description: 'Configuración creada' })
     async create(@Body() dto: CreateCompanyIssueConfigDto) {
+        return this.tracing.run('monolith.controller.issueConfigs.create', { kind: 'server' }, () => this._create(dto));
+    }
+
+    private async _create(dto: CreateCompanyIssueConfigDto) {
         return unwrapOrThrow(await this.service.create(dto));
     }
 
@@ -53,6 +59,10 @@ export class InternalCompanyIssueConfigsController {
         @Param('id') id: string,
         @Body() dto: UpdateCompanyIssueConfigDto,
     ) {
+        return this.tracing.run('monolith.controller.issueConfigs.update', { kind: 'server', attributes: { 'issueConfig.id': id } }, () => this._update(id, dto));
+    }
+
+    private async _update(id: string, dto: UpdateCompanyIssueConfigDto) {
         return unwrapOrThrow(await this.service.update(id, dto));
     }
 
@@ -62,6 +72,10 @@ export class InternalCompanyIssueConfigsController {
     @ApiParam({ name: 'id', example: 'uuid-config' })
     @ApiResponse({ status: 204, description: 'Eliminada' })
     async delete(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.issueConfigs.delete', { kind: 'server', attributes: { 'issueConfig.id': id } }, () => this._delete(id));
+    }
+
+    private async _delete(id: string) {
         unwrapOrThrow(await this.service.delete(id));
     }
 }

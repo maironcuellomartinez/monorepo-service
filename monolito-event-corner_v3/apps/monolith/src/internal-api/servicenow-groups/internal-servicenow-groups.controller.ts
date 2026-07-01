@@ -5,6 +5,7 @@ import { SERVICENOW_GROUP_SERVICE } from '@app/core/ports/incoming/service-token
 import { ServiceNowGroupService } from '@app/core/services/servicenow/servicenow-group.service';
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
 import { RegisterSnowGroupDto, UpdateSnowGroupDto } from './dto/servicenow-groups.dto';
+import { TracingService } from '@app/observability';
 
 @ApiTags('ServiceNow Groups')
 @ApiBearerAuth()
@@ -12,6 +13,7 @@ import { RegisterSnowGroupDto, UpdateSnowGroupDto } from './dto/servicenow-group
 export class InternalServiceNowGroupsController {
     constructor(
         @Inject(SERVICENOW_GROUP_SERVICE) private readonly service: ServiceNowGroupService,
+        private readonly tracing: TracingService,
     ) {}
 
     @Get()
@@ -26,6 +28,10 @@ export class InternalServiceNowGroupsController {
     @ApiOperation({ summary: 'Registrar grupo de ServiceNow', description: 'Registra un grupo resolutor en el catálogo local. El sys_id real debe configurarse directamente en la entidad.' })
     @ApiResponse({ status: 201, description: 'Grupo registrado' })
     async register(@Body() dto: RegisterSnowGroupDto) {
+        return this.tracing.run('monolith.controller.snGroups.register', { kind: 'server' }, () => this._register(dto));
+    }
+
+    private async _register(dto: RegisterSnowGroupDto) {
         return unwrapOrThrow(await this.service.register(dto.groupName, dto.description));
     }
 
@@ -34,6 +40,10 @@ export class InternalServiceNowGroupsController {
     @ApiParam({ name: 'id', example: 'uuid-group' })
     @ApiResponse({ status: 200, description: 'Grupo actualizado' })
     async update(@Param('id') id: string, @Body() dto: UpdateSnowGroupDto) {
+        return this.tracing.run('monolith.controller.snGroups.update', { kind: 'server', attributes: { 'snGroup.id': id } }, () => this._update(id, dto));
+    }
+
+    private async _update(id: string, dto: UpdateSnowGroupDto) {
         return unwrapOrThrow(await this.service.update(id, dto));
     }
 
@@ -43,6 +53,10 @@ export class InternalServiceNowGroupsController {
     @ApiParam({ name: 'id', example: 'uuid-group' })
     @ApiResponse({ status: 204, description: 'Eliminado' })
     async delete(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.snGroups.delete', { kind: 'server', attributes: { 'snGroup.id': id } }, () => this._delete(id));
+    }
+
+    private async _delete(id: string) {
         unwrapOrThrow(await this.service.delete(id));
     }
 }

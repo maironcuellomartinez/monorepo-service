@@ -19,6 +19,7 @@ import {
     CancelIncidentDto,
     ListIncidentsQueryDto,
 } from './dto/incidents.dto';
+import { TracingService } from '@app/observability';
 
 @ApiTags('Incidents')
 @ApiBearerAuth()
@@ -29,6 +30,7 @@ export class InternalIncidentsController {
     constructor(
         @Inject(INCIDENT_SERVICE) private readonly service: IIncidentService,
         @Inject(INCIDENT_REPOSITORY) private readonly repository: IIncidentRepository,
+        private readonly tracing: TracingService,
     ) { }
 
     @Post()
@@ -37,6 +39,10 @@ export class InternalIncidentsController {
     @ApiResponse({ status: 201, description: 'Incidencia creada' })
     @ApiResponse({ status: 400, description: 'Datos inválidos' })
     async create(@Body() body: CreateIncidentDto) {
+        return this.tracing.run('monolith.controller.incidents.create', { kind: 'server' }, () => this._create(body));
+    }
+
+    private async _create(body: CreateIncidentDto) {
         return unwrapOrThrow(await this.service.createIncident(body as any));
     }
 
@@ -101,6 +107,10 @@ export class InternalIncidentsController {
     @ApiParam({ name: 'id', example: 'uuid-incident' })
     @ApiResponse({ status: 200, description: 'Entrega registrada' })
     async deliver(@Param('id') id: string, @Body() dto: DeliverIncidentDto) {
+        return this.tracing.run('monolith.controller.incidents.deliver', { kind: 'server', attributes: { 'incident.id': id } }, () => this._deliver(id, dto));
+    }
+
+    private async _deliver(id: string, dto: DeliverIncidentDto) {
         return unwrapOrThrow(await this.service.deliverIncident({
             incidentId: IncidentId(id),
             technicianId: TechnicianId(dto.technicianId),
@@ -112,6 +122,10 @@ export class InternalIncidentsController {
     @ApiParam({ name: 'id', example: 'uuid-incident' })
     @ApiResponse({ status: 200, description: 'Incidencia tomada' })
     async take(@Param('id') id: string, @Body() dto: TakeIncidentDto) {
+        return this.tracing.run('monolith.controller.incidents.take', { kind: 'server', attributes: { 'incident.id': id } }, () => this._take(id, dto));
+    }
+
+    private async _take(id: string, dto: TakeIncidentDto) {
         return unwrapOrThrow(await this.service.takeIncident({
             incidentId: IncidentId(id),
             technicianId: TechnicianId(dto.technicianId),
@@ -123,6 +137,10 @@ export class InternalIncidentsController {
     @ApiParam({ name: 'id', example: 'uuid-incident' })
     @ApiResponse({ status: 200, description: 'Incidencia liberada' })
     async release(@Param('id') id: string, @Body() dto: ReleaseIncidentDto) {
+        return this.tracing.run('monolith.controller.incidents.release', { kind: 'server', attributes: { 'incident.id': id } }, () => this._release(id, dto));
+    }
+
+    private async _release(id: string, dto: ReleaseIncidentDto) {
         return unwrapOrThrow(await this.service.releaseIncident({
             incidentId: IncidentId(id),
             technicianId: TechnicianId(dto.technicianId),
@@ -136,6 +154,10 @@ export class InternalIncidentsController {
     @ApiResponse({ status: 200, description: 'Estado actualizado' })
     @ApiResponse({ status: 400, description: 'Transición de estado inválida' })
     async changeStatus(@Param('id') id: string, @Body() dto: ChangeStatusDto) {
+        return this.tracing.run('monolith.controller.incidents.changeStatus', { kind: 'server', attributes: { 'incident.id': id } }, () => this._changeStatus(id, dto));
+    }
+
+    private async _changeStatus(id: string, dto: ChangeStatusDto) {
         return unwrapOrThrow(await this.service.changeStatus({
             incidentId: IncidentId(id),
             technicianId: TechnicianId(dto.technicianId),
@@ -157,6 +179,10 @@ export class InternalIncidentsController {
         if (body.items.length > 50) {
             throw new BadRequestException('Batch size cannot exceed 50 items');
         }
+        return this.tracing.run('monolith.controller.incidents.batchChangeStatus', { kind: 'server', attributes: { 'batch.count': body.items.length } }, () => this._batchChangeStatus(body));
+    }
+
+    private async _batchChangeStatus(body: BatchStatusChangeDto) {
         return unwrapOrThrow(await this.service.batchChangeStatus(body.items as any));
     }
 
@@ -165,6 +191,10 @@ export class InternalIncidentsController {
     @ApiParam({ name: 'id', example: 'uuid-incident' })
     @ApiResponse({ status: 200, description: 'Resolución validada' })
     async validate(@Param('id') id: string, @Body() dto: ValidateIncidentDto) {
+        return this.tracing.run('monolith.controller.incidents.validate', { kind: 'server', attributes: { 'incident.id': id } }, () => this._validate(id, dto));
+    }
+
+    private async _validate(id: string, dto: ValidateIncidentDto) {
         return unwrapOrThrow(await this.service.validateIncident({
             incidentId: IncidentId(id),
             customerId: CustomerId(dto.customerId),
@@ -176,6 +206,10 @@ export class InternalIncidentsController {
     @ApiParam({ name: 'id', example: 'uuid-incident' })
     @ApiResponse({ status: 200, description: 'Incidencia reabierta' })
     async reopen(@Param('id') id: string, @Body() dto: ReopenIncidentDto) {
+        return this.tracing.run('monolith.controller.incidents.reopen', { kind: 'server', attributes: { 'incident.id': id } }, () => this._reopen(id, dto));
+    }
+
+    private async _reopen(id: string, dto: ReopenIncidentDto) {
         return unwrapOrThrow(await this.service.reopenIncident({
             incidentId: IncidentId(id),
             customerId: CustomerId(dto.customerId),
@@ -200,6 +234,10 @@ export class InternalIncidentsController {
         @Param('id') id: string,
         @Body() body: { technicianId?: string; comment: string },
     ) {
+        return this.tracing.run('monolith.controller.incidents.addNote', { kind: 'server', attributes: { 'incident.id': id } }, () => this._addNote(id, body));
+    }
+
+    private async _addNote(id: string, body: { technicianId?: string; comment: string }) {
         if (!body.comment?.trim()) throw new BadRequestException('comment is required');
         return unwrapOrThrow(
             await this.repository.addNote(
@@ -216,6 +254,10 @@ export class InternalIncidentsController {
     @ApiResponse({ status: 200, description: 'Incidencia cancelada' })
     @ApiResponse({ status: 400, description: 'Solo se pueden cancelar incidencias en estado CREATED' })
     async cancel(@Param('id') id: string, @Body() dto: CancelIncidentDto) {
+        return this.tracing.run('monolith.controller.incidents.cancel', { kind: 'server', attributes: { 'incident.id': id } }, () => this._cancel(id, dto));
+    }
+
+    private async _cancel(id: string, dto: CancelIncidentDto) {
         return unwrapOrThrow(await this.service.cancelIncident({
             incidentId: IncidentId(id),
             customerId: CustomerId(dto.customerId),

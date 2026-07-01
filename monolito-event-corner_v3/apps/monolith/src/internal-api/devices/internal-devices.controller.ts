@@ -6,6 +6,7 @@ import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
 import { DEVICE_SERVICE, IDeviceService } from '../../core/ports';
 import { DeviceId } from '@app/shared/types/branded-ids';
 import { Device } from '../../core/domain/entities/device.entity';
+import { TracingService } from '@app/observability';
 
 @ApiTags('Devices')
 @ApiBearerAuth()
@@ -13,6 +14,7 @@ import { Device } from '../../core/domain/entities/device.entity';
 export class InternalDevicesController {
     constructor(
         @Inject(DEVICE_SERVICE) private readonly service: IDeviceService,
+        private readonly tracing: TracingService,
     ) { }
 
     @Get()
@@ -46,6 +48,10 @@ export class InternalDevicesController {
     @ApiParam({ name: 'serialNumber', example: 'SN-ABC-123456' })
     @ApiResponse({ status: 200, description: 'Resultado de la sincronización' })
     async sync(@Param('serialNumber') serialNumber: string) {
+        return this.tracing.run('monolith.controller.devices.sync', { kind: 'server', attributes: { 'device.serialNumber': serialNumber } }, () => this._sync(serialNumber));
+    }
+
+    private async _sync(serialNumber: string) {
         return unwrapOrThrow(await this.service.syncDevice(serialNumber));
     }
 
@@ -55,6 +61,10 @@ export class InternalDevicesController {
     @ApiParam({ name: 'userId', description: 'ID del usuario en el monolith' })
     @ApiResponse({ status: 200, description: 'Resultado de la sincronización' })
     async syncForUser(@Param('userId') userId: string) {
+        return this.tracing.run('monolith.controller.devices.syncForUser', { kind: 'server', attributes: { 'user.id': userId } }, () => this._syncForUser(userId));
+    }
+
+    private async _syncForUser(userId: string) {
         return unwrapOrThrow(await this.service.syncUserDevices(userId));
     }
 
@@ -63,6 +73,10 @@ export class InternalDevicesController {
     @ApiOperation({ summary: 'Refrescar dispositivos desactualizados', description: 'Busca todos los dispositivos con estado STALE y los re-sincroniza con el inventario externo.' })
     @ApiResponse({ status: 200, description: 'Resultado del proceso de refresco' })
     async refreshStale() {
+        return this.tracing.run('monolith.controller.devices.refreshStale', { kind: 'server' }, () => this._refreshStale());
+    }
+
+    private async _refreshStale() {
         return unwrapOrThrow(await this.service.refreshStaleDevices());
     }
 
@@ -72,6 +86,10 @@ export class InternalDevicesController {
     @ApiBody({ schema: { properties: { userId: { type: 'string' }, deviceType: { type: 'string' }, model: { type: 'string' }, serialNumber: { type: 'string' } }, required: ['userId', 'deviceType'] } })
     @ApiResponse({ status: 201, description: 'Dispositivo virtual creado' })
     async createVirtual(@Body() body: { userId: string; deviceType: string; model?: string; serialNumber?: string }) {
+        return this.tracing.run('monolith.controller.devices.createVirtual', { kind: 'server' }, () => this._createVirtual(body));
+    }
+
+    private async _createVirtual(body: { userId: string; deviceType: string; model?: string; serialNumber?: string }) {
         const device = unwrapOrThrow(await this.service.createVirtualDevice(body.userId, body.deviceType, body.model, body.serialNumber));
         return this.mapDevice(device);
     }
@@ -86,6 +104,10 @@ export class InternalDevicesController {
         @Param('deviceId') deviceId: string,
         @Body() body: { serialNumber?: string; deviceType?: string; model?: string | null; brand?: string | null },
     ) {
+        return this.tracing.run('monolith.controller.devices.updateVirtual', { kind: 'server', attributes: { 'device.id': deviceId } }, () => this._updateVirtual(deviceId, body));
+    }
+
+    private async _updateVirtual(deviceId: string, body: { serialNumber?: string; deviceType?: string; model?: string | null; brand?: string | null }) {
         const device = unwrapOrThrow(await this.service.updateVirtualDevice(deviceId as unknown as DeviceId, body));
         return this.mapDevice(device);
     }
@@ -96,6 +118,10 @@ export class InternalDevicesController {
     @ApiParam({ name: 'deviceId' })
     @ApiResponse({ status: 200, description: 'Dispositivo deshabilitado' })
     async disableDevice(@Param('deviceId') deviceId: string) {
+        return this.tracing.run('monolith.controller.devices.disableDevice', { kind: 'server', attributes: { 'device.id': deviceId } }, () => this._disableDevice(deviceId));
+    }
+
+    private async _disableDevice(deviceId: string) {
         unwrapOrThrow(await this.service.disableDevice(deviceId as unknown as DeviceId));
         return { disabled: true };
     }
@@ -106,6 +132,10 @@ export class InternalDevicesController {
     @ApiParam({ name: 'deviceId' })
     @ApiResponse({ status: 200, description: 'Dispositivo habilitado' })
     async enableDevice(@Param('deviceId') deviceId: string) {
+        return this.tracing.run('monolith.controller.devices.enableDevice', { kind: 'server', attributes: { 'device.id': deviceId } }, () => this._enableDevice(deviceId));
+    }
+
+    private async _enableDevice(deviceId: string) {
         unwrapOrThrow(await this.service.enableDevice(deviceId as unknown as DeviceId));
         return { enabled: true };
     }
@@ -116,6 +146,10 @@ export class InternalDevicesController {
     @ApiParam({ name: 'deviceId' })
     @ApiResponse({ status: 200, description: 'Dispositivo virtual eliminado' })
     async deleteVirtual(@Param('deviceId') deviceId: string) {
+        return this.tracing.run('monolith.controller.devices.deleteVirtual', { kind: 'server', attributes: { 'device.id': deviceId } }, () => this._deleteVirtual(deviceId));
+    }
+
+    private async _deleteVirtual(deviceId: string) {
         unwrapOrThrow(await this.service.completeVirtualDevice(deviceId as unknown as DeviceId));
         return { deleted: true };
     }

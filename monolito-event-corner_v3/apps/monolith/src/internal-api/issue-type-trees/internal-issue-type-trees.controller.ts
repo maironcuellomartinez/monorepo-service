@@ -9,6 +9,7 @@ import { IIssueTypeTreeRepository, ISSUE_TYPE_TREE_REPOSITORY } from '../../core
 import { IssueTypeTree } from '../../core/domain/entities/issue-type-tree.entity';
 import { IssueTypeTreeId } from '../../core/domain/value-objects/ids';
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
+import { TracingService } from '@app/observability';
 
 class CreateTreeDto {
     @IsString() @IsNotEmpty()
@@ -29,6 +30,7 @@ class RenameTreeDto {
 export class InternalIssueTypeTreesController {
     constructor(
         @Inject(ISSUE_TYPE_TREE_REPOSITORY) private readonly treeRepo: IIssueTypeTreeRepository,
+        private readonly tracing: TracingService,
     ) {}
 
     @Get()
@@ -42,6 +44,10 @@ export class InternalIssueTypeTreesController {
     @HttpCode(HttpStatus.CREATED)
     @ApiOperation({ summary: 'Crear árbol de tipos de cita' })
     async create(@Body() dto: CreateTreeDto) {
+        return this.tracing.run('monolith.controller.trees.create', { kind: 'server' }, () => this._create(dto));
+    }
+
+    private async _create(dto: CreateTreeDto) {
         const existing = await this.treeRepo.findById(dto.id);
         if (!existing.isFailure && existing.unwrap()) {
             throw Object.assign(new Error(`Ya existe un árbol con ID "${dto.id}"`), { status: 409 });
@@ -59,6 +65,10 @@ export class InternalIssueTypeTreesController {
     @ApiOperation({ summary: 'Renombrar árbol' })
     @ApiParam({ name: 'id' })
     async rename(@Param('id') id: string, @Body() dto: RenameTreeDto) {
+        return this.tracing.run('monolith.controller.trees.rename', { kind: 'server', attributes: { 'tree.id': id } }, () => this._rename(id, dto));
+    }
+
+    private async _rename(id: string, dto: RenameTreeDto) {
         const result = await this.treeRepo.findById(id);
         const tree = unwrapOrThrow(result);
         if (!tree) throw Object.assign(new Error(`Árbol "${id}" no encontrado`), { status: 404 });
@@ -72,6 +82,10 @@ export class InternalIssueTypeTreesController {
     @ApiOperation({ summary: 'Eliminar árbol (solo si no tiene tipos de cita asignados)' })
     @ApiParam({ name: 'id' })
     async delete(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.trees.delete', { kind: 'server', attributes: { 'tree.id': id } }, () => this._delete(id));
+    }
+
+    private async _delete(id: string) {
         const result = await this.treeRepo.findById(id);
         const tree = unwrapOrThrow(result);
         if (!tree) throw Object.assign(new Error(`Árbol "${id}" no encontrado`), { status: 404 });

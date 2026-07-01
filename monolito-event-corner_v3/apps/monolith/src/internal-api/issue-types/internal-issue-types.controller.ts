@@ -6,6 +6,7 @@ import { IIssueTypeService } from '@app/core/ports/incoming/admin/issue-type-ser
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
 import { IssueCategory } from '@app/core/domain/enums/issue-category.enum';
 import { CreateIssueTypeDto, UpdateIssueTypeDto } from './dto/issue-types.dto';
+import { TracingService } from '@app/observability';
 
 @ApiTags('Issue Types')
 @ApiBearerAuth()
@@ -13,6 +14,7 @@ import { CreateIssueTypeDto, UpdateIssueTypeDto } from './dto/issue-types.dto';
 export class InternalIssueTypesController {
     constructor(
         @Inject(ISSUE_TYPE_SERVICE) private readonly service: IIssueTypeService,
+        private readonly tracing: TracingService,
     ) { }
 
     @Get()
@@ -50,6 +52,10 @@ export class InternalIssueTypesController {
     @ApiOperation({ summary: 'Crear tipo de incidencia' })
     @ApiResponse({ status: 201, description: 'Tipo de incidencia creado' })
     async create(@Body() body: CreateIssueTypeDto) {
+        return this.tracing.run('monolith.controller.issueTypes.create', { kind: 'server' }, () => this._create(body));
+    }
+
+    private async _create(body: CreateIssueTypeDto) {
         return unwrapOrThrow(await this.service.createIssueType(body));
     }
 
@@ -58,6 +64,10 @@ export class InternalIssueTypesController {
     @ApiParam({ name: 'id', example: 'uuid-issue-type' })
     @ApiResponse({ status: 200, description: 'Tipo actualizado' })
     async update(@Param('id') id: string, @Body() body: UpdateIssueTypeDto) {
+        return this.tracing.run('monolith.controller.issueTypes.update', { kind: 'server', attributes: { 'issueType.id': id } }, () => this._update(id, body));
+    }
+
+    private async _update(id: string, body: UpdateIssueTypeDto) {
         return unwrapOrThrow(await this.service.updateIssueType({ id, ...body }));
     }
 
@@ -68,6 +78,10 @@ export class InternalIssueTypesController {
     @ApiResponse({ status: 204, description: 'Eliminado' })
     @ApiResponse({ status: 404, description: 'No encontrado' })
     async delete(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.issueTypes.delete', { kind: 'server', attributes: { 'issueType.id': id } }, () => this._delete(id));
+    }
+
+    private async _delete(id: string) {
         unwrapOrThrow(await this.service.deleteIssueType(id));
     }
 }

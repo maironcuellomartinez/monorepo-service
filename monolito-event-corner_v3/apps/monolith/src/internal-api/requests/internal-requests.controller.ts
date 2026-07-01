@@ -8,6 +8,7 @@ import { REQUEST_REPOSITORY, IRequestRepository } from '@app/core/ports/outgoing
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
 import { RequestId, TechnicianId, UserId, IssueTypeId, CornerId, CompanyId } from '@app/shared/types/branded-ids';
 import { CreateRequestDto, UpdateRequestStatusDto, ListRequestsQueryDto } from './dto/requests.dto';
+import { TracingService } from '@app/observability';
 
 @ApiTags('Requests')
 @ApiBearerAuth()
@@ -16,6 +17,7 @@ export class InternalRequestsController {
     constructor(
         @Inject(REQUEST_SERVICE) private readonly service: IRequestService,
         @Inject(REQUEST_REPOSITORY) private readonly repository: IRequestRepository,
+        private readonly tracing: TracingService,
     ) { }
 
     @Post()
@@ -24,6 +26,10 @@ export class InternalRequestsController {
     @ApiResponse({ status: 201, description: 'Solicitud creada' })
     @ApiResponse({ status: 400, description: 'Datos inválidos' })
     async create(@Body() body: CreateRequestDto) {
+        return this.tracing.run('monolith.controller.requests.create', { kind: 'server' }, () => this._create(body));
+    }
+
+    private async _create(body: CreateRequestDto) {
         return unwrapOrThrow(await this.service.createRequest({
             issueTypeId: IssueTypeId(body.issueTypeId),
             technicianId: TechnicianId(body.technicianId),
@@ -94,6 +100,10 @@ export class InternalRequestsController {
     @ApiParam({ name: 'id', example: 'uuid-request' })
     @ApiResponse({ status: 200, description: 'Estado actualizado' })
     async updateStatus(@Param('id') id: string, @Body() body: UpdateRequestStatusDto) {
+        return this.tracing.run('monolith.controller.requests.updateStatus', { kind: 'server', attributes: { 'request.id': id } }, () => this._updateStatus(id, body));
+    }
+
+    private async _updateStatus(id: string, body: UpdateRequestStatusDto) {
         return unwrapOrThrow(await this.service.updateRequestStatus({
             requestId: RequestId(id),
             technicianId: TechnicianId(body.technicianId),

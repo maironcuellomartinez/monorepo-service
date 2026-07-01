@@ -8,6 +8,7 @@ import { IsString, IsEmail, IsNotEmpty, IsOptional } from 'class-validator';
 import { TECHNICIAN_SERVICE } from '@app/core/ports/incoming/service-tokens';
 import { ITechnicianService } from '@app/core/ports/incoming/technician/technician-service.port';
 import { CornerId, TechnicianId } from '@app/core/domain/value-objects/ids';
+import { TracingService } from '@app/observability';
 
 export class AssignCornerDto {
     @IsString()
@@ -59,6 +60,7 @@ function mapTechnician(t: any) {
 export class InternalTechniciansController {
     constructor(
         @Inject(TECHNICIAN_SERVICE) private readonly service: ITechnicianService,
+        private readonly tracing: TracingService,
     ) { }
 
     @Get('by-user/:userId')
@@ -87,6 +89,10 @@ export class InternalTechniciansController {
     @HttpCode(HttpStatus.CREATED)
     @ApiOperation({ summary: 'Crear técnico vinculado a un User' })
     async create(@Body() dto: CreateTechnicianDto) {
+        return this.tracing.run('monolith.controller.technicians.create', { kind: 'server' }, () => this._create(dto));
+    }
+
+    private async _create(dto: CreateTechnicianDto) {
         const result = await this.service.createTechnician({
             userId: dto.userId,
             name: dto.name,
@@ -113,6 +119,10 @@ export class InternalTechniciansController {
     @ApiOperation({ summary: 'Asignar técnico a un corner (transferencia)' })
     @ApiParam({ name: 'id' })
     async assignCorner(@Param('id') id: string, @Body() dto: AssignCornerDto) {
+        return this.tracing.run('monolith.controller.technicians.assignCorner', { kind: 'server', attributes: { 'technician.id': id } }, () => this._assignCorner(id, dto));
+    }
+
+    private async _assignCorner(id: string, dto: AssignCornerDto) {
         const result = await this.service.updateTechnician(TechnicianId(id as any), {
             cornerId: CornerId(dto.cornerId as any),
         });
@@ -125,6 +135,10 @@ export class InternalTechniciansController {
     @ApiOperation({ summary: 'Eliminar técnico permanentemente' })
     @ApiParam({ name: 'id' })
     async remove(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.technicians.remove', { kind: 'server', attributes: { 'technician.id': id } }, () => this._remove(id));
+    }
+
+    private async _remove(id: string) {
         const result = await this.service.deleteTechnician(id);
         if (result.isFailure) throw new HttpException({ message: result.unwrapError().message }, HttpStatus.BAD_REQUEST);
     }
@@ -134,6 +148,10 @@ export class InternalTechniciansController {
     @ApiOperation({ summary: 'Deshabilitar técnico' })
     @ApiParam({ name: 'id' })
     async disable(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.technicians.disable', { kind: 'server', attributes: { 'technician.id': id } }, () => this._disable(id));
+    }
+
+    private async _disable(id: string) {
         const result = await this.service.disableTechnician(TechnicianId(id as any));
         if (result.isFailure) throw new HttpException({ message: result.unwrapError().message }, HttpStatus.BAD_REQUEST);
     }
@@ -143,6 +161,10 @@ export class InternalTechniciansController {
     @ApiOperation({ summary: 'Habilitar técnico' })
     @ApiParam({ name: 'id' })
     async enable(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.technicians.enable', { kind: 'server', attributes: { 'technician.id': id } }, () => this._enable(id));
+    }
+
+    private async _enable(id: string) {
         const result = await this.service.enableTechnician(TechnicianId(id as any));
         if (result.isFailure) throw new HttpException({ message: result.unwrapError().message }, HttpStatus.BAD_REQUEST);
     }

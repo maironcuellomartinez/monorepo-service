@@ -4,6 +4,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger'
 import { IsString, IsEmail, IsOptional, IsNotEmpty } from 'class-validator';
 import { USER_SERVICE } from '@app/core/ports/incoming/service-tokens';
 import { IUserService } from '@app/core/ports/incoming/user/user-service.port';
+import { TracingService } from '@app/observability';
 
 export class SyncUserDto {
     /** ABAC userId — se usa como externalId en el monolith */
@@ -42,6 +43,7 @@ export class SyncUserDto {
 export class InternalUsersController {
     constructor(
         @Inject(USER_SERVICE) private readonly userService: IUserService,
+        private readonly tracing: TracingService,
     ) { }
 
     /**
@@ -56,6 +58,10 @@ export class InternalUsersController {
         description: 'Upsert basado en externalId (ABAC userId). Crea el usuario si no existe, actualiza si ya existe.',
     })
     async sync(@Body() dto: SyncUserDto) {
+        return this.tracing.run('monolith.controller.users.sync', { kind: 'server' }, () => this._sync(dto));
+    }
+
+    private async _sync(dto: SyncUserDto) {
         const result = await this.userService.syncUser(dto);
         if (result.isFailure) {
             throw new HttpException(
@@ -136,6 +142,10 @@ export class InternalUsersController {
     @ApiOperation({ summary: 'Actualizar perfil de usuario' })
     @ApiParam({ name: 'id' })
     async update(@Param('id') id: string, @Body() body: { name?: string; lastName?: string; companyId?: string | null }) {
+        return this.tracing.run('monolith.controller.users.update', { kind: 'server', attributes: { 'user.id': id } }, () => this._update(id, body));
+    }
+
+    private async _update(id: string, body: { name?: string; lastName?: string; companyId?: string | null }) {
         const result = await this.userService.updateUserProfile(id, body);
         if (result.isFailure) {
             throw new HttpException({ message: result.unwrapError().message }, HttpStatus.BAD_REQUEST);
@@ -157,6 +167,10 @@ export class InternalUsersController {
     @ApiOperation({ summary: 'Asignar empresa a un usuario' })
     @ApiParam({ name: 'id' })
     async assignCompany(@Param('id') id: string, @Body() body: { companyId: string | null }) {
+        return this.tracing.run('monolith.controller.users.assignCompany', { kind: 'server', attributes: { 'user.id': id } }, () => this._assignCompany(id, body));
+    }
+
+    private async _assignCompany(id: string, body: { companyId: string | null }) {
         const result = await this.userService.assignCompany(id, body.companyId);
         if (result.isFailure) {
             throw new HttpException({ message: result.unwrapError().message }, HttpStatus.BAD_REQUEST);
@@ -173,6 +187,10 @@ export class InternalUsersController {
     @ApiOperation({ summary: 'Desactivar usuario' })
     @ApiParam({ name: 'id' })
     async deactivate(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.users.deactivate', { kind: 'server', attributes: { 'user.id': id } }, () => this._deactivate(id));
+    }
+
+    private async _deactivate(id: string) {
         const result = await this.userService.deactivateUser(id);
         if (result.isFailure) {
             throw new HttpException({ message: result.unwrapError().message }, HttpStatus.BAD_REQUEST);
@@ -187,6 +205,10 @@ export class InternalUsersController {
     @ApiOperation({ summary: 'Activar usuario' })
     @ApiParam({ name: 'id' })
     async activate(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.users.activate', { kind: 'server', attributes: { 'user.id': id } }, () => this._activate(id));
+    }
+
+    private async _activate(id: string) {
         const result = await this.userService.activateUser(id);
         if (result.isFailure) {
             throw new HttpException({ message: result.unwrapError().message }, HttpStatus.BAD_REQUEST);
@@ -201,6 +223,10 @@ export class InternalUsersController {
     @ApiOperation({ summary: 'Eliminar usuario (soft delete)' })
     @ApiParam({ name: 'id' })
     async delete(@Param('id') id: string) {
+        return this.tracing.run('monolith.controller.users.delete', { kind: 'server', attributes: { 'user.id': id } }, () => this._delete(id));
+    }
+
+    private async _delete(id: string) {
         const result = await this.userService.deleteUser(id);
         if (result.isFailure) {
             throw new HttpException({ message: result.unwrapError().message }, HttpStatus.BAD_REQUEST);
