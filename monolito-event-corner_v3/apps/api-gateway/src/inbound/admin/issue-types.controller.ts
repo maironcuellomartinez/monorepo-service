@@ -16,12 +16,16 @@ import { MonolithClient } from '../../client/monolith.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { CreateIssueTypeDto, UpdateIssueTypeDto } from './dto/create-issue-type.dto';
+import { TracingService } from '@app/observability';
 
 @ApiTags('Issue Types')
 @ApiBearerAuth('jwt')
 @Controller('api/admin/issue-types')
 export class IssueTypesController {
-    constructor(private readonly monolith: MonolithClient) { }
+    constructor(
+        private readonly monolith: MonolithClient,
+        private readonly tracing: TracingService,
+    ) { }
 
     @Get()
     @Permission('issue-type', 'list')
@@ -53,6 +57,9 @@ export class IssueTypesController {
     @Permission('issue-type', 'create')
     @ApiOperation({ summary: 'Crear tipo de incidencia' })
     async create(@Body() dto: CreateIssueTypeDto) {
+        return this.tracing.run('gateway.controller.issueTypes.create', { kind: 'server' }, () => this._create(dto));
+    }
+    private async _create(dto: CreateIssueTypeDto) {
         return this.monolith.post('/issue-types', dto);
     }
 
@@ -62,6 +69,9 @@ export class IssueTypesController {
     @ApiOperation({ summary: 'Actualizar tipo de incidencia' })
     @ApiParam({ name: 'id' })
     async update(@Param('id') id: string, @Body() dto: UpdateIssueTypeDto) {
+        return this.tracing.run('gateway.controller.issueTypes.update', { kind: 'server', attributes: { 'issueType.id': id } }, () => this._update(id, dto));
+    }
+    private async _update(id: string, dto: UpdateIssueTypeDto) {
         return this.monolith.put(`/issue-types/${id}`, dto);
     }
 
@@ -72,6 +82,9 @@ export class IssueTypesController {
     @ApiOperation({ summary: 'Eliminar tipo de incidencia' })
     @ApiParam({ name: 'id' })
     async delete(@Param('id') id: string) {
+        return this.tracing.run('gateway.controller.issueTypes.delete', { kind: 'server', attributes: { 'issueType.id': id } }, () => this._delete(id));
+    }
+    private async _delete(id: string) {
         return this.monolith.delete(`/issue-types/${id}`);
     }
 }

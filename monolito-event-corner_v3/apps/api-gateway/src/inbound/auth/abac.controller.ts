@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AbacClient, BatchCheckItem } from '../../auth/abac.client';
 import { CurrentUser, JwtPayload } from '../../auth/decorators/current-user.decorator';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
+import { TracingService } from '@app/observability';
 
 class BatchEvaluateRequestDto {
     checks!: BatchCheckItem[];
@@ -13,7 +14,10 @@ class BatchEvaluateRequestDto {
 @UseGuards(JwtGuard)
 @ApiBearerAuth()
 export class AbacController {
-    constructor(private readonly abacClient: AbacClient) {}
+    constructor(
+        private readonly abacClient: AbacClient,
+        private readonly tracing: TracingService,
+    ) {}
 
     /**
      * Evalúa en lote permisos ABAC para el usuario autenticado.
@@ -31,6 +35,9 @@ export class AbacController {
         @CurrentUser() user: JwtPayload,
         @Body() body: BatchEvaluateRequestDto,
     ) {
+        return this.tracing.run('gateway.controller.abac.batchEvaluate', { kind: 'server' }, () => this._batchEvaluate(user, body));
+    }
+    private async _batchEvaluate(user: JwtPayload, body: BatchEvaluateRequestDto) {
         const results = await this.abacClient.batchEvaluate(user.sub, body.checks);
         return { results };
     }

@@ -15,6 +15,7 @@ import { AbacClient } from '../../auth/abac.client';
 import { CurrentUser, JwtPayload } from '../../auth/decorators/current-user.decorator';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { Public } from '../../auth/decorators/public.decorator';
+import { TracingService } from '@app/observability';
 
 class DevLoginDto {
     @ApiProperty({ example: 'empleado1@eventcorner.com' })
@@ -39,6 +40,7 @@ export class AuthController {
     constructor(
         private readonly monolith: MonolithClient,
         private readonly abacClient: AbacClient,
+        private readonly tracing: TracingService,
     ) {}
 
     /**
@@ -58,6 +60,9 @@ export class AuthController {
             'Retorna accessToken listo para usar como Bearer en todos los endpoints.',
     })
     async devLogin(@Body() body: DevLoginDto) {
+        return this.tracing.run('gateway.controller.auth.devLogin', { kind: 'server' }, () => this._devLogin(body));
+    }
+    private async _devLogin(body: DevLoginDto) {
         if (process.env.NODE_ENV !== 'development') {
             throw new ForbiddenException('Este endpoint solo está disponible en entorno development');
         }

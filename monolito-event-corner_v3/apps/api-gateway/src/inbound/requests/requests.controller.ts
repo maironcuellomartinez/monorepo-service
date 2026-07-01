@@ -16,12 +16,16 @@ import { MonolithClient } from '../../client/monolith.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { CreateRequestDto, UpdateRequestStatusDto } from './dto/create-request.dto';
+import { TracingService } from '@app/observability';
 
 @ApiTags('Requests')
 @ApiBearerAuth('jwt')
 @Controller('api/requests')
 export class RequestsController {
-    constructor(private readonly monolith: MonolithClient) {}
+    constructor(
+        private readonly monolith: MonolithClient,
+        private readonly tracing: TracingService,
+    ) {}
 
     @Get()
     @Permission('request', 'list')
@@ -55,6 +59,9 @@ export class RequestsController {
     @Permission('request', 'create')
     @ApiOperation({ summary: 'Crear solicitud' })
     async create(@Body() dto: CreateRequestDto) {
+        return this.tracing.run('gateway.controller.requests.create', { kind: 'server' }, () => this._create(dto));
+    }
+    private async _create(dto: CreateRequestDto) {
         return this.monolith.post('/requests', dto);
     }
 
@@ -64,6 +71,9 @@ export class RequestsController {
     @ApiOperation({ summary: 'Cambiar estado de solicitud' })
     @ApiParam({ name: 'id' })
     async updateStatus(@Param('id') id: string, @Body() dto: UpdateRequestStatusDto) {
+        return this.tracing.run('gateway.controller.requests.updateStatus', { kind: 'server', attributes: { 'request.id': id } }, () => this._updateStatus(id, dto));
+    }
+    private async _updateStatus(id: string, dto: UpdateRequestStatusDto) {
         return this.monolith.patch(`/requests/${id}/status`, dto);
     }
 }

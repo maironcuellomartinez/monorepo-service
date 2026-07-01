@@ -3,12 +3,16 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, Htt
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { MonolithClient } from '../../client/monolith.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
+import { TracingService } from '@app/observability';
 
 @ApiTags('Technicians')
 @ApiBearerAuth('jwt')
 @Controller('api/admin/technicians')
 export class TechniciansController {
-    constructor(private readonly monolith: MonolithClient) {}
+    constructor(
+        private readonly monolith: MonolithClient,
+        private readonly tracing: TracingService,
+    ) {}
 
     /**
      * Lista todos los usuarios activos del monolith — para el picker del modal de técnicos.
@@ -60,6 +64,15 @@ export class TechniciansController {
         cornerId?: string;
         lastName?: string;
     }) {
+        return this.tracing.run('gateway.controller.technicians.create', { kind: 'server' }, () => this._create(dto));
+    }
+    private async _create(dto: {
+        userId: string;
+        name: string;
+        email: string;
+        cornerId?: string;
+        lastName?: string;
+    }) {
         return this.monolith.post('/technicians', dto);
     }
 
@@ -82,6 +95,9 @@ export class TechniciansController {
     @ApiOperation({ summary: 'Asignar técnico a un corner' })
     @ApiParam({ name: 'id' })
     assignCorner(@Param('id') id: string, @Body() dto: { cornerId: string }) {
+        return this.tracing.run('gateway.controller.technicians.assignCorner', { kind: 'server', attributes: { 'technician.id': id } }, () => this._assignCorner(id, dto));
+    }
+    private async _assignCorner(id: string, dto: { cornerId: string }) {
         return this.monolith.patch(`/technicians/${id}/corner`, dto);
     }
 
@@ -94,6 +110,9 @@ export class TechniciansController {
     @ApiOperation({ summary: 'Eliminar técnico' })
     @ApiParam({ name: 'id' })
     remove(@Param('id') id: string) {
+        return this.tracing.run('gateway.controller.technicians.remove', { kind: 'server', attributes: { 'technician.id': id } }, () => this._remove(id));
+    }
+    private async _remove(id: string) {
         return this.monolith.delete(`/technicians/${id}`);
     }
 
@@ -106,6 +125,9 @@ export class TechniciansController {
     @ApiOperation({ summary: 'Deshabilitar técnico' })
     @ApiParam({ name: 'id' })
     disable(@Param('id') id: string) {
+        return this.tracing.run('gateway.controller.technicians.disable', { kind: 'server', attributes: { 'technician.id': id } }, () => this._disable(id));
+    }
+    private async _disable(id: string) {
         return this.monolith.patch(`/technicians/${id}/disable`, {});
     }
 
@@ -118,6 +140,9 @@ export class TechniciansController {
     @ApiOperation({ summary: 'Habilitar técnico' })
     @ApiParam({ name: 'id' })
     enable(@Param('id') id: string) {
+        return this.tracing.run('gateway.controller.technicians.enable', { kind: 'server', attributes: { 'technician.id': id } }, () => this._enable(id));
+    }
+    private async _enable(id: string) {
         return this.monolith.patch(`/technicians/${id}/enable`, {});
     }
 }

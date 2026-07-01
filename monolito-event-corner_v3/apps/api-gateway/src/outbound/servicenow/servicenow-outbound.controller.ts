@@ -18,6 +18,7 @@ import { firstValueFrom } from 'rxjs';
 import { Request } from 'express';
 import { InternalOnly } from '../../auth/decorators/internal.decorator';
 import { OutboundResilienceService } from '../outbound-resilience.service';
+import { TracingService } from '@app/observability';
 
 /**
  * Proxy HTTP hacia integration-service para operaciones de ServiceNow.
@@ -35,6 +36,7 @@ export class ServiceNowOutboundController {
         private readonly httpService: HttpService,
         private readonly config: ConfigService,
         private readonly resilience: OutboundResilienceService,
+        private readonly tracing: TracingService,
     ) { }
 
     private get authHeader(): string {
@@ -53,6 +55,9 @@ export class ServiceNowOutboundController {
     @Post('incidents')
     @HttpCode(HttpStatus.CREATED)
     async createIncident(@Body() payload: any, @Req() req: Request) {
+        return this.tracing.run('gateway.outbound.sn.createIncident', { kind: 'internal' }, () => this._createIncident(payload, req));
+    }
+    private async _createIncident(payload: any, req: Request) {
         this.logger.log(`→ createIncident | caller=${payload?.caller_id}`);
         try {
             const data = await this.resilience.fireWrite(() =>
@@ -73,6 +78,9 @@ export class ServiceNowOutboundController {
     @Post('requests')
     @HttpCode(HttpStatus.CREATED)
     async createRequest(@Body() payload: any, @Req() req: Request) {
+        return this.tracing.run('gateway.outbound.sn.createRequest', { kind: 'internal' }, () => this._createRequest(payload, req));
+    }
+    private async _createRequest(payload: any, req: Request) {
         this.logger.log(`→ createRequest | caller=${payload?.caller_id}`);
         try {
             const data = await this.resilience.fireWrite(() =>
@@ -93,6 +101,9 @@ export class ServiceNowOutboundController {
     @Post('incidents/enqueue')
     @HttpCode(HttpStatus.ACCEPTED)
     async enqueueIncident(@Body() payload: any, @Req() req: Request) {
+        return this.tracing.run('gateway.outbound.sn.enqueueIncident', { kind: 'internal' }, () => this._enqueueIncident(payload, req));
+    }
+    private async _enqueueIncident(payload: any, req: Request) {
         this.logger.log(`→ enqueueIncident | caller=${payload?.caller_id}`);
         try {
             const data = await this.resilience.fireWrite(() =>
@@ -113,6 +124,9 @@ export class ServiceNowOutboundController {
     @Post('requests/enqueue')
     @HttpCode(HttpStatus.ACCEPTED)
     async enqueueRequest(@Body() payload: any, @Req() req: Request) {
+        return this.tracing.run('gateway.outbound.sn.enqueueRequest', { kind: 'internal' }, () => this._enqueueRequest(payload, req));
+    }
+    private async _enqueueRequest(payload: any, req: Request) {
         this.logger.log(`→ enqueueRequest | caller=${payload?.caller_id}`);
         try {
             const data = await this.resilience.fireWrite(() =>
@@ -151,6 +165,9 @@ export class ServiceNowOutboundController {
     @Post('reconcile/:correlationId/retry')
     @HttpCode(HttpStatus.OK)
     async retrySnowqEntry(@Param('correlationId') correlationId: string, @Req() req: Request) {
+        return this.tracing.run('gateway.outbound.sn.retrySnowqEntry', { kind: 'internal', attributes: { 'sn.correlationId': correlationId } }, () => this._retrySnowqEntry(correlationId, req));
+    }
+    private async _retrySnowqEntry(correlationId: string, req: Request) {
         this.logger.log(`→ retrySnowqEntry | correlationId=${correlationId}`);
         try {
             return await this.resilience.fireWrite(() =>
@@ -173,6 +190,9 @@ export class ServiceNowOutboundController {
         @Body() fields: Record<string, any>,
         @Req() req: Request,
     ) {
+        return this.tracing.run('gateway.outbound.sn.updateTicket', { kind: 'internal', attributes: { 'sn.table': table, 'sn.sysId': sysId } }, () => this._updateTicket(table, sysId, fields, req));
+    }
+    private async _updateTicket(table: string, sysId: string, fields: Record<string, any>, req: Request) {
         this.logger.log(`→ updateTicket | table=${table} sysId=${sysId}`);
         try {
             const data = await this.resilience.fireWrite(() =>
@@ -215,6 +235,9 @@ export class ServiceNowOutboundController {
         @Body() body: { closeCategory: string; closeNotes?: string },
         @Req() req: Request,
     ) {
+        return this.tracing.run('gateway.outbound.sn.closeIncident', { kind: 'internal', attributes: { 'sn.sysId': sysId } }, () => this._closeIncident(sysId, body, req));
+    }
+    private async _closeIncident(sysId: string, body: { closeCategory: string; closeNotes?: string }, req: Request) {
         this.logger.log(`→ closeIncident | sysId=${sysId}`);
         try {
             const data = await this.resilience.fireWrite(() =>

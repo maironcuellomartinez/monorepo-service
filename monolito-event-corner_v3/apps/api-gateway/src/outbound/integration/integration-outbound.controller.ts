@@ -19,6 +19,7 @@ import { firstValueFrom } from 'rxjs';
 import { Request } from 'express';
 import { InternalOnly } from '../../auth/decorators/internal.decorator';
 import { OutboundResilienceService } from '../outbound-resilience.service';
+import { TracingService } from '@app/observability';
 
 /**
  * Proxy HTTP hacia integration-service.
@@ -36,6 +37,7 @@ export class IntegrationOutboundController {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
         private readonly resilience: OutboundResilienceService,
+        private readonly tracing: TracingService,
     ) { }
 
     private get authHeaders() {
@@ -66,6 +68,9 @@ export class IntegrationOutboundController {
     @Post('appointments')
     @HttpCode(HttpStatus.OK)
     async processAppointment(@Body() body: any, @Req() req: Request) {
+        return this.tracing.run('gateway.outbound.integration.processAppointment', { kind: 'internal' }, () => this._processAppointment(body, req));
+    }
+    private async _processAppointment(body: any, req: Request) {
         this.logger.log(`→ processAppointment | eventType=${body?.eventType} | correlationId=${body?.correlationId}`);
         try {
             const data = await this.resilience.fireWrite(() =>
@@ -164,6 +169,9 @@ export class IntegrationOutboundController {
         @Body() body: any,
         @Req() req: Request,
     ) {
+        return this.tracing.run('gateway.outbound.integration.assignMinervaDevice', { kind: 'internal', attributes: { 'device.serial': serial } }, () => this._assignMinervaDevice(serial, body, req));
+    }
+    private async _assignMinervaDevice(serial: string, body: any, req: Request) {
         try {
             return await this.resilience.fireWrite(() =>
                 firstValueFrom(
@@ -185,6 +193,9 @@ export class IntegrationOutboundController {
         @Body() body: any,
         @Req() req: Request,
     ) {
+        return this.tracing.run('gateway.outbound.integration.releaseMinervaDevice', { kind: 'internal', attributes: { 'device.serial': serial } }, () => this._releaseMinervaDevice(serial, body, req));
+    }
+    private async _releaseMinervaDevice(serial: string, body: any, req: Request) {
         try {
             return await this.resilience.fireWrite(() =>
                 firstValueFrom(
@@ -202,6 +213,9 @@ export class IntegrationOutboundController {
     @Post('minerva/devices/:serial/sync')
     @HttpCode(HttpStatus.OK)
     async syncMinervaDevice(@Param('serial') serial: string, @Req() req: Request) {
+        return this.tracing.run('gateway.outbound.integration.syncMinervaDevice', { kind: 'internal', attributes: { 'device.serial': serial } }, () => this._syncMinervaDevice(serial, req));
+    }
+    private async _syncMinervaDevice(serial: string, req: Request) {
         try {
             return await this.resilience.fireWrite(() =>
                 firstValueFrom(
@@ -261,6 +275,9 @@ export class IntegrationOutboundController {
     @Post('droppoint/shipments')
     @HttpCode(HttpStatus.OK)
     async createDroppointShipment(@Body() body: any, @Req() req: Request) {
+        return this.tracing.run('gateway.outbound.integration.createDroppointShipment', { kind: 'internal' }, () => this._createDroppointShipment(body, req));
+    }
+    private async _createDroppointShipment(body: any, req: Request) {
         try {
             return await this.resilience.fireWrite(() =>
                 firstValueFrom(
@@ -277,6 +294,9 @@ export class IntegrationOutboundController {
 
     @Patch('droppoint/shipments/state')
     async updateDroppointShipmentState(@Body() body: any, @Req() req: Request) {
+        return this.tracing.run('gateway.outbound.integration.updateDroppointShipmentState', { kind: 'internal' }, () => this._updateDroppointShipmentState(body, req));
+    }
+    private async _updateDroppointShipmentState(body: any, req: Request) {
         try {
             return await this.resilience.fireWrite(() =>
                 firstValueFrom(
@@ -298,6 +318,9 @@ export class IntegrationOutboundController {
         @Query('machineRef') machineRef: string,
         @Req() req: Request,
     ) {
+        return this.tracing.run('gateway.outbound.integration.cancelDroppointShipment', { kind: 'internal', attributes: { 'shipment.externalId': externalId } }, () => this._cancelDroppointShipment(externalId, machineRef, req));
+    }
+    private async _cancelDroppointShipment(externalId: string, machineRef: string, req: Request) {
         try {
             return await this.resilience.fireWrite(() =>
                 firstValueFrom(
