@@ -6,6 +6,7 @@ import { SnowRequestProcessingService } from '../services/snow-request-processin
 import { SnowRequestService } from '../services/snow-request.service';
 import { BulkheadInterceptor } from 'src/resilience/bulkhead/bulkhead.interceptor';
 import { DlqFilterDto } from '../dto/dlq-filter.dto';
+import { TracingClient } from '../../common/tracing.client';
 
 const PRIORITY_LABEL: Record<number, string> = { 4: 'CRITICAL', 3: 'HIGH', 2: 'MEDIUM', 1: 'LOW' };
 const toLabel = (p: number) => PRIORITY_LABEL[p] ?? 'MEDIUM';
@@ -26,6 +27,14 @@ export class SnowRequestQueueController {
     @Post('incidents')
     @HttpCode(HttpStatus.ACCEPTED)
     createIncident(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.createIncident',
+            { kind: 'server' },
+            () => this._createIncident(dto),
+        );
+    }
+
+    private _createIncident(dto: BaseSnowRequestDto) {
         return this.processingService.enqueue(RequestType.INCIDENT, dto);
     }
 
@@ -36,6 +45,14 @@ export class SnowRequestQueueController {
     @Post('change-requests')
     @HttpCode(HttpStatus.ACCEPTED)
     createChangeRequest(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.createChangeRequest',
+            { kind: 'server' },
+            () => this._createChangeRequest(dto),
+        );
+    }
+
+    private _createChangeRequest(dto: BaseSnowRequestDto) {
         return this.processingService.enqueue(RequestType.CHANGE_REQUEST, dto);
     }
 
@@ -46,6 +63,14 @@ export class SnowRequestQueueController {
     @Post('problems')
     @HttpCode(HttpStatus.ACCEPTED)
     createProblem(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.createProblem',
+            { kind: 'server' },
+            () => this._createProblem(dto),
+        );
+    }
+
+    private _createProblem(dto: BaseSnowRequestDto) {
         return this.processingService.enqueue(RequestType.PROBLEM, dto);
     }
 
@@ -56,6 +81,14 @@ export class SnowRequestQueueController {
     @Post('service-catalog')
     @HttpCode(HttpStatus.ACCEPTED)
     createServiceCatalog(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.createServiceCatalog',
+            { kind: 'server' },
+            () => this._createServiceCatalog(dto),
+        );
+    }
+
+    private _createServiceCatalog(dto: BaseSnowRequestDto) {
         return this.processingService.enqueue(RequestType.SERVICE_CATALOG, dto);
     }
 
@@ -66,6 +99,14 @@ export class SnowRequestQueueController {
     @Post('knowledge-articles')
     @HttpCode(HttpStatus.ACCEPTED)
     createKnowledgeArticle(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.createKnowledgeArticle',
+            { kind: 'server' },
+            () => this._createKnowledgeArticle(dto),
+        );
+    }
+
+    private _createKnowledgeArticle(dto: BaseSnowRequestDto) {
         return this.processingService.enqueue(RequestType.KNOWLEDGE_ARTICLE, dto);
     }
 
@@ -76,6 +117,14 @@ export class SnowRequestQueueController {
     @Post('release-tasks')
     @HttpCode(HttpStatus.ACCEPTED)
     createReleaseTask(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.createReleaseTask',
+            { kind: 'server' },
+            () => this._createReleaseTask(dto),
+        );
+    }
+
+    private _createReleaseTask(dto: BaseSnowRequestDto) {
         return this.processingService.enqueue(RequestType.RELEASE_TASK, dto);
     }
 
@@ -86,6 +135,14 @@ export class SnowRequestQueueController {
     @Post('configuration-items')
     @HttpCode(HttpStatus.ACCEPTED)
     createConfigurationItem(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.createConfigurationItem',
+            { kind: 'server' },
+            () => this._createConfigurationItem(dto),
+        );
+    }
+
+    private _createConfigurationItem(dto: BaseSnowRequestDto) {
         return this.processingService.enqueue(RequestType.CONFIGURATION_ITEM, dto);
     }
 
@@ -178,6 +235,14 @@ export class SnowRequestQueueController {
     @Post('failed/retry-all')
     @HttpCode(HttpStatus.OK)
     async retryAllFailed() {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.retryAllFailed',
+            { kind: 'server' },
+            () => this._retryAllFailed(),
+        );
+    }
+
+    private async _retryAllFailed() {
         const requeued = await this.snowRequestService.retryAllFailed();
         return { requeued };
     }
@@ -190,6 +255,14 @@ export class SnowRequestQueueController {
     @Post('failed/retry')
     @HttpCode(HttpStatus.OK)
     async retryFiltered(@Body() filter: DlqFilterDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.retryFiltered',
+            { kind: 'server' },
+            () => this._retryFiltered(filter),
+        );
+    }
+
+    private async _retryFiltered(filter: DlqFilterDto) {
         const requeued = await this.snowRequestService.retryFiltered(filter);
         return { requeued, filter };
     }
@@ -201,6 +274,14 @@ export class SnowRequestQueueController {
     @Post('failed/:correlationId/retry')
     @HttpCode(HttpStatus.OK)
     async retryFailedRequest(@Param('correlationId') correlationId: string) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.retryFailedRequest',
+            { kind: 'server', attributes: { 'sn.correlationId': correlationId } },
+            () => this._retryFailedRequest(correlationId),
+        );
+    }
+
+    private async _retryFailedRequest(correlationId: string) {
         const entity = await this.snowRequestService.retryFailed(correlationId);
         if (!entity) {
             throw new NotFoundException(`Solicitud no encontrada o no está en estado FAILED: ${correlationId}`);
@@ -221,6 +302,14 @@ export class SnowRequestQueueController {
     @Delete('failed')
     @HttpCode(HttpStatus.OK)
     async discardFiltered(@Body() filter: DlqFilterDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.discardFiltered',
+            { kind: 'server' },
+            () => this._discardFiltered(filter),
+        );
+    }
+
+    private async _discardFiltered(filter: DlqFilterDto) {
         const discarded = await this.snowRequestService.discardFiltered(filter);
         return { discarded, filter };
     }
@@ -232,6 +321,14 @@ export class SnowRequestQueueController {
     @Delete('failed/:correlationId')
     @HttpCode(HttpStatus.OK)
     async discardFailedRequest(@Param('correlationId') correlationId: string) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.queue.discardFailedRequest',
+            { kind: 'server', attributes: { 'sn.correlationId': correlationId } },
+            () => this._discardFailedRequest(correlationId),
+        );
+    }
+
+    private async _discardFailedRequest(correlationId: string) {
         const entity = await this.snowRequestService.discardFailed(correlationId);
         if (!entity) {
             throw new NotFoundException(`Solicitud no encontrada o no está en estado FAILED: ${correlationId}`);

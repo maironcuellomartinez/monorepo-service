@@ -1,6 +1,7 @@
 import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { M2mJwtGuard } from 'src/common/guards/m2m-jwt.guard';
 import { CircuitBreakerService } from './circuit-breaker/circuit-breaker.service';
+import { TracingClient } from '../common/tracing.client';
 
 @UseGuards(M2mJwtGuard)
 @Controller('resilience')
@@ -53,6 +54,14 @@ export class ResilienceController {
 
     @Post('circuit-breaker/reset')
     reset() {
+        return TracingClient.getInstance().run(
+            'snowq.controller.resilience.reset',
+            { kind: 'server' },
+            () => this._reset(),
+        );
+    }
+
+    private _reset() {
         const allBreakers = this.circuitBreakerService.getAllBreakers();
         for (const [, breaker] of allBreakers) {
             breaker.close();

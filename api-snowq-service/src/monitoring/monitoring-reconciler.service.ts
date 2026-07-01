@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { SnowRequestService } from 'src/snow-requests/services/snow-request.service';
 import { ServiceNowClientService } from 'src/servicenow/client/servicenow-client.service';
+import { TracingClient } from '../common/tracing.client';
 
 /**
  * Option A — Reconciler job.
@@ -84,6 +85,14 @@ export class MonitoringReconcilerService implements OnModuleInit, OnModuleDestro
      *  @returns Objeto con el número de tickets revisados y resueltos
      */
     async reconcile(batchSize = 20): Promise<{ checked: number; resolved: number }> {
+        return TracingClient.getInstance().run(
+            'snowq.service.monitoringReconciler.reconcile',
+            { kind: 'internal' },
+            () => this._reconcile(batchSize),
+        );
+    }
+
+    private async _reconcile(batchSize = 20): Promise<{ checked: number; resolved: number }> {
         const tickets = await this.snowRequestService.findProcessedUnresolved(batchSize);
 
         if (tickets.length === 0) {

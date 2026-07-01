@@ -5,6 +5,7 @@ import { RequestPriority, RequestType, STATUS } from 'src/common';
 import { SnowRequestService } from 'src/snow-requests/services/snow-request.service';
 import { ServiceNowClientService } from 'src/servicenow/client/servicenow-client.service';
 import { NagiosNotificationType, NagiosStateType, ThrukAlertDto } from './dto/thruk-alert.dto';
+import { TracingClient } from '../common/tracing.client';
 
 export type MonitoringAction =
     | 'QUEUED'         // nueva alerta encolada
@@ -58,12 +59,20 @@ export class MonitoringService {
      * ```typescript
      * const result = await this.monitoringService.handleAlert(dto);
      * ```
-     * @description This method handles a Thruk alert from Nagios. 
+     * @description This method handles a Thruk alert from Nagios.
      * It first checks if the alert should be ignored based on the notification type and state.
      * If not ignored, it checks if it's a RECOVERY alert and handles it accordingly.
      * Otherwise, it handles it as a PROBLEM alert.
      */
     async handleAlert(dto: ThrukAlertDto): Promise<MonitoringResult> {
+        return TracingClient.getInstance().run(
+            'snowq.service.monitoring.handleAlert',
+            { kind: 'internal' },
+            () => this._handleAlert(dto),
+        );
+    }
+
+    private async _handleAlert(dto: ThrukAlertDto): Promise<MonitoringResult> {
         const fingerprint = this.buildFingerprint(dto);
 
         // ── Notificaciones que no generan ninguna acción ──────────────────
@@ -90,12 +99,20 @@ export class MonitoringService {
      * ```typescript
      * const result = await this.monitoringService.cancelByFingerprint(fingerprint);
      * ```
-     * @description This method handles a RECOVERY alert from Nagios via Thruk. 
+     * @description This method handles a RECOVERY alert from Nagios via Thruk.
      * It first checks if there is an existing active record for the fingerprint.
      * If an existing record is found, it returns a CANCELLED result.
      * If no existing record is found, it returns a TOO_LATE result.
      */
     async cancelByFingerprint(fingerprint: string): Promise<MonitoringResult> {
+        return TracingClient.getInstance().run(
+            'snowq.service.monitoring.cancelByFingerprint',
+            { kind: 'internal', attributes: { 'alert.fingerprint': fingerprint } },
+            () => this._cancelByFingerprint(fingerprint),
+        );
+    }
+
+    private async _cancelByFingerprint(fingerprint: string): Promise<MonitoringResult> {
         return this.handleRecovery(fingerprint, null);
     }
 
@@ -112,7 +129,7 @@ export class MonitoringService {
      * @param fingerprint Huella digital de la alerta
      * @param dto Datos de la alerta
      * @returns Resultado del manejo de la alerta
-     * @description This method handles a PROBLEM alert from Nagios via Thruk. 
+     * @description This method handles a PROBLEM alert from Nagios via Thruk.
      * It first checks if there is an existing active record for the fingerprint.
      * If an existing record is found, it returns a DEDUPLICATED result.
      * If no existing record is found, it creates a new record with the given fingerprint and other details.

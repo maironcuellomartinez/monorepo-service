@@ -4,6 +4,7 @@ import { M2mJwtGuard } from 'src/common/guards/m2m-jwt.guard';
 import { RequestType } from 'src/common/enum/request-type.enum';
 import { SnowRequestProcessingService } from '../services/snow-request-processing.service';
 import { BulkheadInterceptor } from 'src/resilience/bulkhead/bulkhead.interceptor';
+import { TracingClient } from '../../common/tracing.client';
 
 @UseGuards(M2mJwtGuard)
 @Controller('snow-requests/immediate')
@@ -17,6 +18,14 @@ export class SnowRequestImmediateController {
 
     @Post('incidents')
     createIncident(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.immediate.createIncident',
+            { kind: 'server' },
+            () => this._createIncident(dto),
+        );
+    }
+
+    private _createIncident(dto: BaseSnowRequestDto) {
         return this.processingService.processImmediate(RequestType.INCIDENT, dto);
     }
 
@@ -33,6 +42,14 @@ export class SnowRequestImmediateController {
         @Param('sysId') sysId: string,
         @Body() body: { close_code: string; close_notes?: string },
     ) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.immediate.closeIncident',
+            { kind: 'server', attributes: { 'sn.sysId': sysId } },
+            () => this._closeIncident(sysId, body),
+        );
+    }
+
+    private async _closeIncident(sysId: string, body: { close_code: string; close_notes?: string }) {
         await this.processingService.closeIncident(
             sysId,
             body.close_code,
@@ -46,6 +63,14 @@ export class SnowRequestImmediateController {
 
     @Post('change-requests')
     createChangeRequest(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.immediate.createChangeRequest',
+            { kind: 'server' },
+            () => this._createChangeRequest(dto),
+        );
+    }
+
+    private _createChangeRequest(dto: BaseSnowRequestDto) {
         return this.processingService.processImmediate(RequestType.CHANGE_REQUEST, dto);
     }
 
@@ -55,6 +80,14 @@ export class SnowRequestImmediateController {
 
     @Post('problems')
     createProblem(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.immediate.createProblem',
+            { kind: 'server' },
+            () => this._createProblem(dto),
+        );
+    }
+
+    private _createProblem(dto: BaseSnowRequestDto) {
         return this.processingService.processImmediate(RequestType.PROBLEM, dto);
     }
 
@@ -64,6 +97,14 @@ export class SnowRequestImmediateController {
 
     @Post('service-catalog')
     createServiceCatalog(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.immediate.createServiceCatalog',
+            { kind: 'server' },
+            () => this._createServiceCatalog(dto),
+        );
+    }
+
+    private _createServiceCatalog(dto: BaseSnowRequestDto) {
         return this.processingService.processImmediate(RequestType.SERVICE_CATALOG, dto);
     }
 
@@ -73,6 +114,14 @@ export class SnowRequestImmediateController {
 
     @Post('knowledge-articles')
     createKnowledgeArticle(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.immediate.createKnowledgeArticle',
+            { kind: 'server' },
+            () => this._createKnowledgeArticle(dto),
+        );
+    }
+
+    private _createKnowledgeArticle(dto: BaseSnowRequestDto) {
         return this.processingService.processImmediate(RequestType.KNOWLEDGE_ARTICLE, dto);
     }
 
@@ -82,6 +131,14 @@ export class SnowRequestImmediateController {
 
     @Post('release-tasks')
     createReleaseTask(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.immediate.createReleaseTask',
+            { kind: 'server' },
+            () => this._createReleaseTask(dto),
+        );
+    }
+
+    private _createReleaseTask(dto: BaseSnowRequestDto) {
         return this.processingService.processImmediate(RequestType.RELEASE_TASK, dto);
     }
 
@@ -91,6 +148,14 @@ export class SnowRequestImmediateController {
 
     @Post('configuration-items')
     createConfigurationItem(@Body() dto: BaseSnowRequestDto) {
+        return TracingClient.getInstance().run(
+            'snowq.controller.immediate.createConfigurationItem',
+            { kind: 'server' },
+            () => this._createConfigurationItem(dto),
+        );
+    }
+
+    private _createConfigurationItem(dto: BaseSnowRequestDto) {
         return this.processingService.processImmediate(RequestType.CONFIGURATION_ITEM, dto);
     }
 }

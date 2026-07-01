@@ -91,6 +91,14 @@ export class ServiceNowClientService {
      * Usado para cerrar/resolver tickets (ej: recovery de Nagios).
      */
     async patchToServiceNow(type: RequestType, sysId: string, body: Record<string, any>): Promise<void> {
+        return TracingClient.getInstance().run(
+            'snowq.client.servicenow.patchToServiceNow',
+            { kind: 'client', attributes: { 'sn.sysId': sysId } },
+            () => this._patchToServiceNow(type, sysId, body),
+        );
+    }
+
+    private async _patchToServiceNow(type: RequestType, sysId: string, body: Record<string, any>): Promise<void> {
         const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
         const endpoint = `${baseUrl}${RequestTypeUtils.getEndpoint(type)}/${sysId}`;
 

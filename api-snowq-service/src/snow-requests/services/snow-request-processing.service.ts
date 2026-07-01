@@ -5,6 +5,7 @@ import { BaseSnowRequestDto, RequestType, ServiceNowTemporalError, STATUS } from
 import { SnowRequestService } from './snow-request.service';
 import { SnowRequestQueueService } from './snow-request-queue.service';
 import { ServiceNowClientService } from 'src/servicenow/client/servicenow-client.service';
+import { TracingClient } from '../../common/tracing.client';
 
 export interface EnqueueResult {
     correlationId: string;
@@ -40,6 +41,14 @@ export class SnowRequestProcessingService {
      * Si ninguno está presente, no se aplica deduplicación (se crea siempre).
      */
     async enqueue(type: RequestType, dto: BaseSnowRequestDto): Promise<EnqueueResult> {
+        return TracingClient.getInstance().run(
+            'snowq.service.snowRequestProcessing.enqueue',
+            { kind: 'internal', attributes: { 'sn.type': type } },
+            () => this._enqueue(type, dto),
+        );
+    }
+
+    private async _enqueue(type: RequestType, dto: BaseSnowRequestDto): Promise<EnqueueResult> {
         const fingerprint = this.computeFingerprint(type, dto.source, dto.payload);
 
         if (fingerprint) {
@@ -82,6 +91,14 @@ export class SnowRequestProcessingService {
      * No aplica deduplicación: el modo inmediato es intencional y fire-once.
      */
     async processImmediate(type: RequestType, dto: BaseSnowRequestDto): Promise<{ sys_id: string; snowNumber: string }> {
+        return TracingClient.getInstance().run(
+            'snowq.service.snowRequestProcessing.processImmediate',
+            { kind: 'internal', attributes: { 'sn.type': type } },
+            () => this._processImmediate(type, dto),
+        );
+    }
+
+    private async _processImmediate(type: RequestType, dto: BaseSnowRequestDto): Promise<{ sys_id: string; snowNumber: string }> {
         const correlationId = randomUUID();
         const internalNumber = `SNQ-${correlationId.substring(0, 8).toUpperCase()}`;
 
@@ -129,6 +146,14 @@ export class SnowRequestProcessingService {
      * Llamado desde el monolith cuando el incidente se cierra en negocio.
      */
     async closeIncident(sysId: string, closeCode: string, closeNotes: string): Promise<void> {
+        return TracingClient.getInstance().run(
+            'snowq.service.snowRequestProcessing.closeIncident',
+            { kind: 'internal', attributes: { 'sn.sysId': sysId } },
+            () => this._closeIncident(sysId, closeCode, closeNotes),
+        );
+    }
+
+    private async _closeIncident(sysId: string, closeCode: string, closeNotes: string): Promise<void> {
         await this.snClient.patchToServiceNow(RequestType.INCIDENT, sysId, {
             state: '6',
             close_code: closeCode,
