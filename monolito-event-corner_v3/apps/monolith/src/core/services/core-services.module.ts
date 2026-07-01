@@ -78,9 +78,9 @@ import { EVENT_BUS, CACHE, SERVICENOW_CLIENT, EXTERNAL_INVENTORY_SERVICE, HOLIDA
         },
         {
             provide: REQUEST_SERVICE,
-            useFactory: (requestRepo, technicianRepo, userRepo, cornerRepo, companyRepo, issueTypeRepo, eventBus, deviceService) =>
-                new RequestService(requestRepo, technicianRepo, userRepo, cornerRepo, companyRepo, issueTypeRepo, eventBus, deviceService),
-            inject: [REQUEST_REPOSITORY, TECHNICIAN_REPOSITORY, USER_REPOSITORY, CORNER_REPOSITORY, COMPANY_REPOSITORY, ISSUE_TYPE_REPOSITORY, EVENT_BUS, DEVICE_SERVICE],
+            useFactory: (requestRepo, technicianRepo, userRepo, cornerRepo, companyRepo, issueTypeRepo, eventBus, deviceService, tracing) =>
+                new RequestService(requestRepo, technicianRepo, userRepo, cornerRepo, companyRepo, issueTypeRepo, eventBus, deviceService, tracing),
+            inject: [REQUEST_REPOSITORY, TECHNICIAN_REPOSITORY, USER_REPOSITORY, CORNER_REPOSITORY, COMPANY_REPOSITORY, ISSUE_TYPE_REPOSITORY, EVENT_BUS, DEVICE_SERVICE, TracingService],
         },
         {
             provide: CORNER_SERVICE,

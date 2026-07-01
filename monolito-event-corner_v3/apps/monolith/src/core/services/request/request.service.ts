@@ -9,6 +9,7 @@ import { ICompanyRepository } from '../../ports/outgoing/repositories/company-re
 import { IIssueTypeRepository } from '../../ports/outgoing/repositories/issue-type-repository.port';
 import { IEventBus } from '../../ports/outgoing/event-bus/event-bus.port';
 import { IDeviceService } from '../../ports/incoming/device/device-service.port';
+import { TracingService } from '@app/observability';
 import { Result } from '@app/result';
 import { Request } from '../../domain/entities/request.entity';
 import { RequestId, TechnicianId, CustomerId, CornerId, CompanyId, IssueTypeId, DeviceId } from '../../domain/value-objects/ids';
@@ -26,9 +27,18 @@ export class RequestService implements IRequestService {
         private readonly issueTypeRepo: IIssueTypeRepository,
         private readonly eventBus: IEventBus,
         private readonly deviceService: IDeviceService,
+        private readonly tracing: TracingService,
     ) { }
 
     async createRequest(command: CreateRequestCommand): Promise<Result<Request>> {
+        return this.tracing.run(
+            'monolith.createRequest',
+            { kind: 'server', attributes: { 'request.customerId': command.customerId, 'request.cornerId': command.cornerId, 'request.issueTypeId': command.issueTypeId } },
+            () => this._createRequest(command),
+        );
+    }
+
+    private async _createRequest(command: CreateRequestCommand): Promise<Result<Request>> {
         // 1. Validar que el tipo de incidencia existe y es de tipo REQUEST
         const issueTypeResult = await this.issueTypeRepo.findById(command.issueTypeId);
         if (issueTypeResult.isFailure) return Result.err(issueTypeResult.unwrapError());
@@ -123,6 +133,14 @@ export class RequestService implements IRequestService {
     }
 
     async updateRequestStatus(command: UpdateRequestStatusCommand): Promise<Result<Request>> {
+        return this.tracing.run(
+            'monolith.updateRequestStatus',
+            { kind: 'server', attributes: { 'request.requestId': command.requestId, 'request.newStatus': command.newStatus } },
+            () => this._updateRequestStatus(command),
+        );
+    }
+
+    private async _updateRequestStatus(command: UpdateRequestStatusCommand): Promise<Result<Request>> {
         const requestResult = await this.requestRepo.findById(command.requestId);
         if (requestResult.isFailure) return Result.err(requestResult.unwrapError());
         const request = requestResult.unwrap();
