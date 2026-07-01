@@ -5,7 +5,7 @@ import { Repository, IsNull, LessThanOrEqual } from 'typeorm';
 import { Interval } from '@nestjs/schedule';
 import { ExponentialBackoff } from '@backendkit-labs/retry';
 import { DomainEvent } from '@app/shared/domain-event';
-import { CorrelationIdService } from '@app/observability';
+import { CorrelationIdService, TracingService } from '@app/observability';
 import { IN_MEMORY_EVENT_BUS } from '@app/core/ports/outgoing/infrastructure-tokens';
 import { OutboxEventEntity } from '../persistence/typeorm/entities/outbox-event.entity';
 import { InMemoryEventBusAdapter } from './in-memory-event-bus.adapter';
@@ -44,10 +44,19 @@ export class OutboxWorkerService {
         @Inject(IN_MEMORY_EVENT_BUS)
         private readonly inMemoryBus: InMemoryEventBusAdapter,
         private readonly correlation: CorrelationIdService,
+        private readonly tracing: TracingService,
     ) { }
 
     @Interval(POLL_INTERVAL_MS)
     async processOutbox(): Promise<void> {
+        return this.tracing.run(
+            'monolith.job.outboxWorker',
+            { kind: 'internal' },
+            () => this._processOutbox(),
+        );
+    }
+
+    private async _processOutbox(): Promise<void> {
         const now = new Date();
 
         // Fetch events that are: unpublished, not permanently failed,
