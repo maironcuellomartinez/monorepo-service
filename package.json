@@ -20,6 +20,12 @@
     "sim:cascade": "node simulators/combined-simulator.js scenario --name cascade-failure",
     "sim:parallel": "node simulators/combined-simulator.js scenario --name parallel-storm",
 
-    "sim:list": "node simulators/combined-simulator.js list"
+    "sim:list": "node simulators/combined-simulator.js list",
+
+    "sim:resilience": "node simulators/resilience-test.js",
+    "sim:resilience:status": "node simulators/resilience-test.js --test status",
+    "sim:resilience:bulkhead": "node simulators/resilience-test.js --test bulkhead",
+    "sim:resilience:circuit": "node simulators/resilience-test.js --test circuit",
+    "sim:resilience:storm": "node simulators/resilience-test.js --test storm"
   }
 }
