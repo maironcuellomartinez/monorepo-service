@@ -3,12 +3,16 @@ import { ApiKeyGuard } from '../guards/api-key.guard';
 import { AbacService } from '../services/abac.service';
 import { AuditAction, AuditService } from '../services/audit.service';
 import { CanAccessDto, BatchEvaluateDto } from '../dtos/can-access.dto';
-import { TrackPerformance, BusinessMetric } from '../../observability';
+import { TrackPerformance, BusinessMetric, LoggerService } from '../../observability';
 
 @Controller('abac')
 @UseGuards(ApiKeyGuard)
 export class AbacController {
-  constructor(private abacService: AbacService, private auditService: AuditService) { }
+  constructor(
+    private abacService: AbacService,
+    private auditService: AuditService,
+    private logger: LoggerService,
+  ) { }
 
   @Post('can-access')
   @HttpCode(200)
@@ -23,7 +27,8 @@ export class AbacController {
       body.context ?? {},
     );
 
-    await this.auditService.logEvent(
+    // Best-effort: un fallo al auditar no debe tumbar una decisión de acceso ya calculada
+    this.auditService.logEvent(
       result ? AuditAction.ACCESS_GRANTED : AuditAction.ACCESS_DENIED,
       {
         permition: `${body.resource}:${body.action}`,
@@ -32,7 +37,9 @@ export class AbacController {
         isSuccess: result,
         description: `${body.resource}:${body.action} — ${result ? 'acceso permitido' : 'acceso denegado'}`,
       },
-    );
+    ).catch((err: unknown) => {
+      this.logger.warn(`Audit log failed en can-access: ${(err as Error).message}`, 'ABAC');
+    });
 
     return { granted: result };
   }
@@ -69,7 +76,8 @@ export class AbacController {
       granted: results[index],
     }));
 
-    await Promise.all(
+    // Best-effort: un fallo al auditar no debe tumbar las decisiones ya calculadas
+    Promise.all(
       evaluated.map((item) =>
         this.auditService.logEvent(
           item.granted ? AuditAction.ACCESS_GRANTED : AuditAction.ACCESS_DENIED,
@@ -82,7 +90,9 @@ export class AbacController {
           },
         ),
       ),
-    );
+    ).catch((err: unknown) => {
+      this.logger.warn(`Audit log failed en batch-evaluate: ${(err as Error).message}`, 'ABAC');
+    });
 
     return { results: evaluated };
   }

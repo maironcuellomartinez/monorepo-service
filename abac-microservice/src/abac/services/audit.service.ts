@@ -301,8 +301,10 @@ export class AuditService {
 
         const granted = accessStats.find(s => s.log_action === AuditAction.ACCESS_GRANTED)?.count || 0;
         const denied = accessStats.find(s => s.log_action === AuditAction.ACCESS_DENIED)?.count || 0;
-        const successRate = total > 0 ? (granted / (granted + denied)) * 100 : 0;
-        const averageProcessingTime = accessStats.reduce((avg, stat) => avg + (parseFloat(stat.avgProcessingTime) || 0), 0) / accessStats.length;
+        const successRate = (granted + denied) > 0 ? (granted / (granted + denied)) * 100 : 0;
+        const averageProcessingTime = accessStats.length > 0
+            ? accessStats.reduce((avg, stat) => avg + (parseFloat(stat.avgProcessingTime) || 0), 0) / accessStats.length
+            : 0;
 
         // Top recursos
         const topResources = await this.auditLogRepository

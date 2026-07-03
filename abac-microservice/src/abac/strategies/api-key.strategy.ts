@@ -1,6 +1,6 @@
 import { HeaderAPIKeyStrategy } from 'passport-headerapikey';
 import { PassportStrategy } from '@nestjs/passport';
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ServiceUnavailableException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Application } from '../../entities/application.entity';
@@ -31,7 +31,9 @@ export class ApiKeyStrategy extends PassportStrategy(HeaderAPIKeyStrategy, 'api-
                 apiKey: this.maskApiKey(apiKey),
                 error: (error as Error).message
             });
-            return done((error as Error), null);
+            // No propagar el error crudo de TypeORM a Passport: se normaliza a un fallo de
+            // infraestructura explícito (503) en vez de dejar que done() reciba un tipo indistinguible.
+            return done(new ServiceUnavailableException('No se pudo validar la API Key — servicio no disponible'), null);
         }
     }
 

@@ -108,8 +108,11 @@ export class AbacService {
 
             } catch (error) {
                 const processingTime = Date.now() - startTime;
-                this.logger.error('Error en evaluación ABAC', 'ABAC', (error as Error).stack, {
-                    cid, userId, appId, resource, action, error: (error as Error).message, processingTime,
+                // Fail-safe: denegar por defecto ante cualquier error interno (Redis, MySQL, motor de reglas).
+                // engineError=true distingue esto de una denegación legítima de política en logs/alertas —
+                // sin este flag, una caída de infraestructura se confunde con un DENY normal.
+                this.logger.error('Error en evaluación ABAC — denegando por fail-safe', 'ABAC', (error as Error).stack, {
+                    cid, userId, appId, resource, action, error: (error as Error).message, processingTime, engineError: true,
                 });
                 return false;
             }
@@ -288,6 +291,18 @@ export class AbacService {
                 this.logger.warn('Error evaluando política completa', 'ABAC', {
                     cid, userId, appId, policyId: policy.id, error: (error as Error).message
                 });
+                // Fail-safe: una política deny con condición corrupta NO puede saltearse en
+                // silencio, porque eso otorgaría acceso que debería haber sido denegado.
+                // Solo las políticas allow corruptas se saltan de forma segura (no otorgan nada).
+                if (policy.effect === 'deny') {
+                    this.logger.error(
+                        `Política deny con condición corrupta — aplicando deny por seguridad (fail-safe)`,
+                        undefined,
+                        'ABAC',
+                        { cid, userId, appId, policyId: policy.id }
+                    );
+                    return false;
+                }
                 // Continuar con la siguiente política
             }
         }

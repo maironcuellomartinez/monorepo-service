@@ -4,12 +4,14 @@ import { tap } from 'rxjs/operators';
 import { Request } from 'express';
 import { JwtService } from '@nestjs/jwt';
 import { AuditService, AuditAction } from '../services/audit.service';
+import { LoggerService } from '../../observability';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
     constructor(
         private auditService: AuditService,
         private jwtService: JwtService,
+        private logger: LoggerService,
     ) { }
 
     intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -18,45 +20,54 @@ export class AuditInterceptor implements NestInterceptor {
         const startTime = Date.now();
 
         return next.handle().pipe(
-            tap(async (response) => {
-                const processingTime = Date.now() - startTime;
-
-                try {
-                    // Extraer usuario del token JWT
-                    const user = this.extractUserFromRequest(request);
-
-                    // Extraer información de la aplicación si está disponible
-                    const applicationInfo = this.extractApplicationInfo(request);
-
-                    // Registrar eventos de acceso ABAC
-                    if (request.body && request.body.resource && request.body.action) {
-                        await this.auditService.logAccessEvent(
-                            true, // asumiendo éxito si llegamos aquí
-                            {
-                                userId: user?.id ?? 'system',
-                                userEmail: user?.email ?? 'system',
-                                applicationId: request.body.applicationId || applicationInfo?.id,
-                                applicationName: applicationInfo?.name || 'Unknown',
-                                resource: request.body.resource,
-                                action: request.body.action,
-                                context: request.body.context || {},
-                                ipAddress: this.getClientIp(request),
-                                userAgent: request.get('user-agent'),
-                                processingTime,
-                                correlationId: request.get('x-correlation-id'),
-                            }
-                        );
-                    }
-
-                    // Registrar otros eventos HTTP importantes
-                    await this.logHttpEvent(request, httpResponse, processingTime, user);
-
-                } catch (error) {
-                    // Silenciar errores de auditoría para no afectar la respuesta principal
-                    console.error('Error en AuditInterceptor:', (error as Error).message);
-                }
+            // Auditoría best-effort y fire-and-forget: no debe bloquear ni afectar la
+            // respuesta principal. El .catch() queda pegado a la promesa explícitamente
+            // (en vez de depender de un try/catch interno) para que agregar código nuevo
+            // en recordAudit() no pueda reintroducir un unhandledRejection.
+            tap((response) => {
+                this.recordAudit(request, httpResponse, startTime, response).catch((error: unknown) => {
+                    this.logger.warn(`Error en AuditInterceptor: ${(error as Error).message}`, 'AUDIT');
+                });
             })
         );
+    }
+
+    private async recordAudit(
+        request: Request,
+        httpResponse: { statusCode: number },
+        startTime: number,
+        _response: any,
+    ): Promise<void> {
+        const processingTime = Date.now() - startTime;
+
+        // Extraer usuario del token JWT
+        const user = this.extractUserFromRequest(request);
+
+        // Extraer información de la aplicación si está disponible
+        const applicationInfo = this.extractApplicationInfo(request);
+
+        // Registrar eventos de acceso ABAC
+        if (request.body && request.body.resource && request.body.action) {
+            await this.auditService.logAccessEvent(
+                true, // asumiendo éxito si llegamos aquí
+                {
+                    userId: user?.id ?? 'system',
+                    userEmail: user?.email ?? 'system',
+                    applicationId: request.body.applicationId || applicationInfo?.id,
+                    applicationName: applicationInfo?.name || 'Unknown',
+                    resource: request.body.resource,
+                    action: request.body.action,
+                    context: request.body.context || {},
+                    ipAddress: this.getClientIp(request),
+                    userAgent: request.get('user-agent'),
+                    processingTime,
+                    correlationId: request.get('x-correlation-id'),
+                }
+            );
+        }
+
+        // Registrar otros eventos HTTP importantes
+        await this.logHttpEvent(request, httpResponse, processingTime, user);
     }
 
     private extractUserFromRequest(request: Request): { id: string; email: string } | null {

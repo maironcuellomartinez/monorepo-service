@@ -1,5 +1,5 @@
 // abac-microservice/src/abac/services/entra-id.service.ts
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import * as jwksRsa from 'jwks-rsa';
 
@@ -43,6 +43,7 @@ export class EntraIdService implements OnModuleInit {
 
         this.client = jwksRsa({
             jwksUri,
+            timeout: 5000, // evita colgar el login si Azure no responde (default de la lib: 30s)
             cache: true,
             cacheMaxEntries: 10,
             cacheMaxAge: 10 * 60 * 1000,  // 10 minutos
@@ -64,28 +65,40 @@ export class EntraIdService implements OnModuleInit {
     /** Valida la firma del token contra JWKS y retorna el payload. Lanza si es inválido. */
     async validate(token: string): Promise<EntraIdPayload> {
         if (!this.enabled) {
-            throw new Error('Entra ID no está configurado (faltan AZURE_TENANT_ID / AZURE_CLIENT_ID)');
+            throw new ServiceUnavailableException('Entra ID no está configurado (faltan AZURE_TENANT_ID / AZURE_CLIENT_ID)');
         }
 
         const decoded = jwt.decode(token, { complete: true });
         if (!decoded || !decoded.header?.kid) {
-            throw new Error('Token malformado — falta kid en el header');
+            throw new UnauthorizedException('Token malformado — falta kid en el header');
         }
 
-        const key = await this.client.getSigningKey(decoded.header.kid);
-        const publicKey = key.getPublicKey();
+        let publicKey: string;
+        try {
+            const key = await this.client.getSigningKey(decoded.header.kid);
+            publicKey = key.getPublicKey();
+        } catch (error) {
+            // Distinguir fallo de red/JWKS (infra) de un kid inexistente (token inválido)
+            this.logger.error(`No se pudo obtener la clave de firma de Entra ID: ${(error as Error).message}`);
+            throw new ServiceUnavailableException('No se pudo verificar el token contra Entra ID — JWKS no disponible');
+        }
 
-        const payload = jwt.verify(token, publicKey, {
-            audience: this.audience,
-            issuer: this.issuer,
-            algorithms: ['RS256'],
-        }) as any;
+        let payload: any;
+        try {
+            payload = jwt.verify(token, publicKey, {
+                audience: this.audience,
+                issuer: this.issuer,
+                algorithms: ['RS256'],
+            });
+        } catch (error) {
+            throw new UnauthorizedException(`Token de Entra ID inválido: ${(error as Error).message}`);
+        }
 
         const email = payload.preferred_username ?? payload.email ?? payload.upn ?? '';
         const oid = payload.oid ?? payload.sub;
 
-        if (!oid) throw new Error('Token Entra ID sin oid/sub');
-        if (!email) throw new Error('Token Entra ID sin email/preferred_username');
+        if (!oid) throw new UnauthorizedException('Token Entra ID sin oid/sub');
+        if (!email) throw new UnauthorizedException('Token Entra ID sin email/preferred_username');
 
         return {
             oid,

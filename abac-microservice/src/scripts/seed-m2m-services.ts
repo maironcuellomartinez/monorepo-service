@@ -104,116 +104,121 @@ async function main() {
 
     console.log('\n🔧  Seed M2M — Event Corner\n');
 
+    const tokens: Array<{ service: string; token: string; expiresAt: Date; tokenDurationDays: number }> = [];
+
     try {
-        // ── Limpieza de datos legacy (service accounts + roles M2M del diseño anterior) ──
-        console.log('🧹 Limpiando datos legacy M2M...');
+        // Toda la limpieza + upsert corre en una única transacción: si algo falla a mitad
+        // de camino (ej. un INSERT del servicio 4 de 6), se revierte todo en vez de dejar
+        // datos parcialmente migrados (algunos servicios actualizados, otros no).
+        await ds.transaction(async (manager) => {
+            // ── Limpieza de datos legacy (service accounts + roles M2M del diseño anterior) ──
+            console.log('🧹 Limpiando datos legacy M2M...');
 
-        // 1. Roles con nombre svc-* asociados a apps m2m_service
-        const legacyRoles = await ds.query(
-            `SELECT r.id FROM roles r
-             INNER JOIN applications a ON r.applicationId = a.id
-             WHERE r.name LIKE 'svc-%' AND a.type = 'm2m_service'`,
-        );
-        if (legacyRoles.length > 0) {
-            const roleIds = legacyRoles.map((r: any) => r.id);
-            const placeholders = roleIds.map(() => '?').join(',');
-            await ds.query(`DELETE FROM role_permissions WHERE roleId IN (${placeholders})`, roleIds);
-            await ds.query(`DELETE FROM user_roles WHERE roleId IN (${placeholders})`, roleIds);
-            await ds.query(`DELETE FROM roles WHERE id IN (${placeholders})`, roleIds);
-            console.log(`   ✓ ${roleIds.length} roles legacy eliminados`);
-        } else {
-            console.log('   ✓ Sin roles legacy');
-        }
-
-        // 2. Service accounts svc-*@*.internal (accountType='service')
-        const legacyUsers = await ds.query(
-            `SELECT id FROM users WHERE email LIKE 'svc-%@%.internal' AND accountType = 'service'`,
-        );
-        if (legacyUsers.length > 0) {
-            const userIds = legacyUsers.map((u: any) => u.id);
-            const placeholders = userIds.map(() => '?').join(',');
-            await ds.query(`DELETE FROM user_roles WHERE userId IN (${placeholders})`, userIds);
-            await ds.query(`DELETE FROM user_applications WHERE userId IN (${placeholders})`, userIds);
-            await ds.query(`DELETE FROM user_policy_assignments WHERE userId IN (${placeholders})`, userIds);
-            await ds.query(`UPDATE applications SET ownerId = NULL WHERE ownerId IN (${placeholders})`, userIds);
-            await ds.query(`DELETE FROM users WHERE id IN (${placeholders})`, userIds);
-            console.log(`   ✓ ${userIds.length} service accounts legacy eliminados`);
-        } else {
-            console.log('   ✓ Sin service accounts legacy');
-        }
-
-        console.log('');
-
-        const tokens: Array<{ service: string; token: string; expiresAt: Date; tokenDurationDays: number }> = [];
-
-        for (const svc of SERVICE_DEFINITIONS) {
-            console.log(`  📦 ${svc.name}`);
-
-            // Upsert Application (type='m2m_service', sin apiKey/apiSecret, sin ownerId)
-            let appId: string;
-            const existingApp = await ds.query(
-                "SELECT id FROM applications WHERE name = ? AND type = 'm2m_service' LIMIT 1",
-                [svc.name],
+            // 1. Roles con nombre svc-* asociados a apps m2m_service
+            const legacyRoles = await manager.query(
+                `SELECT r.id FROM roles r
+                 INNER JOIN applications a ON r.applicationId = a.id
+                 WHERE r.name LIKE 'svc-%' AND a.type = 'm2m_service'`,
             );
-
-            if (existingApp.length > 0) {
-                appId = existingApp[0].id;
-                await ds.query(
-                    `UPDATE applications
-                        SET description = ?, ownerId = NULL, apiKey = NULL, apiSecret = NULL,
-                            tokenDurationDays = ?, updatedAt = NOW()
-                      WHERE id = ?`,
-                    [svc.description, svc.tokenDurationDays, appId],
-                );
-                // ownerApplicationId solo si se especifica explícitamente
-                if (svc.ownerApplicationId !== undefined) {
-                    await ds.query(
-                        'UPDATE applications SET ownerApplicationId = ? WHERE id = ?',
-                        [svc.ownerApplicationId ?? null, appId],
-                    );
-                }
-                console.log(`     App:   ✓ existente (${appId})`);
+            if (legacyRoles.length > 0) {
+                const roleIds = legacyRoles.map((r: any) => r.id);
+                const placeholders = roleIds.map(() => '?').join(',');
+                await manager.query(`DELETE FROM role_permissions WHERE roleId IN (${placeholders})`, roleIds);
+                await manager.query(`DELETE FROM user_roles WHERE roleId IN (${placeholders})`, roleIds);
+                await manager.query(`DELETE FROM roles WHERE id IN (${placeholders})`, roleIds);
+                console.log(`   ✓ ${roleIds.length} roles legacy eliminados`);
             } else {
-                appId = crypto.randomUUID();
-                await ds.query(
-                    `INSERT INTO applications
-                       (id, name, description, type, apiKey, apiSecret, ownerId, ownerApplicationId,
-                        tokenDurationDays, isActive, usageCount, createdAt, updatedAt)
-                     VALUES (?, ?, ?, 'm2m_service', NULL, NULL, NULL, ?, ?, 1, 0, NOW(), NOW())`,
-                    [appId, svc.name, svc.description, svc.ownerApplicationId ?? null, svc.tokenDurationDays],
-                );
-                console.log(`     App:   + creada (${appId})`);
+                console.log('   ✓ Sin roles legacy');
             }
 
-            // Emitir JWT M2M (sub = applicationId)
-            // iat/exp los agrega JwtEd25519Service.signWithKey internamente via expiresIn
-            const durationDays = svc.tokenDurationDays;
-            const expiresAt = new Date();
-            expiresAt.setDate(expiresAt.getDate() + durationDays);
-
-            const payload: Record<string, any> = {
-                sub:             appId,
-                type:            'service',
-                applicationId:   appId,
-                applicationName: svc.name,
-                accountType:     'service',
-                iss:             issuer,
-                aud:             audience,
-            };
-
-            if (svc.ownerApplicationId) {
-                payload['ownerApplicationId'] = svc.ownerApplicationId;
-            }
-
-            const token = JwtEd25519Service.signWithKey(
-                privateKey,
-                { payload, expiresIn: durationDays * 24 * 60 * 60 },
-                { kid },
+            // 2. Service accounts svc-*@*.internal (accountType='service')
+            const legacyUsers = await manager.query(
+                `SELECT id FROM users WHERE email LIKE 'svc-%@%.internal' AND accountType = 'service'`,
             );
-            tokens.push({ service: svc.name, token, expiresAt, tokenDurationDays: durationDays });
+            if (legacyUsers.length > 0) {
+                const userIds = legacyUsers.map((u: any) => u.id);
+                const placeholders = userIds.map(() => '?').join(',');
+                await manager.query(`DELETE FROM user_roles WHERE userId IN (${placeholders})`, userIds);
+                await manager.query(`DELETE FROM user_applications WHERE userId IN (${placeholders})`, userIds);
+                await manager.query(`DELETE FROM user_policy_assignments WHERE userId IN (${placeholders})`, userIds);
+                await manager.query(`UPDATE applications SET ownerId = NULL WHERE ownerId IN (${placeholders})`, userIds);
+                await manager.query(`DELETE FROM users WHERE id IN (${placeholders})`, userIds);
+                console.log(`   ✓ ${userIds.length} service accounts legacy eliminados`);
+            } else {
+                console.log('   ✓ Sin service accounts legacy');
+            }
 
             console.log('');
-        }
+
+            for (const svc of SERVICE_DEFINITIONS) {
+                console.log(`  📦 ${svc.name}`);
+
+                // Upsert Application (type='m2m_service', sin apiKey/apiSecret, sin ownerId)
+                let appId: string;
+                const existingApp = await manager.query(
+                    "SELECT id FROM applications WHERE name = ? AND type = 'm2m_service' LIMIT 1",
+                    [svc.name],
+                );
+
+                if (existingApp.length > 0) {
+                    appId = existingApp[0].id;
+                    await manager.query(
+                        `UPDATE applications
+                            SET description = ?, ownerId = NULL, apiKey = NULL, apiSecret = NULL,
+                                tokenDurationDays = ?, updatedAt = NOW()
+                          WHERE id = ?`,
+                        [svc.description, svc.tokenDurationDays, appId],
+                    );
+                    // ownerApplicationId solo si se especifica explícitamente
+                    if (svc.ownerApplicationId !== undefined) {
+                        await manager.query(
+                            'UPDATE applications SET ownerApplicationId = ? WHERE id = ?',
+                            [svc.ownerApplicationId ?? null, appId],
+                        );
+                    }
+                    console.log(`     App:   ✓ existente (${appId})`);
+                } else {
+                    appId = crypto.randomUUID();
+                    await manager.query(
+                        `INSERT INTO applications
+                           (id, name, description, type, apiKey, apiSecret, ownerId, ownerApplicationId,
+                            tokenDurationDays, isActive, usageCount, createdAt, updatedAt)
+                         VALUES (?, ?, ?, 'm2m_service', NULL, NULL, NULL, ?, ?, 1, 0, NOW(), NOW())`,
+                        [appId, svc.name, svc.description, svc.ownerApplicationId ?? null, svc.tokenDurationDays],
+                    );
+                    console.log(`     App:   + creada (${appId})`);
+                }
+
+                // Emitir JWT M2M (sub = applicationId)
+                // iat/exp los agrega JwtEd25519Service.signWithKey internamente via expiresIn
+                const durationDays = svc.tokenDurationDays;
+                const expiresAt = new Date();
+                expiresAt.setDate(expiresAt.getDate() + durationDays);
+
+                const payload: Record<string, any> = {
+                    sub:             appId,
+                    type:            'service',
+                    applicationId:   appId,
+                    applicationName: svc.name,
+                    accountType:     'service',
+                    iss:             issuer,
+                    aud:             audience,
+                };
+
+                if (svc.ownerApplicationId) {
+                    payload['ownerApplicationId'] = svc.ownerApplicationId;
+                }
+
+                const token = JwtEd25519Service.signWithKey(
+                    privateKey,
+                    { payload, expiresIn: durationDays * 24 * 60 * 60 },
+                    { kid },
+                );
+                tokens.push({ service: svc.name, token, expiresAt, tokenDurationDays: durationDays });
+
+                console.log('');
+            }
+        });
 
         // Mostrar tokens
         console.log('\n══════════════════════════════════════════════════════════════');
@@ -236,6 +241,8 @@ async function main() {
 }
 
 main().catch((err) => {
-    console.error('❌  Error en seed M2M:', err);
+    const error = err as Error & { code?: string; sqlMessage?: string };
+    console.error(`❌  Error en seed M2M [${error.code ?? error.name ?? 'Error'}]: ${error.sqlMessage ?? error.message}`);
+    if (error.stack) console.error(error.stack);
     process.exit(1);
 });

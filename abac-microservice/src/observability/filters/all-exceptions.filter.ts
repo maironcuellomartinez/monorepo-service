@@ -80,16 +80,27 @@ export class AllExceptionsFilter implements ExceptionFilter {
             ER_LOCK_WAIT_TIMEOUT: HttpStatus.REQUEST_TIMEOUT,
             ECONNREFUSED: HttpStatus.SERVICE_UNAVAILABLE,
             ER_DB_CONN_ERROR: HttpStatus.SERVICE_UNAVAILABLE,
+            ETIMEDOUT: HttpStatus.SERVICE_UNAVAILABLE,
+            ENOTFOUND: HttpStatus.SERVICE_UNAVAILABLE,
+            ECONNRESET: HttpStatus.SERVICE_UNAVAILABLE,
+            EPIPE: HttpStatus.SERVICE_UNAVAILABLE,
+            ER_DUP_ENTRY: HttpStatus.CONFLICT,
+            ER_NO_REFERENCED_ROW: HttpStatus.BAD_REQUEST,
+            ER_NO_REFERENCED_ROW_2: HttpStatus.BAD_REQUEST,
+            ER_ROW_IS_REFERENCED_2: HttpStatus.CONFLICT,
+            EntityNotFoundError: HttpStatus.NOT_FOUND,
             ValidationError: HttpStatus.BAD_REQUEST,
             BusinessError: HttpStatus.UNPROCESSABLE_ENTITY,
             UnauthorizedError: HttpStatus.UNAUTHORIZED,
             JsonWebTokenError: HttpStatus.UNAUTHORIZED,
+            TokenExpiredError: HttpStatus.UNAUTHORIZED,
         };
 
+        // Prioridad: code (driver MySQL) → constructor.name (TypeORM: QueryFailedError, EntityNotFoundError) → name
         const key =
             (exception as any)?.code ||
-            (exception as any)?.name ||
-            (exception as any)?.constructor?.name;
+            (exception as any)?.constructor?.name ||
+            (exception as any)?.name;
 
         return errorMap[key] ?? HttpStatus.INTERNAL_SERVER_ERROR;
     }
@@ -123,11 +134,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
         }
 
         if ((exception as any)?.code && (exception as any)?.errno) {
+            // No se expone `sql` (texto completo de la query): puede revelar estructura de
+            // tablas/columnas y valores literales aunque solo se muestre en NODE_ENV=development.
             return {
                 code: (exception as any).code,
                 errno: (exception as any).errno,
                 sqlMessage: (exception as any).sqlMessage,
-                sql: (exception as any).sql,
             };
         }
 

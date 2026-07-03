@@ -1,6 +1,6 @@
 // src/auth/auth.service.ts
 
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, NotFoundException, InternalServerErrorException, ServiceUnavailableException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { JwtEd25519Service } from '../../common/crypto/jwt-ed25519.service';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -147,7 +147,7 @@ export class AuthService {
             entityId: user.id,
             isSuccess: true,
             description: `Login exitoso: ${email} (roles: ${roleNames.join(', ')})`,
-        }).catch(() => { });
+        }).catch((err: unknown) => { this.logger.warn(`Audit log failed: ${(err as Error).message}`, 'AUTH'); });
 
         return Result.ok({
             accessToken: token,
@@ -170,12 +170,17 @@ export class AuthService {
      * Valida un JWT y retorna su payload (stateless, sin consulta a BD)
      */
     async validateToken(token: string): Promise<any> {
-        const payload = this.jwtService.verify(token);
-        return {
-            userId: payload.sub,
-            email: payload.email,
-            expiresAt: new Date(payload.exp * 1000),
-        };
+        try {
+            const payload = this.jwtService.verify(token);
+            return {
+                userId: payload.sub,
+                email: payload.email,
+                expiresAt: new Date(payload.exp * 1000),
+            };
+        } catch (error) {
+            this.logger.warn(`Token inválido: ${(error as Error).message}`, 'AUTH');
+            throw new UnauthorizedException('Token inválido o expirado');
+        }
     }
 
     // ==================== ENTRA ID ====================
@@ -207,6 +212,11 @@ export class AuthService {
             try {
                 entraPayload = await this.entraIdService.validate(token);
             } catch (error) {
+                // Propagar tal cual: EntraIdService ya distingue infra caída (503) de token inválido (401)
+                if (error instanceof UnauthorizedException || error instanceof ServiceUnavailableException) {
+                    this.logger.warn(`Entra ID validate() falló: ${(error as Error).message}`, 'AUTH');
+                    throw error;
+                }
                 this.logger.error(`Entra ID token inválido: ${(error as Error).message}`, 'AUTH');
                 throw new UnauthorizedException('Token de Entra ID inválido o expirado');
             }
@@ -269,11 +279,9 @@ export class AuthService {
         applicationId?: string,
     ): Promise<{ userId: string; firstName: string; lastName: string; permissions: string[] }> {
         const appId = applicationId ?? process.env.ABAC_APP_ID ?? '';
-        console.log('appId', applicationId);
 
         // 1. Buscar o crear usuario por entraId (oid)
         let user = await this.userRepository.findOne({ where: { entraId: oid } });
-        console.log('user', user?.entraId, user?.email, user?.id);
         if (!user) {
             // Puede existir un user con mismo email (creado manualmente) — asociar oid
             user = await this.userRepository.findOne({ where: { email, isActive: true } });
@@ -332,8 +340,18 @@ export class AuthService {
                     membershipType: 'member',
                     isActive: true,
                 });
-                await this.userApplicationRepository.save(ua).catch(() => {/* ignore race condition */ });
-                this.logger.log(`UserApplication creado: userId=${user.id} appId=${appId}`, 'AUTH');
+                try {
+                    await this.userApplicationRepository.save(ua);
+                    this.logger.log(`UserApplication creado: userId=${user.id} appId=${appId}`, 'AUTH');
+                } catch (error: any) {
+                    // Race condition esperada: otro request ya creó la misma membresía.
+                    if (error.code === 'ER_DUP_ENTRY' || error.errno === 1062) {
+                        this.logger.warn(`Duplicate key en UserApplication, ya existe: userId=${user.id} appId=${appId}`, 'AUTH');
+                    } else {
+                        this.logger.error(`Error creando UserApplication: userId=${user.id} appId=${appId} — ${error.message}`, 'AUTH');
+                        throw error;
+                    }
+                }
             } else if (!existingUa.isActive) {
                 existingUa.isActive = true;
                 await this.userApplicationRepository.save(existingUa);
@@ -443,7 +461,8 @@ export class AuthService {
 
         const privateKey = process.env.ED25519_PRIVATE_KEY;
         if (!privateKey) {
-            throw new Error('ED25519_PRIVATE_KEY no configurado — requerido para emitir tokens M2M');
+            this.logger.error('ED25519_PRIVATE_KEY no configurado — no se puede emitir token M2M', 'AUTH');
+            throw new InternalServerErrorException('ED25519_PRIVATE_KEY no configurado — requerido para emitir tokens M2M');
         }
 
         const payload = {

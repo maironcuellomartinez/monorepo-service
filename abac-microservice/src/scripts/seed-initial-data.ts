@@ -370,7 +370,9 @@ class SeedInitialData {
                 await queryRunner.release();
             }
         } catch (error) {
-            console.error('❌ Error en seed:', error);
+            const err = error as Error & { code?: string; sqlMessage?: string };
+            console.error(`❌ Error en seed [${err.code ?? err.name ?? 'Error'}]: ${err.sqlMessage ?? err.message}`);
+            if (err.stack) console.error(err.stack);
             process.exit(1);
         } finally {
             await this.dataSource.destroy();

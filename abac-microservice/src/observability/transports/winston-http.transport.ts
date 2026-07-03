@@ -141,7 +141,11 @@ export class WinstonHttpTransport extends Transport {
                     this.droppedCount = 0;
                 }
             })
-            .catch(() => {})
+            // send() nunca rechaza (atrapa sus propios errores) — este catch cubre solo un
+            // bug inesperado en el .then() de arriba, y no debe quedar en silencio total.
+            .catch((error: unknown) => {
+                this.logger.error(`Log transport: fallo inesperado en doFlush(): ${(error as Error).message}`);
+            })
             .finally(() => { this.flushing = false; });
     }
 
@@ -161,7 +165,9 @@ export class WinstonHttpTransport extends Transport {
         clearInterval(this.timer);
         while (this.buffer.length > 0) {
             const batch = this.buffer.splice(0, this.BATCH_SIZE);
-            this.send(batch).catch(() => {});
+            this.send(batch).catch((error: unknown) => {
+                this.logger.error(`Log transport: fallo inesperado en shutdown(): ${(error as Error).message}`);
+            });
         }
         this.agent.destroy();
     }

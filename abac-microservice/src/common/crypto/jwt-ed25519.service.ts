@@ -31,6 +31,13 @@ export class JwtEd25519Service {
         options: JwtEd25519SignOptions,
         globalOptions?: { kid?: string; defaultExpiresIn?: number },
     ): string {
+        // Buffer.from(str, 'base64') ignora en silencio caracteres inválidos en vez de
+        // lanzar error — sin esta validación, un ED25519_PRIVATE_KEY corrupto puede decodificar
+        // a un buffer que pasa el chequeo de 64 bytes y firmar tokens con una clave distinta
+        // a la esperada, sin ningún error visible.
+        if (!JwtEd25519Service.isValidBase64(privateKeyBase64)) {
+            throw new Error('Clave privada inválida: no es una cadena Base64 válida.');
+        }
         const privateKey = Buffer.from(privateKeyBase64, 'base64');
         if (privateKey.length !== 64) throw new Error('Clave privada inválida: debe ser 64 bytes en Base64.');
 
@@ -64,6 +71,11 @@ export class JwtEd25519Service {
             publicKey: Buffer.from(kp.publicKey).toString('base64'),
             privateKey: Buffer.from(kp.secretKey).toString('base64'),
         };
+    }
+
+    private static isValidBase64(value: string): boolean {
+        if (!value || value.length % 4 !== 0) return false;
+        return /^[A-Za-z0-9+/]+={0,2}$/.test(value);
     }
 
     private static encodeB64Url(data: string | Uint8Array): string {

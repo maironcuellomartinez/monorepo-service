@@ -4,6 +4,7 @@ import {
     ExecutionContext,
     UnauthorizedException,
     ForbiddenException,
+    ServiceUnavailableException,
     Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -58,7 +59,13 @@ export class ApiKeyGuard implements CanActivate {
         }
 
         // Cache miss — validate against database
-        const application = await this.applicationService.validateApiKey(apiKey);
+        let application: Application | null;
+        try {
+            application = await this.applicationService.validateApiKey(apiKey);
+        } catch (error) {
+            this.logger.error(`Error validando API key contra la base de datos: ${(error as Error).message}`);
+            throw new ServiceUnavailableException('No se pudo validar la API key — servicio no disponible');
+        }
         if (!application) {
             this.logger.warn(`Invalid API key attempted: ${apiKey.substring(0, 10)}...`);
             throw new UnauthorizedException('Invalid API key');
