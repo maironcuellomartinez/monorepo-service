@@ -256,21 +256,21 @@ export function PermissionsPage() {
                                     {category}
                                     <Badge variant="secondary">{perms.length}</Badge>
                                 </h3>
-                                <Table>
+                                <Table className="table-fixed">
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>Permiso</TableHead>
-                                            <TableHead>Descripcion</TableHead>
+                                            <TableHead className="w-64">Permiso</TableHead>
+                                            <TableHead className="pl-6">Descripcion</TableHead>
                                             <TableHead className="w-20">Peso</TableHead>
-                                            <TableHead className="w-20">Estado</TableHead>
+                                            <TableHead className="w-24">Estado</TableHead>
                                             <TableHead className="w-28">Acciones</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {perms.map((p) => (
                                             <TableRow key={p.id}>
-                                                <TableCell className="font-mono text-sm">{p.resource}:{p.action}</TableCell>
-                                                <TableCell className="text-sm text-muted-foreground">{p.description}</TableCell>
+                                                <TableCell className="font-mono text-sm truncate" title={`${p.resource}:${p.action}`}>{p.resource}:{p.action}</TableCell>
+                                                <TableCell className="text-sm text-muted-foreground truncate pl-6" title={p.description}>{p.description}</TableCell>
                                                 <TableCell className="font-mono text-sm">{p.weight}</TableCell>
                                                 <TableCell>
                                                     {p.isActive !== false ? (
