@@ -14,6 +14,7 @@
     "seed": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/scripts/seed-initial-data.ts",
     "seed:m2m": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/scripts/seed-m2m-services.ts",
     "seed:full": "npm run seed && npm run seed:m2m",
+    "bootstrap:admin": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/scripts/bootstrap-admin.ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "lint": "eslint \"src/**/*.ts\" --fix",
     "test": "jest",
