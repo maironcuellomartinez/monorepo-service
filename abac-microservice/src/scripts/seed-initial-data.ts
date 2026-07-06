@@ -11,7 +11,8 @@ import * as readline from 'readline';
 import * as path from 'path';
 import * as nacl from 'tweetnacl';
 
-config();
+const env = process.env.NODE_ENV || 'development';
+config({ path: path.resolve(process.cwd(), `.env.${env}`) });
 
 // ─── Tipos internos ────────────────────────────────────────────────────────────
 
