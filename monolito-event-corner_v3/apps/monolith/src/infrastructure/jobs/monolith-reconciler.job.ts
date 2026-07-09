@@ -76,8 +76,17 @@ export class MonolithReconcilerJob {
             const correlationId = incident.snowqCorrelationId!;
             await this.correlation.run(
                 async () => {
-                    const status = await this.querySnowq(correlationId);
-                    if (!status) return;
+                    const query = await this.querySnowq(correlationId);
+                    if (query.kind === 'transient_error') return; // reintenta próximo ciclo
+                    if (query.kind === 'not_found') {
+                        // correlationId ya no existe en snowq (404 real, no error de red) — pollearlo
+                        // para siempre no sirve. Limpiar para que SnowOrphanRecoveryJob lo re-encole.
+                        this.logger.warn(`ReconcilerJob: incident ${incident.id} | correlationId ${correlationId} ya no existe en snowq — limpiando para recuperación por huérfanos`);
+                        incident.setSnowqCorrelationId(null);
+                        await this.incidentRepo.update(incident);
+                        return;
+                    }
+                    const status = query.status;
 
                     if (status.status === 'DELIVERED' && status.sysId && status.snowNumber) {
                         const sysIdResult = ServiceNowId.create(status.sysId);
@@ -154,8 +163,15 @@ export class MonolithReconcilerJob {
             const correlationId = request.snowqCorrelationId!;
             await this.correlation.run(
                 async () => {
-                    const status = await this.querySnowq(correlationId);
-                    if (!status) return;
+                    const query = await this.querySnowq(correlationId);
+                    if (query.kind === 'transient_error') return; // reintenta próximo ciclo
+                    if (query.kind === 'not_found') {
+                        this.logger.warn(`ReconcilerJob: request ${request.id} | correlationId ${correlationId} ya no existe en snowq — limpiando para recuperación por huérfanos`);
+                        request.setSnowqCorrelationId(null);
+                        await this.requestRepo.update(request);
+                        return;
+                    }
+                    const status = query.status;
 
                     if (status.status === 'DELIVERED' && status.sysId && status.snowNumber) {
                         const sysIdResult = ServiceNowId.create(status.sysId);
@@ -200,31 +216,54 @@ export class MonolithReconcilerJob {
 
     /**
      * Determina si el lastError de snowq corresponde a un error fatal
-     * (no tiene sentido reintentar: problema de autenticación o configuración).
+     * (no tiene sentido reintentar: problema de autenticación, configuración,
+     * o payload inválido — reintentar el mismo payload malo agota los reintentos
+     * en un loop indefinido, ver ServiceNowErrorFactory en api-snowq-service que
+     * clasifica 400/404/422 como fatales del lado del cliente HTTP).
      *
-     * Errores fatales reconocidos: 401, 403, Unauthorized, Forbidden, invalid credentials.
-     * Errores temporales: 5xx, timeout, connection refused, circuit breaker.
+     * Errores fatales reconocidos: 400, 401, 403, 404, 422, Unauthorized, Forbidden,
+     * invalid credentials, Bad Request, validation.
+     * Errores temporales: 5xx, 408, 429, timeout, connection refused, circuit breaker.
      */
     private isFatalError(lastError?: string | null): boolean {
         if (!lastError) return false;
         const lower = lastError.toLowerCase();
         return (
+            lower.includes('400') ||
             lower.includes('401') ||
             lower.includes('403') ||
+            lower.includes('404') ||
+            lower.includes('422') ||
             lower.includes('unauthorized') ||
             lower.includes('forbidden') ||
             lower.includes('invalid credentials') ||
             lower.includes('authentication') ||
-            lower.includes('invalid_grant')
+            lower.includes('invalid_grant') ||
+            lower.includes('bad request') ||
+            lower.includes('validation')
         );
     }
 
-    private async querySnowq(correlationId: string): Promise<SnowqStatusResult | null> {
+    /**
+     * Distingue "correlationId no existe en snowq" (404 real → not_found, señal
+     * terminal) de "no se pudo consultar" (error de red/infra → transient_error,
+     * reintentar el próximo ciclo). Colapsarlos en un solo `null` hacía que un
+     * correlationId huérfano se polleara cada 30s para siempre.
+     */
+    private async querySnowq(correlationId: string): Promise<
+        | { kind: 'ok'; status: SnowqStatusResult }
+        | { kind: 'not_found' }
+        | { kind: 'transient_error' }
+    > {
         const result = await this.snClient.getReconcileStatus(correlationId);
         if (result.isFailure) {
-            this.logger.warn(`ReconcilerJob: no se pudo consultar correlationId=${correlationId} — ${result.unwrapError().message}`);
-            return null;
+            this.logger.warn(`ReconcilerJob: no se pudo consultar correlationId=${correlationId} (transitorio) — ${result.unwrapError().message}`);
+            return { kind: 'transient_error' };
         }
-        return result.unwrap();
+        const status = result.unwrap();
+        if (status === null) {
+            return { kind: 'not_found' };
+        }
+        return { kind: 'ok', status };
     }
 }

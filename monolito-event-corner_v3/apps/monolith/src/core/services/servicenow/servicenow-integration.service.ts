@@ -84,6 +84,7 @@ export class ServiceNowIntegrationService {
             description: `Incidencia creada en corner ${corner.name}`,
             caller_id: callerPrincipalName ?? String(incident.customerId),
             expected_start: incident.scheduledRange.start,
+            externalId: String(incident.id),
         });
 
         if (snResult.isFailure) {
@@ -148,6 +149,7 @@ export class ServiceNowIntegrationService {
             description: request.notes ?? 'Solicitud creada por técnico',
             caller_id: callerPrincipalName ?? String(request.technicianId),
             requested_for: requestedForPrincipalName ?? String(request.customerId),
+            externalId: String(request.id),
         });
 
         if (snResult.isFailure) {
@@ -216,6 +218,7 @@ export class ServiceNowIntegrationService {
             description: `Incidencia creada en corner ${corner.name}`,
             caller_id: String(incident.customerId),
             expected_start: incident.scheduledRange.start,
+            externalId: String(incident.id),
         });
 
         if (enqueueResult.isFailure) {
@@ -267,6 +270,7 @@ export class ServiceNowIntegrationService {
             description: request.notes ?? 'Solicitud creada por técnico',
             caller_id: String(request.technicianId),
             requested_for: String(request.customerId),
+            externalId: String(request.id),
         });
 
         if (enqueueResult.isFailure) {

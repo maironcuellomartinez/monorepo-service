@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Between, In, LessThan, Repository } from 'typeorm';
 import { SnowRequestEntity } from '../entities/snow-request.entity';
-import { RequestPriorityUtils, STATUS } from 'src/common';
+import { RequestPriority, RequestPriorityUtils, STATUS } from 'src/common';
 import { DlqFilterDto } from '../dto/dlq-filter.dto';
 import { RequestType } from 'src/common/enum/request-type.enum';
 
@@ -16,7 +16,8 @@ export class SnowRequestService {
     ) { }
 
     async create(data: Partial<SnowRequestEntity>): Promise<SnowRequestEntity> {
-        const entity = this.repo.create(data);
+        const maxRetries = data.maxRetries ?? RequestPriorityUtils.getMaxRetries(data.priority as RequestPriority);
+        const entity = this.repo.create({ ...data, maxRetries });
         return this.repo.save(entity);
     }
 
@@ -105,7 +106,7 @@ export class SnowRequestService {
         if (!entity) return;
 
         const newRetryCount = entity.retryCount + 1;
-        const maxRetries = RequestPriorityUtils.getMaxRetries(entity.priority);
+        const maxRetries = entity.maxRetries ?? RequestPriorityUtils.getMaxRetries(entity.priority);
 
         if (newRetryCount >= maxRetries) {
             await this.repo.update({ correlationId }, {

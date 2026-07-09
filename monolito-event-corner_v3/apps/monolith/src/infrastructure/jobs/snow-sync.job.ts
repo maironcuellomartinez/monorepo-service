@@ -8,14 +8,10 @@ import { IIncidentService } from '../../core/ports/incoming/incident/incident-se
 import { INCIDENT_REPOSITORY } from '../../core/ports/outgoing/repositories/tokens';
 import { SERVICENOW_CLIENT } from '../../core/ports/outgoing/infrastructure-tokens';
 import { INCIDENT_SERVICE } from '../../core/ports/incoming/service-tokens';
-import { IncidentStatus } from '../../core/domain/enums/incident-status.enum';
-import { TechnicianId } from '@app/shared/types/branded-ids';
 
 // SN state codes that mean "closed" in ServiceNow
 const SN_CLOSED_STATES = new Set(['6', '7']); // 6=Resolved, 7=Closed
 const SYNC_INTERVAL_MS = 5 * 60_000; // 5 minutes
-// System actor ID used for automated closures
-const SYSTEM_TECHNICIAN_ID = 'SYSTEM_SNOW_SYNC';
 
 /**
  * Job that polls ServiceNow state for active incidents and closes them
@@ -77,12 +73,9 @@ export class SnowSyncJob {
 
             this.logger.log(`SnowSyncJob: incident=${incident.id} cerrado en SN (state=${snState}) — cerrando en monolith`);
 
-            const closeResult = await this.incidentService.changeStatus({
+            const closeResult = await this.incidentService.closeFromExternalSync({
                 incidentId: incident.id,
-                technicianId: TechnicianId(SYSTEM_TECHNICIAN_ID),
-                newStatus: IncidentStatus.CLOSED,
                 comment: `Cerrado automáticamente por sincronización con ServiceNow (state=${snState})`,
-                closeCategory: 'resolved',
             });
 
             if (closeResult.isFailure) {

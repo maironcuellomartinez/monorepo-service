@@ -1,6 +1,6 @@
 import { SnowRequestService } from './snow-request.service';
 import { SnowRequestEntity } from '../entities/snow-request.entity';
-import { RequestPriority, RequestType, STATUS } from 'src/common';
+import { RequestPriority, RequestPriorityUtils, RequestType, STATUS } from 'src/common';
 import { Repository, SelectQueryBuilder, UpdateResult } from 'typeorm';
 
 /**
@@ -82,9 +82,36 @@ describe('SnowRequestService', () => {
 
             const result = await service.create(data);
 
-            expect(repo.create).toHaveBeenCalledWith(data);
+            expect(repo.create).toHaveBeenCalledWith({
+                ...data,
+                maxRetries: RequestPriorityUtils.getMaxRetries(RequestPriority.MEDIUM),
+            });
             expect(repo.save).toHaveBeenCalledWith(entity);
             expect(result).toBe(entity);
+        });
+
+        it('debería respetar un maxRetries explícito en vez de recalcularlo por prioridad', async () => {
+            const data: Partial<SnowRequestEntity> = {
+                correlationId: 'abc-123',
+                internalNumber: 'SNQ-ABC123',
+                type: RequestType.INCIDENT,
+                status: STATUS.QUEUED,
+                source: 'test',
+                priority: RequestPriority.MEDIUM,
+                payload: {},
+                immediate: false,
+                fingerprint: null,
+                expiresAt: null,
+                maxRetries: 3,
+            };
+            const entity = buildEntity(data);
+
+            repo.create.mockReturnValue(entity);
+            repo.save.mockResolvedValue(entity);
+
+            await service.create(data);
+
+            expect(repo.create).toHaveBeenCalledWith({ ...data, maxRetries: 3 });
         });
     });
 

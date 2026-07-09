@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { isFail, Result } from '@app/result';
 import { LoggerService, TracingService } from '@app/observability';
-import { IIncidentService, CreateIncidentCommand, DeliverIncidentCommand, TakeIncidentCommand, ReleaseIncidentCommand, ChangeIncidentStatusCommand, ValidateIncidentCommand, ReopenIncidentCommand, CancelIncidentCommand, BatchStatusChangeItem, BatchChangeResult } from '../../ports/incoming/incident/incident-service.port';
+import { IIncidentService, CreateIncidentCommand, DeliverIncidentCommand, TakeIncidentCommand, ReleaseIncidentCommand, ChangeIncidentStatusCommand, ValidateIncidentCommand, ReopenIncidentCommand, CancelIncidentCommand, CloseFromExternalSyncCommand, BatchStatusChangeItem, BatchChangeResult } from '../../ports/incoming/incident/incident-service.port';
 import { IIncidentRepository } from '../../ports/outgoing/repositories/incident-repository.port';
 import { ISlotRepository } from '../../ports/outgoing/repositories/slot-repository.port';
 import { ITechnicianRepository } from '../../ports/outgoing/repositories/technician-repository.port';
@@ -389,6 +389,44 @@ export class IncidentService implements IIncidentService {
         await this.cache.deletePattern(`availability:${incident.cornerId}:${dateStr}:*`);
 
         this.logger.log(`changeStatus — id=${incident.id} ${prevStatus}→${incident.status}`, CTX);
+        return Result.ok(incident);
+    }
+
+    async closeFromExternalSync(command: CloseFromExternalSyncCommand): Promise<Result<Incident>> {
+        return this.tracing.run(
+            'monolith.closeFromExternalSync',
+            { kind: 'server', attributes: { 'incident.incidentId': command.incidentId } },
+            () => this._closeFromExternalSync(command),
+        );
+    }
+
+    private async _closeFromExternalSync(command: CloseFromExternalSyncCommand): Promise<Result<Incident>> {
+        const incidentResult = await this.incidentRepository.findById(command.incidentId);
+        if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
+
+        const incident = incidentResult.unwrap();
+        if (!incident) {
+            return Result.err(new Error(`Incident ${command.incidentId} not found`));
+        }
+
+        const prevStatus = incident.status;
+        const closeResult = incident.closeFromExternalSync(command.comment);
+        if (closeResult.isFailure) {
+            this.logger.warn(`closeFromExternalSync — rejected id=${command.incidentId} status=${prevStatus}: ${closeResult.unwrapError().message}`, CTX);
+            return Result.err(closeResult.unwrapError());
+        }
+
+        const statusEvents = incident.pullEvents();
+        const saveResult = await this.incidentRepository.save(incident);
+        if (saveResult.isFailure) return Result.err(saveResult.unwrapError());
+
+        await this.incidentRepository.saveEvents(incident.id as any, statusEvents);
+        await this.eventBus.publishMany(statusEvents);
+
+        const dateStr = incident.scheduledRange.start.toISOString().split('T')[0];
+        await this.cache.deletePattern(`availability:${incident.cornerId}:${dateStr}:*`);
+
+        this.logger.log(`closeFromExternalSync — id=${incident.id} ${prevStatus}→CLOSED`, CTX);
         return Result.ok(incident);
     }
 

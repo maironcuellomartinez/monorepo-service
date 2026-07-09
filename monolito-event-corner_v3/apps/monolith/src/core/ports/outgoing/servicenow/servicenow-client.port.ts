@@ -10,6 +10,8 @@ export interface ServiceNowIncidentPayload {
     description: string;
     caller_id: string;
     expected_start?: Date;
+    /** ID del incident en el monolito — usado por snowq para deduplicar reintentos/re-encolados. */
+    externalId?: string;
 }
 
 export interface ServiceNowRequestPayload {
@@ -21,6 +23,8 @@ export interface ServiceNowRequestPayload {
     description: string;
     caller_id: string;
     requested_for?: string;
+    /** ID del request en el monolito — usado por snowq para deduplicar reintentos/re-encolados. */
+    externalId?: string;
 }
 
 export interface ServiceNowTicketResult {

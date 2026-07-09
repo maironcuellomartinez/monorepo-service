@@ -228,7 +228,9 @@ export class RequestTypeUtils {
             urgency: (incidence.payload.urgency ?? 2).toString(),
             impact: (incidence.payload.impact ?? 2).toString(),
             u_severity: incidence.payload.severity ?? 'medium',
-            caller_id: incidence.source || "default_user",
+            caller_id: incidence.payload.caller_id || incidence.source || "default_user",
+            location: incidence.payload.location || undefined,
+            expected_start: incidence.payload.expected_start || undefined,
         };
 
         const map = {
@@ -251,9 +253,14 @@ export class RequestTypeUtils {
                 requested_by:     incidence.payload.requestedBy     || "thruk@example.com"
             },
             [RequestType.SERVICE_CATALOG]: {
-                request: incidence.payload.requestId,
-                cat_item: incidence.payload.catalogItemId,
-                variables: incidence.payload.variables || {}
+                ...basePayload,
+                assignment_group: incidence.payload.assignmentGroup || undefined,
+                company:          incidence.payload.company         || undefined,
+                requested_for:    incidence.payload.requested_for   || undefined,
+                // Campos opcionales para fulfillment real de catálogo (sc_cat_item) — no siempre aplican.
+                request:          incidence.payload.requestId       || undefined,
+                cat_item:         incidence.payload.cat_item ?? incidence.payload.catalogItemId ?? undefined,
+                variables:        incidence.payload.variables || {},
             },
             [RequestType.PROBLEM]: {
                 ...basePayload,

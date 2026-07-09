@@ -75,6 +75,11 @@ export interface CancelIncidentCommand {
     reason?: string;
 }
 
+export interface CloseFromExternalSyncCommand {
+    incidentId: IncidentId;
+    comment?: string;
+}
+
 /**
  * Interfaz del servicio de incidencias
  */
@@ -119,6 +124,12 @@ export interface IIncidentService {
      * @param {incidentId, customerId, reason} command
      */
     cancelIncident(command: CancelIncidentCommand): Promise<Result<Incident>>;
+    /**
+     * Cierra la incidencia por señal externa autoritativa (SnowSyncJob: SN ya la cerró).
+     * A diferencia de changeStatus(), acepta cualquier estado activo como origen — no
+     * solo PENDING_PICKUP/PENDING_REPLACEMENT_DELIVERY.
+     */
+    closeFromExternalSync(command: CloseFromExternalSyncCommand): Promise<Result<Incident>>;
     /**
      * Obtiene una incidencia por su ID
      * @param {incidentId} id 

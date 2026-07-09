@@ -10,7 +10,7 @@ import {
     TechnicianNotAuthorizedError
 } from '../errors/incident.errors';
 import { INCIDENT_CONSTANTS } from '../constants/incident.constants';
-import { TAKEABLE_STATUSES } from '../enums/incident-status.enum';
+import { TAKEABLE_STATUSES, TERMINAL_STATUSES } from '../enums/incident-status.enum';
 import { Result } from '@app/result';
 import { IncidentId } from '@app/shared/types/incident-types';
 import { CornerId, CustomerId, IssueTypeId, LockerId, SlotId, TechnicianId } from '@app/shared/types/branded-ids';
@@ -408,6 +408,30 @@ export class Incident {
 
         this.addEvent(new DomainEvent('INCIDENT_STATUS_CHANGED', this._id as string, 'Incident', {
             technicianId, oldStatus, newStatus, comment, closeCategory,
+        }));
+
+        return Result.ok(undefined);
+    }
+
+    /**
+     * Cierra la incidencia por señal externa autoritativa (ej. SnowSyncJob detecta
+     * que ServiceNow ya la cerró/resolvió). A diferencia de changeStatus(), NO valida
+     * VALID_STATUS_TRANSITIONS — cualquier estado activo puede cerrarse así, porque acá
+     * SN es la fuente de verdad. Solo rechaza si ya está en un estado terminal (o CLOSED).
+     */
+    closeFromExternalSync(comment?: string): Result<void> {
+        if (this._status === IncidentStatus.CLOSED || TERMINAL_STATUSES.includes(this._status)) {
+            return Result.err(new InvalidIncidentStateError(this._status, 'closeFromExternalSync (ya es terminal)'));
+        }
+
+        const oldStatus = this._status;
+        this._status = IncidentStatus.CLOSED;
+        this._closedAt = new Date();
+        this._currentTechnicianId = null;
+        this._updatedAt = new Date();
+
+        this.addEvent(new DomainEvent('INCIDENT_STATUS_CHANGED', this._id as string, 'Incident', {
+            technicianId: null, oldStatus, newStatus: IncidentStatus.CLOSED, comment,
         }));
 
         return Result.ok(undefined);

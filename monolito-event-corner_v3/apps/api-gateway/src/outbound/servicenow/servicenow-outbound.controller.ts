@@ -83,6 +83,12 @@ export class ServiceNowOutboundController {
                 description: payload.description,
                 assignmentGroup: payload.assignment_group,
                 caller_id: payload.caller_id,
+                category: payload.category,
+                company: payload.company,
+                location: payload.location,
+                expected_start: payload.expected_start,
+                // Identidad para deduplicación en snowq (ver computeFingerprint en api-snowq-service).
+                externalId: payload.externalId,
             },
         };
     }
@@ -100,6 +106,10 @@ export class ServiceNowOutboundController {
                 assignmentGroup: payload.assignment_group,
                 caller_id: payload.caller_id,
                 requested_for: payload.requested_for,
+                category: payload.category,
+                company: payload.company,
+                location: payload.location,
+                externalId: payload.externalId,
             },
         };
     }
@@ -114,9 +124,10 @@ export class ServiceNowOutboundController {
         const body = this.buildIncidentBody(payload);
         const headers = { ...this.baseHeaders, ...this.forwardCorrelationId(req) };
 
-        // Phase 1 — immediate (sync)
+        // Phase 1 — immediate (sync). Breaker propio: un 5xx acá es esperado (cae a fallback)
+        // y no debe abrir el circuito que protege la fase async / update / close / reconcile.
         try {
-            const data = await this.resilience.fireWrite(() =>
+            const data = await this.resilience.fireImmediate(() =>
                 firstValueFrom(
                     this.httpService.post('/snow-requests/immediate/incidents', body, { headers, timeout: this.resilience.writeTimeout }),
                 ).then(r => r.data),
@@ -158,9 +169,9 @@ export class ServiceNowOutboundController {
         const body = this.buildRequestBody(payload);
         const headers = { ...this.baseHeaders, ...this.forwardCorrelationId(req) };
 
-        // Phase 1 — immediate (sync)
+        // Phase 1 — immediate (sync). Breaker propio, ver comentario análogo en _createIncident.
         try {
-            const data = await this.resilience.fireWrite(() =>
+            const data = await this.resilience.fireImmediate(() =>
                 firstValueFrom(
                     this.httpService.post('/snow-requests/immediate/service-catalog', body, { headers, timeout: this.resilience.writeTimeout }),
                 ).then(r => r.data),
