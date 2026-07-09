@@ -50,7 +50,7 @@ export class OutboxEventBusAdapter implements IEventBus {
     async publishMany(events: DomainEvent[]): Promise<Result<void>> {
         return this.tracing.run(
             'monolith.outbox.publishMany',
-            { kind: 'internal', attributes: { 'event.count': events.length } },
+            { kind: 'internal', attributes: { 'event.count': String(events.length) } },
             () => this._publishMany(events),
         );
     }

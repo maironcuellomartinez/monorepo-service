@@ -15,7 +15,7 @@ function freshDevice(): Device {
         DeviceId('dev-1'), sn(),
         'ThinkPad X1', 'Lenovo', 'LAPTOP',
         'usr-1', 'Juan Pérez',
-        DeviceStatus.SYNCED, new Date(), new Date(),
+        DeviceStatus.SYNCED, false, new Date(), new Date(),
     );
 }
 
@@ -24,7 +24,7 @@ function staleDevice(): Device {
         DeviceId('dev-1'), sn(),
         'ThinkPad X1', 'Lenovo', 'LAPTOP',
         null, null,
-        DeviceStatus.SYNCED, new Date(Date.now() - 20 * 60_000), new Date(),
+        DeviceStatus.SYNCED, false, new Date(Date.now() - 20 * 60_000), new Date(),
     );
 }
 
@@ -59,7 +59,7 @@ describe('Device.isStale', () => {
     it('false con lastSyncAt a 14 min en el pasado', () => {
         const d = Device.reconstitute(
             DeviceId('d'), sn(), null, null, null, null, null,
-            DeviceStatus.SYNCED, new Date(Date.now() - 14 * 60_000), new Date(),
+            DeviceStatus.SYNCED, false, new Date(Date.now() - 14 * 60_000), new Date(),
         );
         expect(d.isStale).toBe(false);
     });
@@ -135,7 +135,7 @@ describe('Device.reconstitute()', () => {
             DeviceId('dev-x'), sn('RECONSTITUTED'),
             'Surface Pro', 'Microsoft', 'TABLET',
             'usr-42', 'Pedro García',
-            DeviceStatus.SYNCED, lastSyncAt, new Date(),
+            DeviceStatus.SYNCED, false, lastSyncAt, new Date(),
         );
 
         expect(device.model).toBe('Surface Pro');
@@ -148,7 +148,7 @@ describe('Device.reconstitute()', () => {
     it('reconstitute sin usuario asignado → isAssigned = false', () => {
         const device = Device.reconstitute(
             DeviceId('d'), sn(), null, null, null, null, null,
-            DeviceStatus.NOT_FOUND, new Date(), new Date(),
+            DeviceStatus.NOT_FOUND, false, new Date(), new Date(),
         );
         expect(device.isAssigned).toBe(false);
     });
@@ -166,7 +166,7 @@ describe('Device helpers', () => {
     it('hasModel() = false si model es null', () => {
         const d = Device.reconstitute(
             DeviceId('d'), sn(), null, null, null, null, null,
-            DeviceStatus.NOT_FOUND, new Date(), new Date(),
+            DeviceStatus.NOT_FOUND, false, new Date(), new Date(),
         );
         expect(d.hasModel()).toBe(false);
     });

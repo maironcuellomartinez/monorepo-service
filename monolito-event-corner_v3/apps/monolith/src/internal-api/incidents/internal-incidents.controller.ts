@@ -179,7 +179,7 @@ export class InternalIncidentsController {
         if (body.items.length > 50) {
             throw new BadRequestException('Batch size cannot exceed 50 items');
         }
-        return this.tracing.run('monolith.controller.incidents.batchChangeStatus', { kind: 'server', attributes: { 'batch.count': body.items.length } }, () => this._batchChangeStatus(body));
+        return this.tracing.run('monolith.controller.incidents.batchChangeStatus', { kind: 'server', attributes: { 'batch.count': String(body.items.length) } }, () => this._batchChangeStatus(body));
     }
 
     private async _batchChangeStatus(body: BatchStatusChangeDto) {

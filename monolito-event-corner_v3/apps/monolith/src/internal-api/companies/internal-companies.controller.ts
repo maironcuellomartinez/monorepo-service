@@ -140,7 +140,7 @@ export class InternalCompaniesController {
     async bulkImportSnProfiles(@Body() dto: BulkSnProfileDto) {
         return this.tracing.run(
             'monolith.controller.companies.bulkImportSnProfiles',
-            { kind: 'server', attributes: { 'bulk.count': dto.profiles.length } },
+            { kind: 'server', attributes: { 'bulk.count': String(dto.profiles.length) } },
             () => this._bulkImportSnProfiles(dto),
         );
     }
@@ -217,7 +217,7 @@ export class InternalCompaniesController {
     async bulkCreate(@Body() dto: { companies: CreateCompanyDto[] }) {
         return this.tracing.run(
             'monolith.controller.companies.bulkCreate',
-            { kind: 'server', attributes: { 'bulk.count': dto.companies.length } },
+            { kind: 'server', attributes: { 'bulk.count': String(dto.companies.length) } },
             () => this._bulkCreate(dto),
         );
     }

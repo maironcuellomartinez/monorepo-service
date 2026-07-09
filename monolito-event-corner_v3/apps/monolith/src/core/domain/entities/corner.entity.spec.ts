@@ -126,26 +126,28 @@ describe('Corner.removeSchedule()', () => {
 });
 
 describe('Corner.isOpenAt()', () => {
-    // 2026-03-09 es lunes
+    // 2026-03-09 es lunes. Corner.create() usa timezone 'UTC' por defecto,
+    // por eso las fechas se construyen con Date.UTC() — evita que el resultado
+    // dependa de la zona horaria de la máquina que corre el test.
     it('retorna true dentro del horario configurado', () => {
         const corner = makeCorner();
         corner.addSchedule(MON_SCHEDULE);
 
-        expect(corner.isOpenAt(new Date(2026, 2, 9, 10, 0, 0))).toBe(true);
+        expect(corner.isOpenAt(new Date(Date.UTC(2026, 2, 9, 10, 0, 0)))).toBe(true);
     });
 
     it('retorna false antes del horario de apertura', () => {
         const corner = makeCorner();
         corner.addSchedule(MON_SCHEDULE);
 
-        expect(corner.isOpenAt(new Date(2026, 2, 9, 8, 59, 0))).toBe(false);
+        expect(corner.isOpenAt(new Date(Date.UTC(2026, 2, 9, 8, 59, 0)))).toBe(false);
     });
 
     it('retorna false después del horario de cierre', () => {
         const corner = makeCorner();
         corner.addSchedule(MON_SCHEDULE);
 
-        expect(corner.isOpenAt(new Date(2026, 2, 9, 17, 0, 0))).toBe(false);
+        expect(corner.isOpenAt(new Date(Date.UTC(2026, 2, 9, 17, 0, 0)))).toBe(false);
     });
 
     it('retorna false en día sin horario', () => {
@@ -153,7 +155,7 @@ describe('Corner.isOpenAt()', () => {
         corner.addSchedule(MON_SCHEDULE);
 
         // 2026-03-10 es martes
-        expect(corner.isOpenAt(new Date(2026, 2, 10, 10, 0, 0))).toBe(false);
+        expect(corner.isOpenAt(new Date(Date.UTC(2026, 2, 10, 10, 0, 0)))).toBe(false);
     });
 });
 

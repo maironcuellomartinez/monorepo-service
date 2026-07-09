@@ -21,6 +21,7 @@ function makeDevice(opts?: { stale?: boolean; status?: DeviceStatus }): Device {
         'ThinkPad', 'Lenovo', 'LAPTOP',
         'usr-1', 'Juan Pérez',
         opts?.status ?? DeviceStatus.SYNCED,
+        false,
         lastSyncAt,
         new Date(),
     );

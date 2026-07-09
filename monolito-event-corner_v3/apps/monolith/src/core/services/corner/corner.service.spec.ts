@@ -39,13 +39,16 @@ function buildMocks(opts?: {
         publishMany: jest.fn().mockResolvedValue(undefined),
     };
 
+    const tracing = { run: jest.fn().mockImplementation((_name: any, _opts: any, fn: any) => fn()) };
+
     const service = new CornerService(
         cornerRepo as any,
         scheduleRepo as any,
         eventBus as any,
+        tracing as any,
     );
 
-    return { service, cornerRepo, scheduleRepo, eventBus };
+    return { service, cornerRepo, scheduleRepo, eventBus, tracing };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

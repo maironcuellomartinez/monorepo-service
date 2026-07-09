@@ -49,15 +49,15 @@ export class ServiceNowIntegrationService {
     }
 
     /** Construye el payload, crea el ticket de Incident en ServiceNow y actualiza la entidad. */
-    async createIncidentTicket(incident: Incident, company: Company): Promise<Result<void>> {
+    async createIncidentTicket(incident: Incident, company: Company, callerPrincipalName?: string): Promise<Result<void>> {
         return this.tracing.run(
             'monolith.sn.createIncidentTicket',
             { kind: 'server', attributes: { 'sn.incidentId': String(incident.id), 'sn.companyId': String(company.id) } },
-            () => this._createIncidentTicket(incident, company),
+            () => this._createIncidentTicket(incident, company, callerPrincipalName),
         );
     }
 
-    private async _createIncidentTicket(incident: Incident, company: Company): Promise<Result<void>> {
+    private async _createIncidentTicket(incident: Incident, company: Company, callerPrincipalName?: string): Promise<Result<void>> {
         const issueTypeResult = await this.issueTypeRepo.findById(incident.issueTypeId);
         if (issueTypeResult.isFailure) return Result.err(issueTypeResult.unwrapError());
         const issueType = issueTypeResult.unwrap();
@@ -82,7 +82,7 @@ export class ServiceNowIntegrationService {
             location: corner.servicenowLocation ?? '',
             short_description: `Incidente: ${issueType.name}`,
             description: `Incidencia creada en corner ${corner.name}`,
-            caller_id: String(incident.customerId),
+            caller_id: callerPrincipalName ?? String(incident.customerId),
             expected_start: incident.scheduledRange.start,
         });
 
@@ -113,15 +113,15 @@ export class ServiceNowIntegrationService {
     }
 
     /** Construye el payload, crea el ticket de Request en ServiceNow y actualiza la entidad. */
-    async createRequestTicket(request: Request, company: Company): Promise<Result<void>> {
+    async createRequestTicket(request: Request, company: Company, callerPrincipalName?: string, requestedForPrincipalName?: string): Promise<Result<void>> {
         return this.tracing.run(
             'monolith.sn.createRequestTicket',
             { kind: 'server', attributes: { 'sn.requestId': String(request.id), 'sn.companyId': String(company.id) } },
-            () => this._createRequestTicket(request, company),
+            () => this._createRequestTicket(request, company, callerPrincipalName, requestedForPrincipalName),
         );
     }
 
-    private async _createRequestTicket(request: Request, company: Company): Promise<Result<void>> {
+    private async _createRequestTicket(request: Request, company: Company, callerPrincipalName?: string, requestedForPrincipalName?: string): Promise<Result<void>> {
         const issueTypeResult = await this.issueTypeRepo.findById(request.issueTypeId);
         if (issueTypeResult.isFailure) return Result.err(issueTypeResult.unwrapError());
         const issueType = issueTypeResult.unwrap();
@@ -146,8 +146,8 @@ export class ServiceNowIntegrationService {
             location: corner.servicenowLocation ?? '',
             short_description: `Solicitud: ${issueType.name}`,
             description: request.notes ?? 'Solicitud creada por técnico',
-            caller_id: String(request.technicianId),
-            requested_for: String(request.customerId),
+            caller_id: callerPrincipalName ?? String(request.technicianId),
+            requested_for: requestedForPrincipalName ?? String(request.customerId),
         });
 
         if (snResult.isFailure) {

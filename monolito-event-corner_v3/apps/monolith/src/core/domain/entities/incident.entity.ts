@@ -132,7 +132,7 @@ export class Incident {
      * @description Indica si el incidente está disponible para ser tomado por un técnico.
      */
     isAvailableForTaking(): boolean {
-        return TAKEABLE_STATUSES.includes(this._status) && !this._currentTechnicianId;
+        return TAKEABLE_STATUSES.includes(this._status);
     }
 
     /**
