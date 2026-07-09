@@ -6,15 +6,14 @@ import { ServiceNowOutboundController } from './servicenow-outbound.controller';
 import { OutboundResilienceModule } from '../outbound-resilience.module';
 
 /**
- * Módulo proxy hacia integration-service para operaciones de ServiceNow.
+ * Módulo proxy hacia api-snowq-service para operaciones de ServiceNow.
  *
- * El tráfico de ServiceNow (creación, actualización, cierre, consulta de estado)
- * se enruta a través de integration-service, que aplica su propio circuit-breaker
- * y gestiona la comunicación con api-snowq-service.
+ * Único egress hacia ServiceNow del ecosistema: monolith → gateway (este módulo)
+ * → api-snowq-service → ServiceNow. integration-service ya no interviene en este flujo.
  *
  * Variables de entorno:
- *   INTEGRATION_SERVICE_URL   Base URL de integration-service (default: http://localhost:3008)
- *   ABAC_M2M_TOKEN            JWT M2M del api-gateway
+ *   SNOWQ_URL        Base URL de api-snowq-service (default: http://localhost:3090)
+ *   ABAC_M2M_TOKEN   JWT M2M del api-gateway (Ed25519, verificado por M2mJwtGuard en snowq)
  */
 @Module({
     imports: [
@@ -22,7 +21,7 @@ import { OutboundResilienceModule } from '../outbound-resilience.module';
         HttpModule.registerAsync({
             imports: [ConfigModule],
             useFactory: (config: ConfigService) => ({
-                baseURL: config.get('INTEGRATION_SERVICE_URL', 'http://localhost:3008'),
+                baseURL: config.get('SNOWQ_URL', 'http://localhost:3090'),
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',

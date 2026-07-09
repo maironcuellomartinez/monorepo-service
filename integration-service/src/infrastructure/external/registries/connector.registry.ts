@@ -2,8 +2,6 @@ import { Injectable, Inject } from '@nestjs/common';
 import { IExternalConnector } from 'src/domain/interfaces/external-connector.interface';
 
 export type ExternalSystemType =
-    | 'SERVICENOW'
-    | 'SNOWQ'
     | 'MINERVA'
     | 'DROPPOINT'
     | 'OUTLOOK_CALENDAR';

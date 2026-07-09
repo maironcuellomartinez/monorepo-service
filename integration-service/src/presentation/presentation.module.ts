@@ -9,7 +9,6 @@ import { IntegrationController } from './controllers/integration.controller';
 import { HealthController } from './controllers/health.controller';
 import { MinervaController } from './controllers/minerva.controller';
 import { DroppointController } from './controllers/droppoint.controller';
-import { ServiceNowController } from './controllers/servicenow.controller';
 import { ProcessAppointmentCreatedUseCase } from '../application/use-cases/process-appointment-created.usecase';
 import { DatabaseModule } from '../infrastructure/persistence/database.module';
 import { ExternalModule } from '../infrastructure/external/external.module';
@@ -36,7 +35,6 @@ import { StuckEventRecoveryJob } from 'src/infrastructure/jobs/stuck-event-recov
         MetricsController,
         MinervaController,
         DroppointController,
-        ServiceNowController,
     ],
     providers: [
         ProcessAppointmentCreatedUseCase,

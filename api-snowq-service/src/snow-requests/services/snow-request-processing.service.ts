@@ -165,6 +165,23 @@ export class SnowRequestProcessingService {
     }
 
     /**
+     * Actualiza campos arbitrarios de un ticket en ServiceNow (ej. reabrir un incident).
+     * Único punto de entrada para PATCHes genéricos — todo consumidor (gateway, jobs) pasa por acá.
+     */
+    async updateTicket(type: RequestType, sysId: string, fields: Record<string, any>): Promise<void> {
+        return TracingClient.getInstance().run(
+            'snowq.service.snowRequestProcessing.updateTicket',
+            { kind: 'internal', attributes: { 'sn.sysId': sysId, 'sn.type': type } },
+            () => this._updateTicket(type, sysId, fields),
+        );
+    }
+
+    private async _updateTicket(type: RequestType, sysId: string, fields: Record<string, any>): Promise<void> {
+        await this.snClient.patchToServiceNow(type, sysId, fields);
+        this.logger.log(`Ticket actualizado en SN | type=${type} | sysId=${sysId} | fields=${Object.keys(fields).join(',')}`);
+    }
+
+    /**
      * Consulta el estado actual de un incident en ServiceNow.
      * Retorna null si el ticket no existe (404).
      */

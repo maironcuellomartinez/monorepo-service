@@ -13,19 +13,6 @@ export const configuration = () => ({
         logging: false, //process.env.NODE_ENV === 'development',
     },
 
-    servicenow: {
-        baseUrl: process.env.SERVICENOW_BASE_URL,
-        username: process.env.SERVICENOW_USERNAME,
-        password: process.env.SERVICENOW_PASSWORD,
-        timeout: parseInt(process.env.SERVICENOW_TIMEOUT || '10000', 10),
-        useSnowq: process.env.SERVICENOW_USE_SNOWQ === 'true',
-    },
-
-    snowq: {
-        baseUrl: process.env.SNOWQ_BASE_URL || 'http://localhost:3090',
-        timeout: parseInt(process.env.SNOWQ_TIMEOUT || '10000', 10),
-    },
-
     minerva: {
         soapWsdlUrl: process.env.MINERVA_SOAP_WSDL_URL || 'http://localhost:3016/devices?wsdl',
         timeout: parseInt(process.env.MINERVA_TIMEOUT || '10000', 10),

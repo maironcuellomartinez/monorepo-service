@@ -40,16 +40,6 @@ export const retryConfiguration = () => ({
 
         // Configuración por sistema
         systemPolicies: {
-            'SERVICENOW': {
-                maxRetries: 4,
-                initialDelay: 3000,
-                retryableErrors: [
-                    'ECONNRESET',
-                    'ETIMEDOUT',
-                    'read ECONNRESET',
-                    'ServiceNow API unavailable',
-                ],
-            },
             'LOCKER': {
                 maxRetries: 3,
                 initialDelay: 2000,

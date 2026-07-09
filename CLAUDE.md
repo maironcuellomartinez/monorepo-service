@@ -111,7 +111,7 @@ npm run seed                  # Step 3 of the seed sequence
 
 Two apps under `apps/`:
 
-- **api-gateway** — JWT validation via ABAC (usuarios Entra ID) + verificación local Ed25519 de tokens M2M, ABAC guards, HTTP proxy to monolith (`/internal/*`), `SnowqAdapter` for ServiceNow integration, `ExternalRecordsController` for internal-api queries
+- **api-gateway** — JWT validation via ABAC (usuarios Entra ID) + verificación local Ed25519 de tokens M2M, ABAC guards, HTTP proxy to monolith (`/internal/*`), `ServiceNowOutboundController` for ServiceNow integration (único egress hacia api-snowq-service), `ExternalRecordsController` for internal-api queries
 - **monolith** — Core business logic (incidents, corners, users), TypeORM + MySQL, outbox pattern, `ReconcilerJob` for async reconciliation
 
 Shared libraries under `libs/`:
@@ -127,7 +127,7 @@ Attribute-Based Access Control engine. Three auth entry points: Entra ID (JWKS/R
 
 ### integration-service (standalone — `integration-service/`)
 
-External integrations (Minerva SOAP, DropPoint, ERPs). CQRS + Event Sourcing. Sincroniza dispositivos hacia el monolith; consume snowq. Auth M2M Ed25519 contra ABAC.
+External integrations (Minerva SOAP, DropPoint, Outlook Calendar). CQRS + Event Sourcing. Sincroniza dispositivos hacia el monolith. **No maneja ServiceNow** — ese egress es exclusivo de api-gateway → api-snowq-service. Auth M2M Ed25519 contra ABAC.
 
 ### observability-service (standalone — `observability-service/`)
 
@@ -206,22 +206,22 @@ api-gateway (staging/prod :3000 · dev :4000)
 monolith (staging/prod :3001 · dev :3002)
     │ HTTP  Authorization: Bearer <M2M EdDSA JWT>  →  {API_GATEWAY_URL}/outbound/servicenow/*
     ▼
-api-gateway (outbound controller)
-    │
-    ├─ SnowqAdapter (PRIMARY for incident creation)
-    │      Phase 1 SYNC:  POST {SNOWQ_URL}/snow-requests/immediate/incidents
-    │      Phase 2 ASYNC: POST {SNOWQ_URL}/snow-requests/incidents
-    │      Updates/close: PATCH {SERVICENOW_SIMULATOR_URL}/api/now/v2/{table}/{sysId}
-    │
-    └─ ServiceNowOutboundAdapter (updates/close via OAuth2 corporate gateway)
-           POST/PATCH {OUTBOUND_GATEWAY_URL}/...  + Bearer token (ServiceNowTokenService)
-
+api-gateway (ServiceNowOutboundController — /outbound/servicenow/*)
+    │ HTTP  Authorization: Bearer <M2M EdDSA JWT>  →  {SNOWQ_URL}
+    │      Create (2 fases):  POST /snow-requests/immediate/{incidents|service-catalog}
+    │                         POST /snow-requests/{incidents|service-catalog}  (fallback async)
+    │      Update genérico:   PATCH /snow-requests/immediate/{table}/{sysId}
+    │      Close:             PATCH /snow-requests/immediate/incidents/{sysId}/close
+    │      State/reconcile:   GET  /snow-requests/immediate/incidents/{sysId}
+    │                         GET  /snow-requests/{correlationId}
+    ▼
 api-snowq-service :3090
     │ Basic Auth  →  {BASE_URL_SERVICENOW}/api/now/v2/{type}
     ▼
 servicenow-clone-backend :3010  (dev)  /  ServiceNow real (staging/prod)
 
-integration-service :3008  →  api-gateway / monolith (M2M)  ·  Minerva SOAP, DropPoint
+integration-service :3008  →  api-gateway / monolith (M2M)  ·  Minerva SOAP, DropPoint, Outlook Calendar
+                                (NO maneja ServiceNow — único egress hacia SN es api-gateway → api-snowq-service)
 Nagios/Thruk  →  POST :3090/monitoring/alerts  →  api-snowq-service  →  ServiceNow
 
 ──────────────────────────────────────────────────
@@ -257,13 +257,8 @@ OBS_TRACES_URL=http://localhost:3099/ingest/traces
 ```
 API_GATEWAY_PORT=4000                    # dev (staging/prod: 3000)
 MONOLITH_URL=http://localhost:3002       # dev (staging/prod: http://monolith:3001)
-INTEGRATION_SERVICE_URL=http://localhost:3008
-SERVICENOW_SIMULATOR_URL=http://localhost:3010
-OUTBOUND_GATEWAY_URL=...                 # corporate gateway (prod) / mock (dev)
-OUTBOUND_GATEWAY_TOKEN_URL=...           # OAuth2 token endpoint
-OUTBOUND_GATEWAY_CLIENT_ID=...
-OUTBOUND_GATEWAY_CLIENT_SECRET=...
-SNOWQ_URL=http://localhost:3090
+INTEGRATION_SERVICE_URL=http://localhost:3008   # solo Minerva/DropPoint — ya no se usa para ServiceNow
+SNOWQ_URL=http://localhost:3090                 # único egress hacia ServiceNow (vía api-snowq-service)
 ABAC_URL=http://localhost:3005
 ABAC_API_KEY=...
 ABAC_APP_ID=...
@@ -456,8 +451,7 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
 | `monolito-event-corner_v3/ecosystem.config.js` | PM2 multi-app config (api-gateway, monolith, abac) |
 | `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts` | Group + company resolution, ticket creation/close |
 | `apps/monolith/src/infrastructure/external/servicenow/servicenow-proxy.adapter.ts` | Monolith → gateway HTTP calls |
-| `apps/api-gateway/src/outbound/servicenow/snowq.adapter.ts` | Two-phase creation (sync + async fallback) |
-| `apps/api-gateway/src/outbound/servicenow/servicenow-outbound.adapter.ts` | Corporate gateway (OAuth2) for updates/close |
+| `apps/api-gateway/src/outbound/servicenow/servicenow-outbound.controller.ts` | Único egress hacia api-snowq-service: two-phase creation (sync + async fallback), update, close, reconcile |
 | `apps/api-gateway/src/inbound/external/external-records.controller.ts` | Internal-API endpoints |
 | `apps/api-gateway/src/auth/guards/jwt.guard.ts` | Verificación local Ed25519 de M2M + delegación de Entra ID a ABAC |
 | `libs/shared/src/guards/m2m-jwt.guard.ts` | Guard M2M EdDSA compartido |
@@ -507,7 +501,7 @@ npm run sim:gateway -- incidents --email empleado1@eventcorner.com --password <p
 
 Simulators require M2M auth. Token stored in `simulators/.env`:
 ```
-SNOWQ_M2M_TOKEN=<integration-service JWT>   # natural caller of snowq in production
+SNOWQ_M2M_TOKEN=<api-gateway JWT>   # api-gateway es el natural caller de snowq en producción
 ```
 
 Override URL: `SNOWQ_URL=http://staging:3090 npm run sim:storm`

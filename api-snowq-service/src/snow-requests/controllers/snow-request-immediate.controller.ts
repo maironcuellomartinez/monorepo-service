@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, NotFoundException, Param, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, NotFoundException, Param, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { BaseSnowRequestDto } from 'src/common';
 import { M2mJwtGuard } from 'src/common/guards/m2m-jwt.guard';
 import { RequestType } from 'src/common/enum/request-type.enum';
@@ -157,5 +157,26 @@ export class SnowRequestImmediateController {
 
     private _createConfigurationItem(dto: BaseSnowRequestDto) {
         return this.processingService.processImmediate(RequestType.CONFIGURATION_ITEM, dto);
+    }
+
+    // =============================================
+    // GENERIC UPDATE (any table, arbitrary fields)
+    // =============================================
+
+    @Patch(':table/:sysId')
+    updateTicket(
+        @Param('table') table: string,
+        @Param('sysId') sysId: string,
+        @Body() fields: Record<string, any>,
+    ) {
+        const requestType = Object.values(RequestType).find((t) => t === table);
+        if (!requestType) {
+            throw new BadRequestException(`Invalid table "${table}". Must be one of: ${Object.values(RequestType).join(', ')}`);
+        }
+        return TracingClient.getInstance().run(
+            'snowq.controller.immediate.updateTicket',
+            { kind: 'server', attributes: { 'sn.table': table, 'sn.sysId': sysId } },
+            () => this.processingService.updateTicket(requestType, sysId, fields),
+        );
     }
 }

@@ -9,7 +9,6 @@ import { IntegrationStatus } from '../../domain/value-objects/integration-status
 import { ProcessIntegrationDto } from '../dto/process-integration.dto';
 
 import { MinervaConnector } from '../../infrastructure/external/connectors/minerva.connector';
-import { IServiceNowRoutingStrategy } from '../../infrastructure/external/strategies/servicenow-routing.strategy';
 import { CircuitBreakerService } from 'src/infrastructure/services';
 import { TracingService } from '../../infrastructure/monitoring/tracing.service';
 
@@ -22,7 +21,6 @@ export class ProcessAppointmentCreatedUseCase {
         private readonly integrationEventRepository: IIntegrationEventRepository,
         @Inject('IExternalSystemRepository')
         private readonly externalSystemRepository: IExternalSystemRepository,
-        @Inject('SERVICENOW_STRATEGY') private readonly serviceNowStrategy: IServiceNowRoutingStrategy,
         private readonly minervaConnector: MinervaConnector,
         private readonly circuitBreaker: CircuitBreakerService,
         private readonly configService: ConfigService,
@@ -82,10 +80,6 @@ export class ProcessAppointmentCreatedUseCase {
      */
     private async executeIntegrations(event: IntegrationEvent): Promise<void> {
         const integrations: Array<{ systemId: string; execute: () => Promise<any> }> = [
-            {
-                systemId: 'servicenow',
-                execute: () => this.serviceNowStrategy.createIncident(event.payload),
-            },
             {
                 systemId: 'minerva',
                 execute: () => this.minervaConnector.assignDevice({

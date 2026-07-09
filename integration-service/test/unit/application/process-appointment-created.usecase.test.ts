@@ -13,7 +13,6 @@ describe('ProcessAppointmentCreatedUseCase', () => {
     let useCase: ProcessAppointmentCreatedUseCase;
     let mockIntegrationRepository: any;
     let mockExternalSystemRepository: any;
-    let mockServiceNowStrategy: any;
     let mockMinervaConnector: any;
     let mockCircuitBreaker: any;
 
@@ -27,13 +26,6 @@ describe('ProcessAppointmentCreatedUseCase', () => {
         mockExternalSystemRepository = {
             findById: jest.fn(),
             update: jest.fn(),
-        };
-
-        mockServiceNowStrategy = {
-            createIncident: jest.fn(),
-            updateIncident: jest.fn(),
-            getIncidentStatus: jest.fn(),
-            healthCheck: jest.fn(),
         };
 
         mockMinervaConnector = {
@@ -55,10 +47,6 @@ describe('ProcessAppointmentCreatedUseCase', () => {
                 {
                     provide: 'IExternalSystemRepository',
                     useValue: mockExternalSystemRepository,
-                },
-                {
-                    provide: 'SERVICENOW_STRATEGY',
-                    useValue: mockServiceNowStrategy,
                 },
                 {
                     provide: MinervaConnector,
@@ -127,12 +115,6 @@ describe('ProcessAppointmentCreatedUseCase', () => {
 
             mockExternalSystemRepository.findById
                 .mockResolvedValueOnce({
-                    id: 'servicenow',
-                    name: 'ServiceNow',
-                    canExecute: () => true,
-                    recordSuccess: jest.fn(),
-                })
-                .mockResolvedValueOnce({
                     id: 'minerva',
                     name: 'Minerva',
                     canExecute: () => true,
@@ -140,7 +122,6 @@ describe('ProcessAppointmentCreatedUseCase', () => {
                 });
 
             mockCircuitBreaker.execute
-                .mockResolvedValueOnce({ correlationId: 'corr-001', status: 'QUEUED' })
                 .mockResolvedValueOnce({ assignmentId: 'assign-001', status: 'ASSIGNED' });
 
             // Act
@@ -148,7 +129,7 @@ describe('ProcessAppointmentCreatedUseCase', () => {
 
             // Assert
             expect(mockIntegrationRepository.save).toHaveBeenCalled();
-            expect(mockCircuitBreaker.execute).toHaveBeenCalledTimes(2);
+            expect(mockCircuitBreaker.execute).toHaveBeenCalledTimes(1);
         });
     });
 });

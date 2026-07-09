@@ -5,8 +5,8 @@ import { CorrelationIdService } from '../../infrastructure/logging/correlation-i
 
 /**
  * Propaga x-correlation-id entrante al AsyncLocalStorage para que todos los
- * logs y llamadas salientes (SnowqConnector, etc.) puedan acceder al ID sin
- * pasarlo explícitamente por parámetro.
+ * logs y llamadas salientes (MinervaConnector, DroppointConnector, etc.) puedan
+ * acceder al ID sin pasarlo explícitamente por parámetro.
  *
  * Debe ser el primer middleware en la cadena (antes de guards e interceptors).
  */
