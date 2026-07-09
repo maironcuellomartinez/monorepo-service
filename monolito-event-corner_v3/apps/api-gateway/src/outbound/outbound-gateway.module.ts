@@ -2,7 +2,6 @@
 import { Module } from '@nestjs/common';
 import { ServiceNowOutboundModule } from './servicenow/servicenow-outbound.module';
 import { InventoryOutboundModule } from './inventory/inventory-outbound.module';
-import { IntegrationOutboundModule } from './integration/integration-outbound.module';
 
 /**
  * Módulo raíz del Outbound Gateway.
@@ -10,6 +9,6 @@ import { IntegrationOutboundModule } from './integration/integration-outbound.mo
  * Añadir aquí nuevos módulos cuando se integren otros sistemas externos.
  */
 @Module({
-    imports: [ServiceNowOutboundModule, InventoryOutboundModule, IntegrationOutboundModule],
+    imports: [ServiceNowOutboundModule, InventoryOutboundModule],
 })
 export class OutboundGatewayModule {}
