@@ -9,8 +9,7 @@
 | Item | Estado | Notas |
 |------|--------|-------|
 | `ServiceNowProxyAdapter` (monolith → gateway) | ✅ | Llama a `API_GATEWAY_URL/outbound/servicenow` |
-| `ServiceNowOutboundController` (gateway) | ✅ | Proxy con `@InternalOnly` |
-| `ServiceNowOutboundAdapter` (gateway → snowq) | ✅ | HTTP plano hacia `OUTBOUND_GATEWAY_URL` (sin OAuth2) |
+| `ServiceNowOutboundController` (gateway) | ✅ | Proxy con `@InternalOnly`. Único egress hacia SN: llama directo a `api-snowq-service` vía `SNOWQ_URL` — `integration-service` ya no interviene en este flujo (refactor 2026-07-09) |
 | `ServiceNowIntegrationService.createIncidentTicket()` | ✅ | Resuelve grupo+category+caller_id |
 | `IncidentService` llama SN al crear incidente | ✅ | No-blocking si falla |
 | Resolución de `assignment_group` via `CompanyIssueConfig` | ✅ | Cadena: config específica → default company (`SN_DEFAULT_COMPANY_ID`) → corner group. ADR-005 |
@@ -20,7 +19,7 @@
 | Cierre de ticket SN al cerrar incidente | ✅ | `IncidentStatusChangedHandler` — escucha `INCIDENT_STATUS_CHANGED`; si `newStatus=CLOSED` llama `closeIncidentTicket()`. También maneja `INCIDENT_REOPENED` → state '2' en SN |
 | Reconciliación SN → monolith (polling) | ✅ | `SnowSyncJob` — cada 5 min consulta `queryIncidentState()` para incidentes activos con `servicenow_id`; si SN state=6/7 (Resolved/Closed) cierra en monolith |
 | `servicenow_groups` (catálogo de grupos) | ✅ | Tabla `servicenow_groups` + `TypeOrmServiceNowGroupRepository` + `ServiceNowGroupService`. CRUD en `GET/POST/PUT/DELETE /internal/servicenow-groups`. Seed incluido. Reemplaza la variable `servicenow_group_requests` del legacy |
-| `queryIncidentState` en cadena de proxy | ✅ | `IServiceNowClient.queryIncidentState()` → `ServiceNowProxyAdapter` → `GET /outbound/servicenow/incidents/:sysId/state` → `ServiceNowOutboundAdapter` → SN |
+| `queryIncidentState` en cadena de proxy | ✅ | `IServiceNowClient.queryIncidentState()` → `ServiceNowProxyAdapter` → `GET /outbound/servicenow/incidents/:sysId/state` → `ServiceNowOutboundController` → `GET /snow-requests/immediate/incidents/:sysId` en api-snowq-service |
 
 ---
 

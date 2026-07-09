@@ -21,4 +21,3 @@ export const SERVICENOW_INTEGRATION_SERVICE = Symbol('IServiceNowIntegrationServ
 // Puertos de Salida (Adaptadores)
 export const EVENT_BUS_PORT = Symbol('IEventBus');
 export const CACHE_PORT = Symbol('ICache');
-export const SERVICE_NOW_ADAPTER = Symbol('IServiceNowAdapter');

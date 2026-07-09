@@ -2,6 +2,19 @@
 
 > Diagramas de componentes y secuencias para entender cómo funciona el sistema Event Corner v3.
 
+> ⚠️ **Desactualizado (detectado 2026-07-09).** Este documento predata varias evoluciones reales
+> del sistema y ya no describe la lógica actual con precisión. Al menos:
+> - Auth gateway→monolith: el diagrama muestra `x-internal-token`; hoy es JWT M2M EdDSA (Bearer).
+> - Flujo ServiceNow: el diagrama muestra `ServiceNowClient`/`EventBus` llamando directo a SN;
+>   el flujo real es `monolith → api-gateway (ServiceNowOutboundController) → api-snowq-service → SN`,
+>   con outbox pattern + handlers de eventos, no un `EventBus` síncrono llamando a SN.
+> - Máquina de estados del incidente: el diagrama tiene estados que ya no existen (`PENDING_DELIVERY`)
+>   y le faltan los reales (`PENDING_THIRD_PARTY`, `PENDING_USER`, `PENDING_SPARE_PART`, `CANCELED`) —
+>   ver `apps/monolith/src/core/domain/enums/incident-status.enum.ts` como fuente de verdad.
+>
+> Requiere una revisión/reescritura completa aparte, no un parche puntual — no confiar en los
+> diagramas de este archivo para entender el flujo actual, usar el código fuente citado arriba.
+
 ---
 
 ## 1. Diagrama de Componentes — Vista General

@@ -1,7 +1,14 @@
 # Pendientes — Event Corner × ServiceNow
 
-> Última actualización: 2026-03-13
+> Última actualización: 2026-07-09
 > Sesión de referencia: infraestructura broker + polling prioritario + cola global SN
+> (histórico 2026-03-13, actualizado tras el refactor de arquitectura SN del 2026-07-09 — ver nota abajo)
+
+**Nota 2026-07-09:** la clase `SnowqAdapter` mencionada en este doc ya no existe. La lógica
+de dos fases (inmediato → async fallback) vive hoy en
+`apps/api-gateway/src/outbound/servicenow/servicenow-outbound.controller.ts`, que llama
+directo a `api-snowq-service`. El punto "Pendiente importante #1" de más abajo (actualizaciones/
+cierres sin pasar por api-snowq-service) **ya se resolvió** — ver sección Completado actualizada.
 
 ---
 
@@ -13,11 +20,11 @@
 - [x] `IncidentServiceNowHandler` — suscrito a `INCIDENT_CREATED`, crea ticket en SN
 - [x] `RequestServiceNowHandler` — suscrito a `REQUEST_CREATED`, crea ticket en SN
 
-### SnowqAdapter (api-gateway)
-- [x] `SnowqAdapter` implementa `IServiceNowClient` con estrategia dos fases: inmediato → async fallback
-- [x] `extractImmediateResult` / `extractDeferredResult`
-- [x] `updateTicket` / `closeIncident` van directamente al simulador (SERVICENOW_SIMULATOR_URL)
-- [x] `servicenow-outbound.module.ts` actualizado para usar `SnowqAdapter`
+### ServiceNowOutboundController (api-gateway) — único egress hacia ServiceNow
+- [x] `servicenow-outbound.controller.ts` implementa `IServiceNowClient` (vía el contrato con el monolito) con estrategia dos fases: inmediato → async fallback
+- [x] Llama directo a `api-snowq-service` (`/snow-requests/immediate/*` y `/snow-requests/*`), sin pasar por `integration-service`
+- [x] `updateTicket` (genérico) y `closeIncident` van por `api-snowq-service` (`PATCH /snow-requests/immediate/:table/:sysId` y `.../incidents/:sysId/close`) — **ya no van directo al simulador** (ver "Pendiente importante #1" más abajo, resuelto)
+- [x] `servicenow-outbound.module.ts` apunta a `SNOWQ_URL` (api-snowq-service), no a `integration-service`
 
 ### Modo diferido + reconciliación (monolith)
 - [x] `snowqCorrelationId` en dominio `Incident` y `Request` (getter + setter)
@@ -133,17 +140,17 @@
 
 ## 🟡 Pendiente importante
 
-### 1. Actualizaciones/cierres no pasan por api-snowq-service
+### 1. ~~Actualizaciones/cierres no pasan por api-snowq-service~~ — Resuelto 2026-07-09
 
-`SnowqAdapter.updateTicket()` y `closeIncidentTicket()` van directo al simulador,
-sin circuit breaker ni cola de reintentos propia.
+Se agregó `PATCH /snow-requests/immediate/:table/:sysId` (update genérico) en
+`api-snowq-service` (reutiliza `patchToServiceNow()` ya existente), y `closeIncident`
+ya usaba `PATCH /snow-requests/immediate/incidents/:sysId/close`. `api-gateway` ahora
+llama a ambos directo, con el mismo circuit breaker/bulkhead que el resto de los
+endpoints de `api-snowq-service` — ya no hay una llamada aparte "directo al simulador"
+sin esa protección.
 
-**Decisión pendiente:** ¿Enrutar también por api-snowq-service?
-Implicaría agregar nuevos endpoints al servicio:
-- `PATCH /snow-requests/incidents/:sysId` — cerrar/actualizar ticket existente
-- `PATCH /snow-requests/service-catalog/:sysId` — actualizar request existente
-
-Por ahora el Outbox con backoff actúa como única red de seguridad ante caídas del simulador.
+Probado de punta a punta (create sync/async, update, close, state, reconcile) contra
+servicios reales corriendo — ver commit `df59bb2`.
 
 ### 2. Batch para Requests
 
@@ -169,7 +176,7 @@ en estado CLOSED. Falta aplicar la misma lógica para `Request`:
 
 Ninguna de las piezas implementadas tiene tests:
 - `OutboxWorkerService` — backoff, DLQ, retry
-- `SnowqAdapter` — dos fases, extractImmediateResult/extractDeferredResult
+- `ServiceNowOutboundController` (api-gateway) — dos fases sync→async, update, close, reconcile
 - `MonolithReconcilerJob` — DELIVERED / QUEUED / FAILED / deferred-close paths
 - `IncidentStatusChangedHandler` — skip si no hay sysId, close, reopen
 - `IncidentService.batchChangeStatus()` — duplicados, idempotencia, fallos parciales

@@ -36,15 +36,7 @@ export class ExternalSystemFactory {
         );
     }
 
-    createServiceNowSystem(): ExternalSystem {
-        return this.createFromConfig('servicenow');
-    }
-
     createMinervaSystem(): ExternalSystem {
         return this.createFromConfig('minerva');
-    }
-
-    createSnowqSystem(): ExternalSystem {
-        return this.createFromConfig('snowq');
     }
 }

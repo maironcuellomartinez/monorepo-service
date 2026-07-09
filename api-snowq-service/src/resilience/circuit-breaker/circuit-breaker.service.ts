@@ -18,7 +18,7 @@ const isSnFailure = (error: unknown): boolean =>
  * Tres circuit breakers independientes por flujo:
  *
  *   sn:monitoring — alertas Nagios/Thruk → SN (threshold más alto: el tráfico es ruidoso)
- *   sn:queue      — cola asíncrona (monolito, integration-service) → SN
+ *   sn:queue      — cola asíncrona (api-gateway, proxy del monolito) → SN
  *   sn:immediate  — modo inmediato (llamadas síncronas) → SN
  *
  * Un breaker abierto por tormenta de Nagios no afecta al flujo del monolito.
