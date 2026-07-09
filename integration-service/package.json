@@ -54,6 +54,9 @@
     "winston-daily-rotate-file": "^5.0.0",
     "winston-transport": "^4.9.0"
   },
+  "overrides": {
+    "axios": "^1.18.1"
+  },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",

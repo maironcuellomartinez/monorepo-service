@@ -32,6 +32,9 @@
     "soap": "^1.1.5",
     "typeorm": "^0.3.28"
   },
+  "overrides": {
+    "axios": "^1.18.1"
+  },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
