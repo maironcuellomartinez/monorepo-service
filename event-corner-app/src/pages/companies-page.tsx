@@ -487,7 +487,9 @@ export function CompaniesPage() {
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
                         {c.isDefault && (
-                          <ShieldCheck className="h-4 w-4 text-primary shrink-0" title="Compañía DEFAULT" />
+                          <span title="Compañía DEFAULT">
+                            <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                          </span>
                         )}
                         <span>{c.name}</span>
                         {c.isDefault && (

@@ -395,7 +395,7 @@ export interface IssueType {
 }
 
 export const issueTypesApi = {
-  list: (params?: { treeId?: string; deviceType?: string }) =>
+  list: (params?: { treeId?: string; category?: string; deviceType?: string }) =>
     apiClient.get<IssueType[]>('/api/admin/issue-types', { params }).then((r) => r.data),
   getById: (id: string) =>
     apiClient.get<IssueType>(`/api/admin/issue-types/${id}`).then((r) => r.data),
@@ -507,7 +507,7 @@ export interface UserLookup {
 
 export interface MonolithUser {
   id: string
-  externalId: string
+  externalId: string | null
   email: string | null
   name: string | null
   lastName: string | null
