@@ -695,6 +695,124 @@ Puntos que suelen confundir:
 
 ---
 
+## 12. `Symbol(token)` — cómo conecta la arquitectura hexagonal del monolith
+
+El monolith no usa `@Injectable()` + inyección por tipo para sus casos de uso — usa **tokens
+`Symbol()`** para desacoplar el puerto (interfaz) de su implementación. Cada `Symbol(...)` es
+único en memoria (evita colisiones de nombre) y actúa de "enchufe": el dominio define el enchufe,
+la infraestructura provee lo que se enchufa ahí. Verificado contra el código real (2026-07-10).
+
+### Las 4 etapas, con el flujo de `Incident` como ejemplo real end-to-end
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ETAPA 1 — DOMINIO (core/ports/*/tokens.ts)                                    │
+│ Solo define el Symbol + la interfaz. CERO conocimiento de implementación.     │
+│                                                                                 │
+│   core/ports/tokens.ts:                                                       │
+│     export const INCIDENT_SERVICE = Symbol('IIncidentService')      ← puerto  │
+│                                                                        entrada │
+│   core/ports/outgoing/repositories/tokens.ts:                                 │
+│     export const INCIDENT_REPOSITORY = Symbol('INCIDENT_REPOSITORY')← puerto  │
+│                                                                        salida  │
+│   core/ports/outgoing/infrastructure-tokens.ts:                               │
+│     export const EVENT_BUS  = Symbol('EVENT_BUS')                             │
+│     export const CACHE      = Symbol('CACHE')                                 │
+│     export { SERVICENOW_CLIENT } from '@app/shared/contracts/tokens'          │
+│                                                                                 │
+│   Interfaces hermanas (mismo puerto, sin Symbol): IIncidentService,           │
+│   IIncidentRepository, IServiceNowClient, IEventBus, ICachePort               │
+└───────────────────────────────────┬────────────────────────────────────────────┘
+                                     │ el Symbol viaja como identidad, no la interfaz
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ETAPA 2 — INFRAESTRUCTURA: registra el Symbol de SALIDA → clase Adapter       │
+│ 3 patrones distintos de binding usados en el código real:                     │
+│                                                                                 │
+│  (a) useClass — typeorm-persistence.module.ts (repositorios TypeORM)          │
+│      { provide: INCIDENT_REPOSITORY, useClass: TypeOrmIncidentRepository }    │
+│                                                                                 │
+│  (b) useExisting — infrastructure.module.ts (adapters con nombre propio,      │
+│      inyectables tanto por su clase como por su token)                        │
+│      ServiceNowProxyAdapter,                                                  │
+│      { provide: SERVICENOW_CLIENT, useExisting: ServiceNowProxyAdapter }      │
+│      OutboxEventBusAdapter,                                                   │
+│      { provide: EVENT_BUS, useExisting: OutboxEventBusAdapter }               │
+│      LocalCacheAdapter,                                                       │
+│      { provide: CACHE, useExisting: LocalCacheAdapter }                       │
+│                                                                                 │
+│  (c) useFactory simple — para adapters sin clase NestJS propia                │
+│      { provide: HOLIDAY_PROVIDER, useFactory: () => new LocalHolidayProvider(…)}│
+│                                                                                 │
+│  Ambos módulos son @Global() → no hace falta reimportarlos en cada módulo     │
+│  que consume los tokens de salida.                                            │
+└───────────────────────────────────┬────────────────────────────────────────────┘
+                                     │ INCIDENT_REPOSITORY, EVENT_BUS, CACHE, SERVICENOW_CLIENT
+                                     │ ya resuelven a instancias concretas
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ETAPA 3 — CASOS DE USO: core-services.module.ts compone el Symbol de ENTRADA  │
+│ a partir de los Symbols de SALIDA — vía useFactory + inject: [...]            │
+│                                                                                 │
+│  {                                                                             │
+│    provide: INCIDENT_SERVICE,                                                 │
+│    useFactory: (incidentRepo, slotRepo, technicianRepo, cornerRepo,           │
+│                  userRepo, companyRepo, issueTypeRepo, eventBus, cache,       │
+│                  logger, tracing, deviceService) =>                           │
+│        new IncidentService(incidentRepo, slotRepo, technicianRepo,           │
+│                  cornerRepo, userRepo, companyRepo, issueTypeRepo,            │
+│                  eventBus, cache, logger, tracing, deviceService),            │
+│    inject: [INCIDENT_REPOSITORY, SLOT_REPOSITORY, TECHNICIAN_REPOSITORY,     │
+│             CORNER_REPOSITORY, USER_REPOSITORY, COMPANY_REPOSITORY,          │
+│             ISSUE_TYPE_REPOSITORY, EVENT_BUS, CACHE, LoggerService,          │
+│             TracingService, DEVICE_SERVICE],   ← ¡otro Symbol de ENTRADA!    │
+│  }                                                                             │
+│                                                                                 │
+│  `IncidentService` (la clase) NO tiene `@Injectable()` ni decoradores —       │
+│  es una clase de dominio pura, construida a mano con `new` dentro del         │
+│  factory. Nest solo resuelve los argumentos del factory por Symbol.           │
+│  Nótese que DEVICE_SERVICE (un puerto de ENTRADA) se inyecta como             │
+│  dependencia de otro puerto de entrada — los casos de uso se componen         │
+│  entre sí, no solo con puertos de salida.                                     │
+└───────────────────────────────────┬────────────────────────────────────────────┘
+                                     │ INCIDENT_SERVICE ya resuelve a una instancia
+                                     │ completamente armada de IncidentService
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ETAPA 4 — PRESENTACIÓN: internal-api controllers consumen el Symbol con      │
+│ @Inject() (necesario porque un Symbol no es un tipo TS inferible)             │
+│                                                                                 │
+│  internal-incidents.controller.ts:                                            │
+│    constructor(                                                               │
+│      @Inject(INCIDENT_SERVICE)    private readonly service: IIncidentService,│
+│      @Inject(INCIDENT_REPOSITORY) private readonly repository:               │
+│                                              IIncidentRepository,             │
+│      private readonly tracing: TracingService,  ← esta SÍ es @Injectable(),  │
+│    ) {}                                          no necesita @Inject()        │
+│                                                                                 │
+│  ⚠️ Nota de pureza hexagonal: este controller inyecta el REPOSITORIO          │
+│  (puerto de salida) directo, además del servicio (puerto de entrada) —        │
+│  salta la capa de caso de uso para algunas operaciones. Es una excepción      │
+│  puntual, no el patrón general del resto de los internal-api controllers.     │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Por qué `Symbol()` y no strings o clases
+
+| Alternativa | Problema que evita `Symbol()` |
+|---|---|
+| String (`'INCIDENT_REPOSITORY'`) | Dos módulos podrían definir el mismo string por accidente y colisionar en el contenedor DI |
+| Inyección por clase concreta (`TypeOrmIncidentRepository`) | El caso de uso quedaría acoplado a TypeORM — imposible cambiar de adapter (ej. mock en tests, otro ORM) sin tocar el dominio |
+| Interfaz TypeScript como token | Las interfaces no existen en runtime (se borran al compilar) — Nest necesita un valor real para el contenedor DI, por eso el Symbol viaja *junto* a la interfaz, no en su lugar |
+
+### Dónde mirar si algo no resuelve (`Nest can't resolve dependencies`)
+
+1. ¿El Symbol se importa del mismo archivo `tokens.ts` en ambos lados (provider y consumidor)? Dos `Symbol('mismo string')` en archivos distintos son símbolos **distintos** — no colisionan, pero tampoco calzan.
+2. ¿El módulo que hace `provide: TOKEN` es `@Global()` o está importado explícitamente donde se consume?
+3. ¿El `inject: [...]` del factory tiene el mismo orden que los parámetros del factory? Nest no valida esto en tiempo de compilación — un desorden ahí no tira error de tipos, solo pasa mal los argumentos en runtime.
+
+---
+
 ## Resumen de Puertos y Tecnologías
 
 | Servicio | Puerto (staging/prod · dev) | Base de Datos | Responsabilidad |
