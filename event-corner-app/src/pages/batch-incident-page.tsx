@@ -575,7 +575,9 @@ function StatusBadge({ item }: { item: UIBatchItem }) {
 
 export function BatchIncidentPage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, can } = useAuth()
+  const canCreateIncident = can('incident:create')
+  const canUpdateIncident = can('incident:update')
 
   const [corners, setCorners] = useState<Corner[]>([])
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
@@ -599,11 +601,13 @@ export function BatchIncidentPage() {
   }, [])
 
   const openAdd = () => {
+    if (!canCreateIncident) return
     setEditingItem(null)
     setDialogOpen(true)
   }
 
   const openEdit = (item: UIBatchItem) => {
+    if (!canUpdateIncident) return
     setEditingItem(item)
     setDialogOpen(true)
   }
@@ -619,6 +623,7 @@ export function BatchIncidentPage() {
   }
 
   const handleRemove = async (item: UIBatchItem) => {
+    if (!canUpdateIncident) return
     try {
       await removeItem(item.id)
     } catch {
@@ -673,9 +678,11 @@ export function BatchIncidentPage() {
 
         {/* Toolbar */}
         <div className="flex items-center gap-3 flex-wrap">
-          <Button onClick={openAdd} disabled={isSending} className="gap-2">
-            <Plus className="h-4 w-4" /> Agregar incidencia
-          </Button>
+          {canCreateIncident && (
+            <Button onClick={openAdd} disabled={isSending} className="gap-2">
+              <Plus className="h-4 w-4" /> Agregar incidencia
+            </Button>
+          )}
           <Button
             onClick={handleSubmit}
             disabled={!canSend}
@@ -749,11 +756,17 @@ export function BatchIncidentPage() {
               <PackagePlus className="h-10 w-10 text-muted-foreground opacity-40" />
               <div>
                 <p className="font-medium text-muted-foreground">Sin incidencias en el lote</p>
-                <p className="text-sm text-muted-foreground mt-1">Hacé clic en "Agregar incidencia" para comenzar.</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {canCreateIncident
+                    ? 'Hacé clic en "Agregar incidencia" para comenzar.'
+                    : 'No tenés permisos para crear incidencias.'}
+                </p>
               </div>
-              <Button onClick={openAdd} variant="outline" className="gap-2 mt-2">
-                <Plus className="h-4 w-4" /> Agregar primera incidencia
-              </Button>
+              {canCreateIncident && (
+                <Button onClick={openAdd} variant="outline" className="gap-2 mt-2">
+                  <Plus className="h-4 w-4" /> Agregar primera incidencia
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}
@@ -805,24 +818,28 @@ export function BatchIncidentPage() {
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost" size="icon"
-                              className="h-7 w-7"
-                              disabled={item.uiStatus === 'sending' || item.uiStatus === 'success'}
-                              onClick={() => openEdit(item)}
-                              title="Editar"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost" size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
-                              disabled={item.uiStatus === 'sending'}
-                              onClick={() => handleRemove(item)}
-                              title="Quitar"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            {canUpdateIncident && (
+                              <>
+                                <Button
+                                  variant="ghost" size="icon"
+                                  className="h-7 w-7"
+                                  disabled={item.uiStatus === 'sending' || item.uiStatus === 'success'}
+                                  onClick={() => openEdit(item)}
+                                  title="Editar"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost" size="icon"
+                                  className="h-7 w-7 text-destructive hover:text-destructive"
+                                  disabled={item.uiStatus === 'sending'}
+                                  onClick={() => handleRemove(item)}
+                                  title="Quitar"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
