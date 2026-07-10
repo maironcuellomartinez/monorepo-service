@@ -1,657 +1,638 @@
 # Architecture Diagrams — monolito-event-corner_v3
 
 > Diagramas de componentes y secuencias para entender cómo funciona el sistema Event Corner v3.
-
-> ⚠️ **Desactualizado (detectado 2026-07-09).** Este documento predata varias evoluciones reales
-> del sistema y ya no describe la lógica actual con precisión. Al menos:
-> - Auth gateway→monolith: el diagrama muestra `x-internal-token`; hoy es JWT M2M EdDSA (Bearer).
-> - Flujo ServiceNow: el diagrama muestra `ServiceNowClient`/`EventBus` llamando directo a SN;
->   el flujo real es `monolith → api-gateway (ServiceNowOutboundController) → api-snowq-service → SN`,
->   con outbox pattern + handlers de eventos, no un `EventBus` síncrono llamando a SN.
-> - Máquina de estados del incidente: el diagrama tiene estados que ya no existen (`PENDING_DELIVERY`)
->   y le faltan los reales (`PENDING_THIRD_PARTY`, `PENDING_USER`, `PENDING_SPARE_PART`, `CANCELED`) —
->   ver `apps/monolith/src/core/domain/enums/incident-status.enum.ts` como fuente de verdad.
->
-> Requiere una revisión/reescritura completa aparte, no un parche puntual — no confiar en los
-> diagramas de este archivo para entender el flujo actual, usar el código fuente citado arriba.
+> Actualizado 2026-07-09. Esquemas en texto plano (sin Mermaid) para poder leerlos directo en
+> el editor o en `cat`/`less` sin renderizador.
 
 ---
 
-## 1. Diagrama de Componentes — Vista General
+## 1. Vista general del ecosistema
 
-```mermaid
-graph TB
-    subgraph CLIENTS["Clientes"]
-        WEB["Web Browser / Frontend"]
-    end
+```
+Customer App / event-corner-app (cliente real de Entra ID — hace login contra Azure AD)
+    │ HTTP  Authorization: Bearer <token Entra ID>
+    ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ API GATEWAY  (staging/prod :3000 · dev :4000)                        │
+│  Guards globales (orden): JwtGuard → RolesGuard → AbacGuard          │
+│  Controllers: Incidents, Corners, Availability, IssueTypes,          │
+│    Requests, Devices, Admin(*), ServiceNowOutbound, ExternalRecords  │
+│  Proxy HTTP → monolith (/internal/*) con Bearer M2M EdDSA            │
+└───────────┬──────────────────────────────────────┬───────────────────┘
+            │ Bearer M2M EdDSA                       │ POST /auth/validate-entra
+            ▼                                        ▼ POST /abac/can-access, /abac/user-roles
+┌────────────────────────────────┐        ┌──────────────────────────────────────┐
+│ MONOLITH (Hexagonal)           │        │ ABAC MICROSERVICE :3005              │
+│  staging/prod :3001 · dev :3002│        │  AuthService: login M2M/OAuth,       │
+│  Core: Incident, Corner,       │        │    validateEntraToken (JWKS)         │
+│    Technician, Device, Locker, │        │  EntraIdService: jwks-rsa + jose     │
+│    Request, IssueType          │        │    contra login.microsoftonline.com  │
+│  Outbox pattern → eventos      │        │  AbacService: canAccess(),           │
+│  ReconcilerJob, SnowSyncJob,   │        │    json-rules-engine                 │
+│    SnowOrphanRecoveryJob       │        │  MySQL: abac_db                      │
+│  MySQL: event_corner           │        └──────────────────────────────────────┘
+└───────────┬────────────────────┘
+            │ Bearer M2M EdDSA → {API_GATEWAY_URL}/outbound/servicenow/*
+            ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ API GATEWAY — ServiceNowOutboundController (único egress a SN)       │
+│  Create (2 fases): POST /snow-requests/immediate/{tipo}  (sync)      │
+│                    POST /snow-requests/{tipo}            (async)     │
+│  Update / Close / Reconcile                                          │
+└───────────┬──────────────────────────────────────────────────────────┘
+            │ Bearer M2M EdDSA
+            ▼
+┌────────────────────────────────┐
+│ API-SNOWQ-SERVICE :3090        │
+│  Cola priorizada (PQueue,      │
+│    concurrency=5) + backoff    │
+│    exponencial por prioridad   │
+│  Circuit breaker (opossum)     │
+└───────────┬────────────────────┘
+            │ Basic Auth
+            ▼
+┌────────────────────────────────┐
+│ servicenow-clone-backend :3010 │  (dev)  /  ServiceNow real (staging/prod)
+└────────────────────────────────┘
 
-    subgraph GATEWAY["API Gateway :3000"]
-        direction TB
-        GW_CTRL["Controllers (thin proxies)\n─────────────────\nAuthController\nIncidentsController\nCornersController\nAvailabilityController\nIssueTypesController\nRequestsController\nServiceNowOutboundController\nInventoryOutboundController"]
-        GW_GUARDS["Guards (Chain)\n─────────────────\n1. JwtGuard (multi-mode)\n2. RolesGuard\n3. AbacGuard"]
-        GW_CLIENTS["Clients\n─────────────────\nMonolithClient\nAbacClient (+ validateEntraToken)"]
-        GW_ENTRA["EntraIdService (Gateway)\n─────────────────\nisEntraIdToken() only\n(local decode, no network)"]
-        GW_CTRL --> GW_GUARDS --> GW_CLIENTS
-        GW_GUARDS --> GW_ENTRA
-    end
+integration-service :3008 → api-gateway / monolith (M2M) — Minerva SOAP, DropPoint, Outlook
+  (NO maneja ServiceNow — ver egress arriba)
 
-    subgraph MONOLITH["Monolith :3001 (Hexagonal)"]
-        direction TB
-        subgraph CORE["Core Domain"]
-            ENTITIES["Entities\n─────────────\nIncident\nCorner\nTechnician\nDevice\nLocker\nRequest\nIssueType\nCornerSchedule"]
-            SERVICES["Services (Use Cases)\n─────────────\nIncidentService\nCornerService\nAvailabilityService\nRequestService\nScheduleService\nTechnicianService\nDeviceService"]
-            PORTS["Ports (Interfaces)\n─────────────\nIIncidentService\nICornerService\nIAvailabilityService\nIIncidentRepository\n..."]
-            SERVICES -->|implements| PORTS
-        end
-        subgraph INFRA["Infrastructure"]
-            REPOS["TypeORM Repositories\n─────────────\nIncidentRepository\nCornerRepository\n..."]
-            CACHE["Cache Adapter\n(Redis)"]
-            EVENTBUS["SimpleEventBus\n(Domain Events)"]
-            HANDLERS["EventHandlers\n─────────────\nIncidentEventsHandler"]
-            JOBS["Scheduled Jobs\n─────────────\nDeviceSyncJob\nMonolithReconcilerJob"]
-            SN_CLIENT["ServiceNowClient"]
-            INV_ADAPTER["InventoryAdapter"]
-        end
-        INTERNAL_API["Internal API Controllers\n(only for API Gateway)\n─────────────────────\n/internal/incidents\n/internal/corners\n/internal/availability\n/internal/requests\n/internal/devices"]
-        INTERNAL_API --> SERVICES
-        SERVICES --> REPOS
-        SERVICES --> CACHE
-        SERVICES --> EVENTBUS
-        EVENTBUS --> HANDLERS
-        HANDLERS --> SN_CLIENT
-    end
-
-    subgraph ABAC["ABAC Microservice :3005"]
-        direction TB
-        AUTH_SVC["AuthService\n─────────────\nLogin / Password\nM2M Token\nOAuth Client Credentials\nEntra ID validate + sync\nRefresh / Logout"]
-        ENTRA_SVC["EntraIdService (ABAC)\n─────────────\nJWKS validation\n(jwks-rsa + Azure)\nlazy sync oid→userId"]
-        ABAC_SVC["AbacService\n─────────────\nPolicy evaluation\njson-rules-engine"]
-        ABAC_DB[("MySQL\nevent_corner_abac\n─────────────\nUsers / Roles\nPolicies / Permissions\nApplications\n (type, scopes, entraObjectId)")]
-        AUTH_SVC --> ABAC_DB
-        AUTH_SVC --> ENTRA_SVC
-        ABAC_SVC --> ABAC_DB
-    end
-
-    subgraph SHARED_LIBS["Shared Libraries"]
-        OBS["@app/observability\n─────────────\nLoggerService (Winston)\nCorrelationMiddleware\nPerformanceInterceptor\nAllExceptionsFilter\nMetricsProducerService"]
-        SHARED["@app/shared\n─────────────\nResult<T,E>\nBranded IDs\nDomainError\nresult-to-http\nDateRange, Evidence"]
-    end
-
-    subgraph EXTERNAL["Sistemas Externos"]
-        MYSQL[("MySQL :3306\nevent_corner\n─────────────\nincidents\ncorners\ntechnicians\ndevices\nlockers\ncorner_slots\nrequests")]
-        REDIS[("Redis\n─────────────\nAvailability cache\nRoles cache")]
-        SERVICENOW["ServiceNow\n(ITSM external)"]
-        INVENTORY["Inventory API\n(external devices)"]
-    end
-
-    WEB -->|"Bearer JWT\nHTTP/HTTPS"| GATEWAY
-    GW_CLIENTS -->|"POST /abac/can-access\nx-api-key"| ABAC
-    GW_CLIENTS -->|"HTTP /internal/*\nx-internal-token"| MONOLITH
-    REPOS --> MYSQL
-    CACHE --> REDIS
-    SN_CLIENT --> SERVICENOW
-    INV_ADAPTER --> INVENTORY
-    JOBS --> MYSQL
-
-    GATEWAY -.->|uses| SHARED_LIBS
-    MONOLITH -.->|uses| SHARED_LIBS
-    ABAC -.->|uses| SHARED_LIBS
+────────────────────────────────────────────────────────────────────────
+TODOS los servicios → observability-service :3099
+  POST /ingest/{logs,metrics,traces}, Bearer M2M EdDSA
+  Reenvía opcionalmente a Jaeger / Prometheus Pushgateway
 ```
 
 ---
 
-## 2. Diagrama de Componentes — API Gateway en detalle
+## 2. API Gateway — pipeline de guards (detalle)
 
-```mermaid
-graph LR
-    subgraph REQUEST["Request Pipeline (API Gateway)"]
-        direction TB
-        A["HTTP Request\nAuthorization: Bearer ..."] --> B
-
-        subgraph GUARDS_CHAIN["Guards Chain (en orden)"]
-            B["JwtGuard (multi-mode)\n────────────\nExtrae Bearer token\n① isEntraIdToken() → ABAC validate-entra\n② isAbacToken()    → local JWT verify\n③ @IsInternal()    → M2M service JWT\nInyecta request.user / serviceApp"]
-            C["RolesGuard\n────────────\nLee @Roles(...) del endpoint\nConsulta roles en ABAC\nCache 60s en Redis\nDeniega si rol insuficiente"]
-            D["AbacGuard\n────────────\nLee @Permission(resource, action)\nLlama AbacClient.canAccess()\nPasa contexto: hora, IP, etc.\nDeniega si política rechaza"]
-        end
-
-        B --> C --> D
-
-        E["Controller\n(thin proxy)\nExtrae params\nLlama MonolithClient"]
-        F["MonolithClient\n────────────\nHTTP POST/GET/PATCH\nAgrega Bearer M2M JWT\nReenvía body/params\nDevuelve response"]
-
-        D --> E --> F
-    end
-
-    F -->|"HTTP /internal/..."| MON["Monolith"]
-    D -->|"POST /abac/can-access"| ABAC["ABAC Microservice"]
-    B -->|"POST /auth/validate-entra\n(Entra ID path)"| ABAC
+```
+HTTP Request
+Authorization: Bearer <token>
+    │
+    ▼
+┌────────────────────────────────────────────────────────────────────┐
+│ 1. JwtGuard  (único guard de autenticación — jwt.guard.ts)         │
+│    ─────────────────────────────────────────────────────           │
+│    @Public()        → pasa directo                                 │
+│    @InternalOnly()  → validación LOCAL Ed25519 (M2M)               │
+│                        JwtEd25519Service.verifyWithKey(            │
+│                          ED25519_PUBLIC_KEY, token,                │
+│                          { iss: JWT_ISSUER })                      │
+│                        Exige payload.type === 'service'            │
+│                        Chequea ownerApplicationId vs ABAC_APP_ID   │
+│                          (ecosystem scoping)                       │
+│                        → request.serviceApp = {...}                │
+│    (sin decorator)  → delega 100% a ABAC                           │
+│                        POST /auth/validate-entra { token, appId }  │
+│                        → request.user = { sub, email, permissions }│
+└───────────────────────────────┬────────────────────────────────────┘
+                                 ▼
+┌────────────────────────────────────────────────────────────────────┐
+│ 2. RolesGuard  (roles.guard.ts)                                    │
+│    Sin @Roles() en el endpoint → pasa                              │
+│    Con @Roles('TECHNICIAN', ...) → GET user roles                  │
+│      Cache en memoria (Map in-process, TTL 60s) — NO es Redis      │
+│      Cache miss → AbacClient.getUserRoles(userId)                  │
+│      Sin rol requerido → 403 Forbidden                             │
+└───────────────────────────────┬────────────────────────────────────┘
+                                 ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ 3. AbacGuard  (abac.guard.ts)                                     │
+│    Sin @Permission() en el endpoint → pasa (solo exige auth)       │
+│    Con @Permission(resource, action) →                             │
+│      AbacClient.canAccess(userId, resource, action, context)       │
+│      context = { ip, userAgent, path, method }                     │
+│      Denegado → 403 Forbidden                                      │
+└───────────────────────────────┬────────────────────────────────────┘
+                                ▼
+                         Controller (thin proxy)
+                                 │
+                                 ▼
+                   MonolithClient → HTTP /internal/*
+                   Authorization: Bearer <M2M EdDSA JWT>
 ```
 
 ---
 
-## 3. Diagrama de Componentes — Monolith (Arquitectura Hexagonal)
+## 3. Monolith — Arquitectura Hexagonal
 
-```mermaid
-graph TB
-    subgraph HEXAGONAL["Monolith — Arquitectura Hexagonal"]
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ Internal API Controllers (solo para API Gateway, prefijo /internal) │
+└────────────────────────────────┬────────────────────────────────────┘
+                                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Puertos de entrada (Incoming Ports)                                  │
+│  IIncidentService · ICornerService · IAvailabilityService            │
+│  IRequestService · IScheduleService · ITechnicianService             │
+│  IDeviceService                                                      │
+└────────────────────────────────┬─────────────────────────────────────┘
+                                 ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│ Servicios (Use Cases)                                                 │
+│  IncidentService · AvailabilityService · CornerService                │
+│  ServiceNowIntegrationService (resolveAssignmentGroup,                │
+│    resolveSnowCompanySysId, createIncidentTicket, closeIncidentTicket)│
+└──────────┬────────────────────────────────────────┬───────────────────┘
+           ▼                                        ▼
+┌──────────────────────────┐              ┌─────────────────────────────┐
+│ Dominio (Core)           │              │ Puertos de salida           │
+│  Entities: Incident,     │              │  IIncidentRepository        │
+│    Corner, Technician,   │              │  ICornerRepository          │
+│    Device, Locker,       │              │  IServiceNowClient          │
+│    Request, IssueType    │              │  ICachePort                 │
+│  Value Objects: Incident │              └───────────┬─────────────────┘
+│    Id, Email, ServiceNow │                          ▼
+│    Id/Number, DateRange  │              ┌───────────────────────────────┐
+│  Domain Errors           │              │ Adaptadores (Infrastructure)  │
+└──────────────────────────┘              │  TypeORM Repositories         │
+                                          │  Redis CacheAdapter           │
+                                          │  ServiceNowProxyAdapter       │
+                                          │    (monolith → api-gateway    │
+                                          │     /outbound/servicenow/*)   │
+                                          │  Outbox pattern:              │
+                                          │    OutboxWorkerService (5s)   │
+                                          │    → OutboxEventBusAdapter    │
+                                          │    → IncidentServiceNowHandler│
+                                          └───────────┬───────────────────┘
+                                                      ▼
+                                         ┌──────────────────────────────┐
+                                         │ Jobs programados             │
+                                         │  MonolithReconcilerJob (30s) │
+                                         │  SnowSyncJob (5min)          │
+                                         │  SnowOrphanRecoveryJob(10min)│
+                                         └──────────────────────────────┘
+                                         ┌──────────────────────────────┐
+                                         │ Persistencia                 │
+                                         │  MySQL: event_corner         │
+                                         │  Redis: availability cache   │
+                                         └──────────────────────────────┘
+```
 
-        subgraph INCOMING["Puertos de Entrada (Incoming Ports)"]
-            P_INC["IIncidentService"]
-            P_COR["ICornerService"]
-            P_AVA["IAvailabilityService"]
-            P_REQ["IRequestService"]
-            P_SCH["IScheduleService"]
-            P_TEC["ITechnicianService"]
-            P_DEV["IDeviceService"]
-        end
+> Nota: no hay un `EventBus` síncrono llamando directo a ServiceNow. La creación de tickets
+> pasa por el patrón Outbox (evento persistido en `outbox_events`, procesado async por
+> `OutboxWorkerService`) y de ahí a `api-gateway → api-snowq-service → SN`. Ver diagrama 6.
 
-        subgraph DOMAIN["Dominio (Core)"]
-            direction TB
-            ENT["Entities\n──────────\nIncident\nCorner\nTechnician\nDevice\nLocker\nRequest\nIssueType"]
-            ENUM["Enums\n──────────\nIncidentStatus\nDeviceStatus\nLockerStatus\nDayOfWeek"]
-            VO["Value Objects\n──────────\nIncidentId\nEmail\nSerialNumber\nSlotWindow\nDateRange"]
-            ERR["Domain Errors\n──────────\nDomainError (base)\nIncidentNotFound\nSlotNotAvailable\n..."]
-        end
+---
 
-        subgraph SERVICES_IMPL["Implementaciones (Use Cases)"]
-            S_INC["IncidentService\n──────────\ncreateIncident()\ntakeIncident()\nupdateStatus()\ngetTimeline()"]
-            S_AVA["AvailabilityService\n──────────\ngetAvailableSlots()\ncalculateWindowSlots()"]
-            S_COR["CornerService\n──────────\ncreateCorner()\nassignTechnician()"]
-        end
+## 4a. Login por contraseña — NO DISPONIBLE
 
-        subgraph OUTGOING["Puertos de Salida (Outgoing Ports)"]
-            R_INC["IIncidentRepository"]
-            R_COR["ICornerRepository"]
-            R_AVA["IAvailabilityRepository"]
-            R_SLO["ISlotRepository"]
-            EBUS["IEventBus"]
-            ICACHE["ICachePort"]
-        end
+> **Requerimiento del cliente:** los usuarios finales se autentican exclusivamente con
+> **Entra ID / Azure AD**. No hay `POST /api/auth/login` expuesto en el gateway.
+> Ver diagrama 4c para el flujo real.
 
-        subgraph ADAPTERS["Adaptadores (Infrastructure)"]
-            direction TB
-            ORM_INC["TypeORM\nIncidentRepository"]
-            ORM_COR["TypeORM\nCornerRepository"]
-            REDIS_ADP["Redis\nCacheAdapter"]
-            EVTBUS["SimpleEventBus"]
-            SN_CLI["ServiceNowClient"]
-            INV_ADP["InventoryAdapter"]
-        end
+---
 
-        subgraph DB["Persistencia"]
-            MYSQL_DB[("MySQL\nevent_corner")]
-            REDIS_DB[("Redis")]
-        end
+## 4b. OAuth 2.0 Client Credentials (app externa)
 
-        INCOMING --> SERVICES_IMPL
-        SERVICES_IMPL --> DOMAIN
-        SERVICES_IMPL --> OUTGOING
-        OUTGOING --> ADAPTERS
-        ORM_INC --> MYSQL_DB
-        ORM_COR --> MYSQL_DB
-        REDIS_ADP --> REDIS_DB
-        EVTBUS -->|"domainEvent"| SN_CLI
-    end
+```
+App Externa (client_id/secret)              ABAC :3005                  Gateway :3000        Monolith
+      │                                          │                             │                  │
+      │  POST /auth/oauth/token                  │                             │                  │
+      │  { grant_type: 'client_credentials',     │                             │                  │
+      │    client_id, client_secret, scope }     │                             │                  │
+      ├─────────────────────────────────────────►│  (endpoint público)         │                  │
+      │                                          │  SELECT application         │                  │
+      │                                          │    WHERE apiKey=client_id   │                  │
+      │                                          │  bcrypt.compare(secret,     │                  │
+      │                                          │    apiSecret hash)          │                  │
+      │                                          │                             │                  │
+      │        401 invalid_client (cred inválida)│                             │                  │
+      │◄─────────────────────────────────────────┤                             │                  │
+      │       400 invalid_scope (scope no permitido)                           │                  │
+      │◄─────────────────────────────────────────┤                             │                  │
+      │        200 OK →                          │                             │                  │
+      │  SELECT permissions WHERE userId=ownerId │                             │                  │
+      │  scope final = permisos ∩ scopes pedidos │                             │                  │
+      │  JWT.sign EdDSA { sub, type:'service',   │                             │                  │
+      │    permissions, scope, applicationId }   │                             │                  │
+      │  { access_token, token_type:'Bearer',    │                             │                  │
+      │    expires_in, scope }                   │                             │                  │
+      │◄─────────────────────────────────────────┤                             │                  │
+      │                                                                        │                  │
+      │  GET /api/incidents  Authorization: Bearer <JWT>                       │                  │
+      ├───────────────────────────────────────────────────────────────────────►│                  │
+      │                                          JwtGuard: sin decorator       │                  │
+      │                                          → POST /auth/validate-entra   │                  │
+      │                                          (rechaza si type='service'    │                  │
+      │                                           no es Entra — ver nota)      │                  │
+      │                                                                        │ GET /internal/…  │
+      │                                                                        ├─────────────────►│
+      │                                                                        │◄─────────────────┤
+      │◄───────────────────────────────────────────────────────────────────────┤ 200 [incidents]  │
+```
 
-    INT_API["Internal API\nControllers"] --> INCOMING
+> Nota: hoy `JwtGuard` delega **todo** token sin `@InternalOnly()` a `/auth/validate-entra`
+> (pensado para tokens Entra ID). Verificar en el código de ABAC si ese endpoint también
+> acepta JWT OAuth Client Credentials, o si las apps externas necesitan una ruta distinta —
+> este punto no quedó 100% confirmado durante la última revisión y conviene chequearlo antes
+> de confiar en el flujo tal como está dibujado.
+
+---
+
+## 4c. Entra ID / Azure AD (flujo real)
+
+```
+event-corner-app                 API Gateway :3000        ABAC :3005                Azure AD (JWKS)
+(cliente real de Entra ID)
+      │  Login MSAL contra Azure AD (fuera de este diagrama)
+      │  obtiene un token con iss=login.microsoftonline.com/{tenant}/v2.0
+      │
+      │  GET /api/incidents  Authorization: Bearer <token Entra ID>
+      ├─────────────────────────►│
+      │                          │  JwtGuard: sin decorator → delega a ABAC
+      │                          │  POST /auth/validate-entra
+      │                          │  { token, applicationId }  x-api-key: <gateway key>
+      │                          ├──────────────────────────► │
+      │                          │                            │  EntraIdService.validate(token)
+      │                          │                            │  jwt.decode → header.kid
+      │                          │                            │  jwksClient.getSigningKey(kid)
+      │                          │                            ├───────────────────────────────►│
+      │                          │                            │  GET {tenant}/discovery/v2.0/keys
+      │                          │                            │◄───────────────────────────────┤
+      │                          │                            │  JWKS (cache 10min)
+      │                          │                            │  jose.importJWK(n,e) → SPKI PEM │
+      │                          │                            │  jwt.verify(token, publicKey,   │
+      │                          │                            │    { audience: AZURE_CLIENT_ID, │
+      │                          │                            │      issuer, algorithms:RS256 })│
+      │                          │                            │
+      │                          │                            │  SELECT user WHERE entraId=oid  │
+      │                          │                            │  No existe → lazy sync (INSERT) │
+      │                          │ { valid:true, userId,      │
+      │                          │  oid, email, permissions } │
+      │                          │◄───────────────────────────┤
+      │                          │  request.user = { sub, email, permissions, tokenType:'entra' }│
+      │                          │  RolesGuard / AbacGuard evalúan sobre ese user                │
+      │                          │  GW → MON: GET /internal/incidents (Bearer M2M EdDSA)         │
+      │  200 [incidents]         │
+      │◄─────────────────────────┤
+```
+
+> `AZURE_TENANT_ID`/`AZURE_CLIENT_ID` vacíos en ABAC → `EntraIdService.isEnabled = false` →
+> `/auth/validate-entra` responde 503 y no hay fallback salvo el bypass dev (`dev:<base64>`,
+> solo si `NODE_ENV=development`). Ver `entra-id.service.ts` y `auth.service.ts:200-207`.
+
+---
+
+## 4d. M2M Token (servicio interno)
+
+```
+Servicio Interno (ej. monolith)         ABAC :3005                 API Gateway :3000
+      │
+      │  POST /auth/m2m-token
+      │  { apiKey, apiSecret }
+      ├───────────────────────────►│
+      │                            │  SELECT application + owner + permissions
+      │                            │  bcrypt.compare + expiración + usageLimit
+      │                            │  JwtEd25519Service.sign(
+      │                            │    { sub, type:'service', applicationId,
+      │                            │      permissions, ownerApplicationId },
+      │                            │    ED25519_PRIVATE_KEY, kid: ED25519_KID)
+      │  { accessToken, tokenType: │
+      │    'Bearer', expiresIn,    │
+      │    permissions }           │
+      │◄───────────────────────────┤
+      │
+      │  POST /outbound/servicenow/...
+      │  Authorization: Bearer <JWT EdDSA>
+      ├───────────────────────────────────────────────────────►│
+      │                                                        │  JwtGuard: @InternalOnly()
+      │                                                        │  Verifica LOCAL con
+      │                                                        │  ED25519_PUBLIC_KEY (sin red)
+      │                                                        │  request.serviceApp = {...}
+      │  200 OK                                                │
+      │◄───────────────────────────────────────────────────────┤
+```
+
+> El JWT M2M se firma con **Ed25519 (EdDSA)**, no con HMAC/`JWT.sign` genérico. Cada servicio
+> consumidor lo verifica localmente con `ED25519_PUBLIC_KEY` — sin llamar a ABAC por cada
+> request. Ver `libs/ed25519.service/`.
+
+---
+
+## 5. Request con guards — JWT + Roles + ABAC (ejemplo con Entra ID)
+
+```
+Usuario/Frontend            API Gateway :3000                    ABAC :3005
+      │
+      │  POST /api/incidents
+      │  Authorization: Bearer <token Entra ID>
+      ├──────────────────────────►│
+      │                            │
+      │  ── 1. JwtGuard ──────────┤
+      │                            │  POST /auth/validate-entra
+      │                            ├──────────────────────────►│
+      │                            │◄──────────────────────────┤ { valid, userId, permissions }
+      │                            │  request.user = {...}     │
+      │       401 si inválido      │
+      │◄──────────────────────────┤ (corta acá si no válido)
+      │                            │
+      │  ── 2. RolesGuard ────────┤  (solo si el endpoint tiene @Roles(...))
+      │                            │  cache en memoria (TTL 60s)
+      │                            │  miss → GET user-roles
+      │                            ├──────────────────────────►│
+      │                            │◄──────────────────────────┤
+      │       403 si rol insuf.    │
+      │◄──────────────────────────┤
+      │                            │
+      │  ── 3. AbacGuard ─────────┤  (solo si el endpoint tiene @Permission(resource, action))
+      │                            │  POST /abac/can-access
+      │                            │  { userId, resource:'incident', action:'create', context }
+      │                            ├──────────────────────────►│
+      │                            │                            │  json-rules-engine evalúa
+      │                            │◄──────────────────────────┤ { allowed: true/false }
+      │       403 si denegado      │
+      │◄──────────────────────────┤
+      │                            │
+      │  ── 4. Controller + Proxy ┤
+      │                            │  POST /internal/incidents
+      │                            │  Authorization: Bearer <M2M EdDSA JWT>
+      │  201 Created { incident }  │
+      │◄──────────────────────────┤
 ```
 
 ---
 
-## 4. ~~Diagrama de Secuencia — Login por contraseña~~ (NO DISPONIBLE)
+## 6. Crear un Incidente (flujo completo, con outbox + ServiceNow)
 
-> **Requerimiento del cliente:** los usuarios finales deben autenticarse exclusivamente con **Entra ID / Azure AD**.
-> El flujo de login por email/contraseña (`POST /api/auth/login`) **no está expuesto** en el gateway en esta versión.
-> Ver sección 4c para el flujo Entra ID.
+```
+Técnico          API Gateway         Monolith              MySQL      Outbox      snowq/SN
+  │
+  │ POST /api/incidents
+  │ { cornerId, issueTypeId, customerId, deviceId, scheduledDate }
+  ├──────────────►│
+  │                │ (Guards: JWT ✓ Roles ✓ ABAC ✓)
+  │                │ POST /internal/incidents
+  │                │ Authorization: Bearer M2M EdDSA
+  │                ├──────────────►│
+  │                │                │ IncidentService.createIncident()
+  │                │                │ SELECT issue_type, corner, slots disponibles
+  │                │                ├──────────────►│
+  │                │                │◄──────────────┤
+  │                │                │ Sin slot → Result.err(SlotNotAvailable)
+  │                │  409 Conflict  │
+  │◄───────────────┤◄───────────────┤
+  │                │                │ Slot OK:
+  │                │                │  Crea Incident (CREATED) + IncidentSlot + timeline
+  │                │                │  INSERT incident, incident_slot, incident_timeline
+  │                │                │  UPDATE corner_slot (reservado)
+  │                │                ├──────────────►│
+  │                │                │  Publica evento IncidentCreated → tabla outbox_events
+  │                │                ├───────────────────────────►│
+  │                │  201 Created   │
+  │◄───────────────┤◄───────────────┤ (la creación NO espera al ticket SN — es async)
+  │                │                │
+  │                │                │                             │ OutboxWorkerService (5s)
+  │                │                │                             │ toma el evento pendiente
+  │                │                │                             │ → IncidentServiceNowHandler
+  │                │                │                             │ → ServiceNowIntegrationService
+  │                │                │                             │   .createIncidentTicket()
+  │                │                │                             │   resolveAssignmentGroup()
+  │                │                │                             │   resolveSnowCompanySysId()
+  │                │                │◄────────────────────────────┤
+  │                │                │ ServiceNowProxyAdapter → gateway
+  │                │◄───────────────┤ POST /outbound/servicenow/incidents/immediate
+  │                │  (2 fases: intenta sync, si falla o SN responde deferred, cae a async)
+  │                ├───────────────────────────────────────────────────────────►│ snowq
+  │                │                │                                            │
+  │                │                │  ÉXITO INMEDIATO: sysId+number ────────────┤
+  │                │                │  → incident.updateServiceNowInfo()          │
+  │                │                │  DEFERRED: correlationId ───────────────────┤
+  │                │                │  → incident.setSnowqCorrelationId()         │
+  │                │                ├──────────────►│ UPDATE incident              │
+  │                │                │                │                            │
+  │                │                │  MonolithReconcilerJob (30s) poll si DEFERRED
+  │                │                │  → DELIVERED: guarda sysId+number, limpia correlationId
+  │                │                │  → FAILED fatal: limpia correlationId → huérfana
+  │                │                │  → FAILED temporal: pide retry a snowq (mismo correlationId)
+```
+
+> Si la llamada inicial monolith→snowq falla del todo (no HTTP response), el `OutboxWorkerService`
+> reintenta hasta 5 veces (~2.5min de backoff). Si se agotan, la incidencia queda sin
+> `servicenow_id` ni `correlationId` — la recupera `SnowOrphanRecoveryJob` (cada 10min, si
+> `SNOW_ORPHAN_RECOVERY_ENABLED=true`). Ver `docs/1. Flujo_de_reconciliación_estado_final.md`
+> y `docs/2.ciclo-incidencia.md` para el detalle completo de reintentos y reconciliación.
 
 ---
 
-## 4b. Diagrama de Secuencia — OAuth 2.0 Client Credentials (app externa)
+## 7. Máquina de estados del incidente
 
-```mermaid
-sequenceDiagram
-    actor App as App Externa (client_id/secret)
-    participant ABAC as ABAC Microservice :3005
-    participant DB_ABAC as MySQL (event_corner_abac)
-    participant GW as API Gateway :3000
-    participant MON as Monolith :3001
+Fuente de verdad: `apps/monolith/src/core/domain/enums/incident-status.enum.ts`
 
-    Note over App,ABAC: Fase 1 — Obtener access_token
+```
+                                   ┌─────────┐
+                    POST /incidents│ CREATED │
+                    (técnico crea) └────┬────┘
+                                        │ dispositivo entregado
+                                        ▼
+                                  ┌───────────┐
+                                  │ DELIVERED │
+                                  └─────┬─────┘
+                                        │ técnico toma
+                                        ▼
+                                 ┌─────────────┐
+                        ┌───────►│ IN_PROGRESS │◄───────┐
+                        │        └──────┬──────┘        │
+                        │               │                │
+          (retoma)      │      ┌────────┼────────┐       │ (retoma)
+                        │      ▼        ▼        ▼       │
+              ┌──────────────┐ ┌──────────┐ ┌──────────────────┐
+              │PENDING_THIRD_│ │PENDING_  │ │PENDING_SPARE_PART│
+              │PARTY         │ │USER      │ │                  │
+              └──────┬───────┘ └────┬─────┘ └────────┬─────────┘
+                     └───────────────┴────────────────┘
+                                     │ (todas vuelven a IN_PROGRESS)
+                                     ▼
+                         (desde IN_PROGRESS, dispositivo listo)
+                    ┌────────────────┴─────────────────┐
+                    ▼                                   ▼
+           ┌─────────────────┐              ┌───────────────────────────┐
+           │ PENDING_PICKUP   │              │PENDING_REPLACEMENT_DELIVERY│
+           └────────┬─────────┘              └──────────────┬─────────────┘
+                    └───────────────────┬───────────────────┘
+                                        ▼
+                                   ┌────────┐
+                                   │ CLOSED │
+                                   └───┬────┘
+                             ┌─────────┴─────────┐
+                    validate()│                   │reopen()
+                              ▼                   ▼
+                       ┌───────────┐        ┌──────────┐
+                       │ VALIDATED │        │ REOPENED │──► vuelve a IN_PROGRESS
+                       └───────────┘        └──────────┘
+                        (terminal)
 
-    App->>ABAC: POST /auth/oauth/token<br/>{ grant_type: 'client_credentials',<br/>  client_id: 'ak_xxx',<br/>  client_secret: '...', scope: 'incidents:read' }
+  CREATED también puede ir directo a CANCELED (cliente cancela) — terminal, sin retorno.
+```
 
-    Note over ABAC: Endpoint público (no ApiKeyGuard)
+Notas:
+- `VALIDATED` y `CANCELED` son los únicos estados **verdaderamente terminales**
+  (`TERMINAL_STATUSES`) — sin transición de salida.
+- `CLOSED` no tiene salidas por `changeStatus()` genérico: solo se sale vía los métodos
+  dedicados `validate()` y `reopen()` de la entidad `Incident`.
+- Al crear (`CREATED`): se reserva el slot en `corner_slots`, se agrega timeline "Incidente
+  creado" y se publica el evento `IncidentCreated` al outbox (ver diagrama 6) — no hay una
+  llamada síncrona a ServiceNow en el mismo request.
 
-    ABAC->>DB_ABAC: SELECT application WHERE apiKey = client_id
-    DB_ABAC-->>ABAC: Application { type, scopes, ownerId }
-    ABAC->>ABAC: bcrypt.compare(client_secret, apiSecret hash)
+---
 
-    alt Credenciales inválidas o type ≠ 'oauth_client'
-        ABAC-->>App: 401 { error: 'invalid_client' }
-    else Scope no permitido
-        ABAC-->>App: 400 { error: 'invalid_scope' }
-    else OK
-        ABAC->>DB_ABAC: SELECT permissions WHERE userId = ownerId
-        ABAC->>ABAC: Intersectar permisos ∩ requestedScopes
-        ABAC->>ABAC: JWT.sign({ sub: userId, type:'service',<br/>  permissions, scope, applicationId })
-        ABAC-->>App: { access_token, token_type:'Bearer',<br/>  expires_in: 3600, scope: 'incidents:read' }
-    end
+## 8. Verificar disponibilidad de slots
 
-    Note over App,MON: Fase 2 — Usar el token
-
-    App->>GW: GET /api/incidents<br/>Authorization: Bearer eyJ... (OAuth JWT)
-    Note over GW: JwtGuard: no es Entra → validateAbacToken()<br/>verifica firma local JWT_SECRET
-    GW->>GW: request.user = { sub: userId, permissions, tokenType:'abac' }
-    Note over GW: AbacGuard: canAccess(userId, 'incident', 'read')
-    GW->>MON: GET /internal/incidents
-    MON-->>GW: [incidents]
-    GW-->>App: 200 [incidents]
+```
+Frontend         API Gateway            Monolith                Redis        MySQL
+  │
+  │ GET /api/availability/slots?cornerIds=1,2&date=2025-06-15
+  ├────────────►│
+  │              │ (Guards: JWT ✓)
+  │              │ GET /internal/availability/slots?...
+  │              ├────────────►│
+  │              │              │ AvailabilityService.getAvailableSlots()
+  │              │              │ GET availability:1,2:2025-06-15
+  │              │              ├────────────►│
+  │              │              │              │
+  │              │              │  Cache HIT (TTL 60s) ──┐
+  │              │              │◄────────────┤          │
+  │              │  200 [slots] │                        │
+  │◄─────────────┤◄─────────────┤◄───────────────────────┘
+  │              │              │
+  │              │              │  Cache MISS:
+  │              │              │  SELECT corner_schedules WHERE corner_id IN(1,2) AND day_of_week=?
+  │              │              ├──────────────────────────────────────────────►│
+  │              │              │◄──────────────────────────────────────────────┤
+  │              │              │  SELECT corner_slots WHERE corner_id IN(1,2) AND date=?
+  │              │              ├──────────────────────────────────────────────►│
+  │              │              │◄──────────────────────────────────────────────┤
+  │              │              │  SELECT incident_slots WHERE slot_id IN(...) (ocupados)
+  │              │              ├──────────────────────────────────────────────►│
+  │              │              │◄──────────────────────────────────────────────┤
+  │              │              │  slots_libres = todos_los_slots - reservados
+  │              │              │  SET availability:1,2:2025-06-15 TTL 60s
+  │              │              ├────────────►│
+  │              │  200 [slots] │
+  │◄─────────────┤◄─────────────┤
 ```
 
 ---
 
-## 4c. Diagrama de Secuencia — Entra ID / Azure AD
+## 9. Evaluación ABAC (permisos)
 
-```mermaid
-sequenceDiagram
-    actor User as Usuario (token Azure AD)
-    participant GW as API Gateway :3000
-    participant ABAC as ABAC Microservice :3005
-    participant AZURE as Azure AD (JWKS)
-    participant DB_ABAC as MySQL (event_corner_abac)
-    participant MON as Monolith :3001
-
-    Note over User,GW: El usuario ya tiene un token de Microsoft (MSAL, etc.)
-
-    User->>GW: GET /api/incidents<br/>Authorization: Bearer eyJ...(Microsoft issuer)
-
-    Note over GW: JwtGuard: isEntraIdToken() = true<br/>(jwt.decode → iss.includes('login.microsoftonline.com'))
-
-    GW->>ABAC: POST /auth/validate-entra<br/>{ token, applicationId }<br/>x-api-key: <gateway key>
-
-    Note over ABAC: ApiKeyGuard → AuthService.validateEntraToken()
-
-    ABAC->>AZURE: GET /.well-known/openid-configuration<br/>→ jwks_uri (cached 10 min)
-    AZURE-->>ABAC: JWKS public keys
-    ABAC->>ABAC: jwt.verify(token, signingKey)<br/>Verifica firma + exp + aud + iss
-
-    alt Token inválido o expirado
-        ABAC-->>GW: 401 { valid: false }
-        GW-->>User: 401 Unauthorized
-    else Token válido
-        ABAC->>DB_ABAC: SELECT user WHERE entraOid = payload.oid
-        alt Usuario no existe (primer login)
-            ABAC->>DB_ABAC: INSERT user (email, entraOid, role=employee)
-            Note over ABAC: Lazy sync automático
-        end
-        DB_ABAC-->>ABAC: User { id, permissions }
-        ABAC-->>GW: { valid:true, userId, oid, email, permissions }
-    end
-
-    GW->>GW: request.user = { sub: userId, email,<br/>  permissions, tokenType:'entra', oid }
-    Note over GW: AbacGuard: canAccess(userId, 'incident', 'read')
-    GW->>MON: GET /internal/incidents
-    MON-->>GW: [incidents]
-    GW-->>User: 200 [incidents]
+```
+API Gateway (AbacGuard)              ABAC :3005                    MySQL abac_db
+      │
+      │ POST /abac/can-access
+      │ { userId, applicationId, resource:'incident', action:'create',
+      │   context:{ hour, ip, path, method } }
+      ├─────────────────────────►│
+      │                           │ AbacService.canAccess()
+      │                           │ pipeline: validateUserApplication
+      │                           │        → getUserPermissions
+      │                           │        → evaluatePolicies (json-rules-engine)
+      │                           │
+      │                           │ SELECT roles/policies WHERE user_id=? AND app_id=?
+      │                           ├──────────────────────────►│
+      │                           │◄──────────────────────────┤ [Role/Policy permissions]
+      │                           │
+      │                           │ Role permissions: deny gana sobre allow
+      │                           │ Si hay Policy con conditions → evalúa con json-rules-engine
+      │                           │   facts = { user, application, membership, context }
+      │                           │   resultado: allow | deny | null
+      │                           │   null (sin política que matchee) → allow si hay permiso
+      │                           │
+      │  { allowed: true }        │
+      │◄─────────────────────────┤
+      │  { allowed: false, reason }
+      │◄─────────────────────────┤
+      │  → AbacGuard lanza ForbiddenException
 ```
 
 ---
 
-## 4d. Diagrama de Secuencia — M2M Token (servicio interno)
+## 10. Observabilidad — `@app/observability` (compartido por todos los servicios)
 
-```mermaid
-sequenceDiagram
-    actor SVC as Servicio Interno (M2M)
-    participant ABAC as ABAC Microservice :3005
-    participant DB_ABAC as MySQL (event_corner_abac)
-    participant GW as API Gateway :3000
-    participant MON as Monolith :3001
-
-    Note over SVC,ABAC: Fase 1 — Obtener JWT M2M (rotar cada ~180 días)
-
-    SVC->>ABAC: POST /auth/m2m-token<br/>{ apiKey: 'ak_xxx', apiSecret: '...' }
-    ABAC->>DB_ABAC: SELECT application + owner + permissions
-    ABAC->>ABAC: bcrypt.compare + expiración + usageLimit
-    ABAC->>ABAC: JWT.sign({ sub: userId, type:'service',<br/>  applicationId, permissions, accountType:'service' })
-    ABAC-->>SVC: { accessToken, tokenType:'Bearer',<br/>  expiresIn: 3600, permissions }
-
-    Note over SVC,MON: Fase 2 — Llamada a un endpoint @IsInternal()
-
-    SVC->>GW: POST /outbound/servicenow/...<br/>Authorization: Bearer eyJ... (M2M JWT)
-    Note over GW: JwtGuard: @IsInternal() → validateInternalToken()<br/>verifica type='service' en payload
-    GW->>GW: request.serviceApp = { applicationId, applicationName }
-    GW->>MON: (proxy o lógica interna)
-    MON-->>GW: response
-    GW-->>SVC: 200 OK
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Cualquier servicio (gateway, monolith, abac, snowq, integration…)  │
+│                                                                      │
+│  Incoming Request                                                   │
+│      │                                                               │
+│      ▼                                                               │
+│  CorrelationMiddleware ── genera/extrae X-Correlation-ID             │
+│      │                    inyecta en AsyncLocalStorage                │
+│      ▼                                                               │
+│  PerformanceInterceptor ── mide tiempo de respuesta                  │
+│      │                                                               │
+│      ▼                                                               │
+│  AllExceptionsFilter ── captura excepciones, formato estándar        │
+│      │                                                               │
+│      ▼                                                               │
+│  LoggerService (Winston) ── logs JSON estructurados + correlationId  │
+│      │                                                               │
+│      ▼                                                               │
+│  winston-http transport (circuit breaker @backendkit-labs)           │
+└──────────────────────────────┬───────────────────────────────────┘
+                                 │ POST /ingest/logs   (Bearer M2M EdDSA)
+                                 │ POST /ingest/metrics
+                                 │ POST /ingest/traces
+                                 ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ OBSERVABILITY-SERVICE :3099  (sink central de telemetría)          │
+│  Ed25519Guard valida el Bearer M2M                                  │
+│  Reenvío opcional:                                                  │
+│    → Jaeger        (JAEGER_OTLP_URL, si está configurado)           │
+│    → Prometheus     (PROMETHEUS_PUSHGATEWAY_URL, si está configurado)│
+└──────────────────────────────┬───────────────────────────────────┘
+                                 ▼
+                    observability-dashboard (Vite)
+                    — visualización de logs/métricas/trazas
 ```
 
----
-
-## 5. Diagrama de Secuencia — Request con Guards (JWT + Roles + ABAC)
-
-```mermaid
-sequenceDiagram
-    actor User as Usuario/Frontend
-    participant GW as API Gateway :3000
-    participant ABAC as ABAC Microservice :3005
-    participant Redis as Redis Cache
-    participant MON as Monolith :3001
-
-    User->>GW: POST /api/incidents<br/>Authorization: Bearer <jwt><br/>{ body... }
-
-    Note over GW: Guard Chain ejecutada en orden
-
-    rect rgb(240, 248, 255)
-        Note over GW: 1. JwtGuard
-        GW->>GW: Extraer token del header
-        GW->>GW: JWT.verify(token, JWT_SECRET)
-        alt Token inválido o expirado
-            GW-->>User: 401 Unauthorized
-        else Token válido
-            GW->>GW: inject request.user = { sub, roles, ... }
-        end
-    end
-
-    rect rgb(255, 248, 220)
-        Note over GW: 2. RolesGuard
-        GW->>GW: Leer @Roles('TECHNICIAN') del endpoint
-        GW->>Redis: GET roles:{userId}
-        alt Cache hit
-            Redis-->>GW: [roles array]
-        else Cache miss
-            GW->>ABAC: GET /abac/user-roles?userId=&appId=
-            ABAC-->>GW: [roles array]
-            GW->>Redis: SET roles:{userId} TTL 60s
-        end
-        alt Rol insuficiente
-            GW-->>User: 403 Forbidden
-        end
-    end
-
-    rect rgb(240, 255, 240)
-        Note over GW: 3. AbacGuard
-        GW->>GW: Leer @Permission('incident', 'create')
-        GW->>ABAC: POST /abac/can-access<br/>{ userId, appId, resource: 'incident',<br/>  action: 'create', context: { hour, ip } }
-        ABAC->>ABAC: Evaluar políticas con json-rules-engine
-        ABAC-->>GW: { allowed: true/false }
-        alt Permiso denegado
-            GW-->>User: 403 Forbidden
-        end
-    end
-
-    rect rgb(255, 240, 245)
-        Note over GW: 4. Controller + Proxy
-        GW->>MON: POST /internal/incidents<br/>x-internal-token: <secret><br/>{ body... }
-        MON->>MON: Ejecutar lógica de negocio
-        MON-->>GW: { incident data }
-        GW-->>User: 201 Created { incident }
-    end
-```
-
----
-
-## 6. Diagrama de Secuencia — Crear un Incidente (flujo completo)
-
-```mermaid
-sequenceDiagram
-    actor Tech as Técnico
-    participant GW as API Gateway :3000
-    participant MON as Monolith :3001
-    participant DB as MySQL (event_corner)
-    participant Redis as Redis
-    participant EVTBUS as EventBus
-    participant SN as ServiceNow
-
-    Tech->>GW: POST /api/incidents<br/>{ cornerId, issueTypeId, customerId,<br/>  deviceId, scheduledDate }
-
-    Note over GW: Guards: JWT ✓ Roles ✓ ABAC ✓
-
-    GW->>MON: POST /internal/incidents<br/>x-internal-token: <secret>
-
-    Note over MON: IncidentService.createIncident()
-
-    MON->>DB: SELECT issue_type WHERE id = ?
-    DB-->>MON: IssueType record
-
-    MON->>DB: SELECT corner WHERE id = ?
-    DB-->>MON: Corner record
-
-    MON->>DB: SELECT available slots WHERE<br/>corner_id = ? AND date = ?
-    DB-->>MON: Available slots list
-
-    alt No hay slots disponibles
-        MON-->>GW: Result.err(SlotNotAvailable)
-        GW-->>Tech: 409 Conflict "No hay slots disponibles"
-    else Slot disponible
-        MON->>MON: Crear Incident entity (estado: CREATED)
-        MON->>MON: Crear IncidentSlot (reserva el slot)
-        MON->>MON: Crear timeline entry "Incidente creado"
-
-        MON->>DB: INSERT incident
-        MON->>DB: INSERT incident_slot
-        MON->>DB: INSERT incident_timeline
-        MON->>DB: UPDATE corner_slot (reservado)
-
-        MON->>EVTBUS: emit IncidentCreated(incident)
-
-        Note over EVTBUS: Async - no bloquea response
-
-        EVTBUS->>SN: POST /servicenow/incident<br/>(si está configurado)
-        SN-->>EVTBUS: 200 OK (sys_id)
-        EVTBUS->>DB: UPDATE incident SET servicenow_id = ?
-
-        MON->>Redis: DEL availability:{cornerId}:{date}
-
-        MON-->>GW: Result.ok(IncidentDTO)
-        GW-->>Tech: 201 Created { incident }
-    end
-```
-
----
-
-## 7. Diagrama de Secuencia — Máquina de Estados del Incidente
-
-```mermaid
-stateDiagram-v2
-    [*] --> CREATED : POST /incidents\n(técnico crea)
-
-    CREATED --> IN_PROGRESS : PATCH /id/take\n(técnico toma el incidente)
-
-    IN_PROGRESS --> PENDING_PICKUP : PATCH /id/release\n(técnico libera temporalmente)
-    PENDING_PICKUP --> IN_PROGRESS : PATCH /id/take\n(técnico retoma)
-
-    IN_PROGRESS --> PENDING_DELIVERY : PATCH /id/ready\n(dispositivo reparado)
-    PENDING_DELIVERY --> DELIVERED : PATCH /id/deliver\n(entregado al cliente)
-
-    DELIVERED --> CLOSED : PATCH /id/close\n(cierre auto o manual)
-    DELIVERED --> REOPENED : PATCH /id/reopen\n(cliente insatisfecho)
-
-    REOPENED --> IN_PROGRESS : PATCH /id/take\n(técnico re-interviene)
-
-    CLOSED --> VALIDATED : PATCH /id/validate\n(cliente confirma)
-    VALIDATED --> [*]
-
-    note right of CREATED
-        Slot reservado en corner_slots
-        Timeline: "Incidente creado"
-        Evento: IncidentCreated → ServiceNow
-    end note
-
-    note right of IN_PROGRESS
-        technician_id asignado
-        Timeline: "Tomado por técnico X"
-    end note
-
-    note right of DELIVERED
-        Locker liberado (si aplica)
-        Timeline: "Entregado al cliente"
-    end note
-```
-
----
-
-## 8. Diagrama de Secuencia — Verificar Disponibilidad de Slots
-
-```mermaid
-sequenceDiagram
-    actor Client as Frontend
-    participant GW as API Gateway :3000
-    participant MON as Monolith :3001
-    participant Redis as Redis Cache
-    participant DB as MySQL
-
-    Client->>GW: GET /api/availability/slots<br/>?cornerIds=1,2&date=2025-06-15
-
-    Note over GW: Guards: JWT ✓
-
-    GW->>MON: GET /internal/availability/slots<br/>?cornerIds=1,2&date=2025-06-15
-
-    Note over MON: AvailabilityService.getAvailableSlots()
-
-    MON->>Redis: GET availability:1,2:2025-06-15
-    alt Cache hit (TTL 60s)
-        Redis-->>MON: [slots JSON]
-        MON-->>GW: [slots]
-        GW-->>Client: 200 OK [available slots]
-    else Cache miss
-        MON->>DB: SELECT corner_schedules WHERE<br/>corner_id IN (1,2) AND day_of_week = ?
-        DB-->>MON: Schedules con horarios
-
-        MON->>DB: SELECT corner_slots WHERE<br/>corner_id IN (1,2) AND date = ?
-        DB-->>MON: Todos los slots del día
-
-        MON->>DB: SELECT incident_slots WHERE<br/>slot_id IN (...) (slots ocupados)
-        DB-->>MON: Slots reservados
-
-        MON->>MON: Calcular slots libres =\ntodos_slots - slots_reservados
-
-        MON->>Redis: SET availability:1,2:2025-06-15<br/>TTL: 60s
-
-        MON-->>GW: [available slots]
-        GW-->>Client: 200 OK [available slots]
-    end
-```
-
----
-
-## 9. Diagrama de Secuencia — Evaluación ABAC (Permisos)
-
-```mermaid
-sequenceDiagram
-    participant GW as API Gateway (AbacGuard)
-    participant ABAC as ABAC Microservice :3005
-    participant DB_ABAC as MySQL (event_corner_abac)
-    participant ENGINE as json-rules-engine
-
-    GW->>ABAC: POST /abac/can-access<br/>{ userId, applicationId,<br/>  resource: "incident",<br/>  action: "create",<br/>  context: { hour: 14, ip: "...",<br/>  location: "AR", mfaVerified: true } }
-
-    Note over ABAC: AbacService.canAccess()
-
-    ABAC->>DB_ABAC: SELECT policies WHERE<br/>user_id = ? AND app_id = ?<br/>(via roles y assignments)
-    DB_ABAC-->>ABAC: [Policy1, Policy2, ...]
-
-    loop Para cada política
-        ABAC->>ENGINE: evaluate(policy.rules, context)
-        Note over ENGINE: Evalúa condiciones:<br/>{ "all": [<br/>  { "fact": "hour", "operator": "greaterThan", "value": 8 },<br/>  { "fact": "mfaVerified", "operator": "equal", "value": true }<br/>] }
-        ENGINE-->>ABAC: { result: true/false }
-
-        alt Política matchea (result: true)
-            ABAC->>DB_ABAC: SELECT permissions WHERE<br/>policy_id = ? AND resource = ? AND action = ?
-            DB_ABAC-->>ABAC: Permission { effect: ALLOW/DENY, priority: N }
-        end
-    end
-
-    ABAC->>ABAC: Resolver conflictos por prioridad<br/>DENY sobre ALLOW si misma prioridad
-
-    alt Permiso concedido
-        ABAC-->>GW: { allowed: true }
-    else Permiso denegado
-        ABAC-->>GW: { allowed: false, reason: "..." }
-        GW-->>GW: throw ForbiddenException
-    end
-```
-
----
-
-## 10. Diagrama de Componentes — Observabilidad
-
-```mermaid
-graph LR
-    subgraph REQUESTS["Requests"]
-        REQ["Incoming Request"]
-    end
-
-    subgraph OBS["@app/observability (aplicado a los 3 servicios)"]
-        direction TB
-        MW["CorrelationMiddleware\n──────────────\nGenera/extrae X-Correlation-ID\nInyecta en AsyncLocalStorage"]
-        INT1["CorrelationInterceptor\n──────────────\nAgrega X-Correlation-ID\nen response headers"]
-        INT2["PerformanceInterceptor\n──────────────\nMide tiempo de respuesta\nRegistra en métricas"]
-        FILTER["AllExceptionsFilter\n──────────────\nCaptura todas las exceptions\nFormato estándar de error\nLog con correlationId"]
-        LOGGER["LoggerService (Winston)\n──────────────\nLogs estructurados JSON\nNiveles: error/warn/info/debug\nIncluye correlationId"]
-        METRICS["MetricsProducerService\n──────────────\nPrometheus counters/gauges\nExpose /metrics endpoint"]
-        TRACER["TelemetryService\n──────────────\nOpenTelemetry spans\nDistributed tracing"]
-        DECORATOR["@Tracking()\n──────────────\nDecorador para métodos\nCrea spans automáticos"]
-    end
-
-    subgraph OUTPUTS["Outputs"]
-        LOGS_OUT["Logs (stdout/file)\nJSON estructurado"]
-        PROM["Prometheus\n/metrics"]
-        OTEL["OpenTelemetry\nCollector"]
-    end
-
-    REQ --> MW --> INT1 --> INT2 --> FILTER
-    MW -.-> LOGGER
-    INT2 -.-> METRICS
-    FILTER -.-> LOGGER
-    LOGGER --> LOGS_OUT
-    METRICS --> PROM
-    TRACER --> OTEL
-    DECORATOR -.-> TRACER
-```
+> Los servicios **no** hablan directo con Prometheus/Jaeger — todo pasa primero por
+> `observability-service`, que reenvía opcionalmente si esas variables están configuradas.
 
 ---
 
 ## Resumen de Puertos y Tecnologías
 
-| Servicio | Puerto | Base de Datos | Responsabilidad |
-|----------|--------|---------------|-----------------|
-| API Gateway | :3000 | — (sin DB propia) | Proxy público, autenticación, guards |
-| Monolith | :3001 | MySQL `event_corner` | Lógica de negocio, dominio, persistencia |
-| ABAC Microservice | :3005 | MySQL `event_corner_abac` | Autenticación, autorización, políticas |
+| Servicio | Puerto (staging/prod · dev) | Base de Datos | Responsabilidad |
+|----------|------------------------------|----------------|-----------------|
+| API Gateway | :3000 · :4000 | — (sin DB propia) | Proxy público, autenticación, guards, egress ServiceNow |
+| Monolith | :3001 · :3002 | MySQL `event_corner` | Lógica de negocio, dominio, persistencia |
+| ABAC Microservice | :3005 | MySQL `abac_db` | Autenticación, autorización, políticas |
+| api-snowq-service | :3090 | MySQL (snow_requests) | Cola + circuit breaker hacia ServiceNow |
+| integration-service | :3008 | — | Minerva SOAP, DropPoint, Outlook (CQRS + Event Sourcing) |
+| observability-service | :3099 | — | Sink de logs/métricas/trazas |
+| servicenow-clone-backend | :3010 | MySQL `servicenow_clone` | Mock local de ServiceNow (dev) |
 
 | Tecnología | Uso |
 |------------|-----|
-| NestJS 11 | Framework base de los 3 servicios |
-| TypeORM | ORM para MySQL en Monolith y ABAC |
-| MySQL 8 | Persistencia principal (2 bases) |
-| Redis | Cache de disponibilidad y roles (TTL 60s) |
-| JWT + bcrypt | Autenticación de usuarios y M2M |
+| NestJS 11 | Framework base de todos los servicios |
+| TypeORM | ORM para MySQL (Monolith, ABAC, snowq) |
+| MySQL 8 | Persistencia principal |
+| Redis | Cache de disponibilidad (Monolith) |
+| Ed25519 (EdDSA) | Firma/verificación de tokens M2M — `@app/ed25519` |
+| jwks-rsa + jose | Validación de tokens Azure AD (JWKS) — en ABAC |
 | json-rules-engine | Evaluación de políticas ABAC |
-| Winston | Logging estructurado |
-| Prometheus | Métricas de rendimiento |
-| OpenTelemetry | Distributed tracing |
-| PM2 | Process manager en producción |
+| Winston | Logging estructurado, transporte HTTP a observability-service |
+| @backendkit-labs/circuit-breaker | Resiliencia en gateway/monolith/observability transports |
+| opossum | Circuit breaker en api-snowq-service |
+| PM2 | Process manager (dev/staging) |
 | Axios | HTTP client entre servicios |
-| jwks-rsa | Validación de tokens Azure AD (JWKS) — en abac-microservice |
 | OAuth 2.0 RFC 6749 | Client Credentials flow para apps externas |
 
 ### Modos de autenticación soportados
 
-| Modo | Endpoint de obtención | Quién lo usa | token `type` en JWT |
+| Modo | Endpoint de obtención | Quién lo usa | Firma |
 |---|---|---|---|
-| **Entra ID (Azure AD)** ⭐ | Token obtenido de Microsoft (MSAL) | Todos los usuarios finales | — (validado en ABAC via JWKS) |
-| M2M (servicio) | `POST /auth/m2m-token` | Servicios internos con apiKey/apiSecret | `'service'` |
-| OAuth Client Credentials | `POST /auth/oauth/token` | Apps externas con client_id/secret + scopes | `'service'` |
+| **Entra ID (Azure AD)** ⭐ | Login MSAL contra Azure (fuera de este repo) | Todos los usuarios finales — cliente real: `event-corner-app` | RS256, verificado en ABAC vía JWKS |
+| M2M (servicio) | `POST /auth/m2m-token` | Servicios internos (gateway↔monolith↔snowq↔integration↔observability) | Ed25519 (EdDSA) |
+| OAuth Client Credentials | `POST /auth/oauth/token` | Apps externas con client_id/secret + scopes | Ed25519 (EdDSA) |
 
-> ⭐ **Requerimiento del cliente:** los usuarios finales solo pueden autenticarse con Entra ID. No hay login por email/contraseña en esta versión.
+> ⭐ **Requerimiento del cliente:** los usuarios finales solo pueden autenticarse con Entra ID.
+> No hay login por email/contraseña en esta versión. `abac-microservice` **no** es cliente de
+> Azure AD — solo verifica tokens vía JWKS. Ver `entra-id.service.ts`.
 
-Todos los modos producen un `userId` que fluye sin cambios por el pipeline ABAC (`canAccess()`).
-
-### Nuevos endpoints ABAC (desde 2026-03-27)
-
-| Endpoint | Auth | Propósito |
-|---|---|---|
-| `POST /auth/oauth/token` | público (client_id/secret en body) | OAuth 2.0 Client Credentials |
-| `POST /auth/validate-entra` | ApiKeyGuard | Validar token Azure AD + lazy sync |
-| `POST /applications/oauth` | admin | Crear OAuth client app |
-| `POST /applications/:id/rotate-secret` | admin | Rotar client_secret de OAuth app |
+Todos los modos producen un `userId`/`serviceApp` que fluye por el pipeline de guards
+(`JwtGuard` → `RolesGuard` → `AbacGuard`) sin transformación adicional.

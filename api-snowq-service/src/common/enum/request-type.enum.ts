@@ -1,5 +1,3 @@
-import { RequestPriority } from "./request-priority.enum";
-
 /**
  * Enumeración de tipos de peticiones compatibles con ServiceNow
  * Nota: Los valores deben coincidir con los nombres de tabla en ServiceNow
@@ -99,68 +97,6 @@ export class RequestTypeUtils {
      */
     static isValid(type: string): type is RequestType {
         return Object.values(RequestType).includes(type as RequestType);
-    }
-
-    /**
-     * Obtiene la configuración de procesamiento recomendada para cada tipo
-     */
-    static getProcessingConfig(type: RequestType): {
-        defaultPriority: RequestPriority;
-        batchSize: number;
-        timeout: number;
-        retryCount: number;
-    } {
-        const configs = {
-            [RequestType.INCIDENT]: {
-                defaultPriority: RequestPriority.HIGH,
-                batchSize: 10,
-                timeout: 15000, // 15 segundos
-                retryCount: 3
-            },
-            [RequestType.CHANGE_REQUEST]: {
-                defaultPriority: RequestPriority.MEDIUM,
-                batchSize: 5,
-                timeout: 30000, // 30 segundos
-                retryCount: 2
-            },
-            [RequestType.SERVICE_CATALOG]: {
-                defaultPriority: RequestPriority.LOW,
-                batchSize: 20,
-                timeout: 10000, // 10 segundos
-                retryCount: 1
-            },
-            [RequestType.PROBLEM]: {
-                defaultPriority: RequestPriority.MEDIUM,
-                batchSize: 8,
-                timeout: 20000, // 20 segundos
-                retryCount: 2
-            },
-            [RequestType.KNOWLEDGE_ARTICLE]: {
-                defaultPriority: RequestPriority.LOW,
-                batchSize: 15,
-                timeout: 12000, // 12 segundos
-                retryCount: 1
-            },
-            [RequestType.RELEASE_TASK]: {
-                defaultPriority: RequestPriority.MEDIUM,
-                batchSize: 6,
-                timeout: 25000, // 25 segundos
-                retryCount: 2
-            },
-            [RequestType.CONFIGURATION_ITEM]: {
-                defaultPriority: RequestPriority.LOW,
-                batchSize: 10,
-                timeout: 18000, // 18 segundos
-                retryCount: 1
-            }
-        };
-
-        return configs[type] || {
-            defaultPriority: RequestPriority.DEFAULT,
-            batchSize: 8,
-            timeout: 20000, // 20 segundos
-            retryCount: 2
-        };
     }
 
     // static getDefaultType(dto: CreateIncidenceDto): RequestType {
