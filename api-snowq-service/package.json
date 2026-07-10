@@ -51,7 +51,9 @@
     "winston-daily-rotate-file": "^5.0.0"
   },
   "overrides": {
-    "axios": "^1.18.1"
+    "axios": "^1.18.1",
+    "@xhmikosr/decompress": "^10.2.1",
+    "sha.js": "^2.4.12"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

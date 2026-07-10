@@ -72,6 +72,9 @@
     "winston-daily-rotate-file": "^5.0.0",
     "winston-transport": "^4.9.0"
   },
+  "overrides": {
+    "protobufjs": "^7.5.5"
+  },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
