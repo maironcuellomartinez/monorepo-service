@@ -17,6 +17,7 @@ import { MonolithReconcilerJob } from './infrastructure/jobs/monolith-reconciler
 import { SnowSyncJob } from './infrastructure/jobs/snow-sync.job';
 import { SnowOrphanRecoveryJob } from './infrastructure/jobs/snow-orphan-recovery.job';
 import { SlotHoldCleanupJob } from './infrastructure/jobs/slot-hold-cleanup.job';
+import { SnCompanySyncJob } from './infrastructure/jobs/sn-company-sync.job';
 import { ServiceNowProfileEntity } from './infrastructure/persistence/typeorm/entities/servicenow-profile.entity';
 import { CompanyEntity } from './infrastructure/persistence/typeorm/entities/company.entity';
 import { IssueTypeEntity } from './infrastructure/persistence/typeorm/entities/issue-type.entity';
@@ -40,6 +41,7 @@ import { ServiceNowGroupEntity } from './infrastructure/persistence/typeorm/enti
 import { BatchDraftEntity } from './infrastructure/persistence/typeorm/entities/batch-draft.entity';
 import { BatchDraftItemEntity } from './infrastructure/persistence/typeorm/entities/batch-draft-item.entity';
 import { DropCornerSlotsFKForResync1745088000000 } from './infrastructure/persistence/typeorm/migrations/1745088000000-DropCornerSlotsFKForResync';
+import { IncreaseOutboxMaxRetries1783641799581 } from './infrastructure/persistence/typeorm/migrations/1783641799581-IncreaseOutboxMaxRetries';
 
 @Module({
     imports: [
@@ -77,7 +79,7 @@ import { DropCornerSlotsFKForResync1745088000000 } from './infrastructure/persis
             synchronize: process.env.NODE_ENV !== 'production',
             dropSchema: false,
             logging: false,
-            migrations: [DropCornerSlotsFKForResync1745088000000],
+            migrations: [DropCornerSlotsFKForResync1745088000000, IncreaseOutboxMaxRetries1783641799581],
             migrationsRun: true,
         }),
         ConfigModule.forRoot({
@@ -105,6 +107,7 @@ import { DropCornerSlotsFKForResync1745088000000 } from './infrastructure/persis
         SnowSyncJob,
         SnowOrphanRecoveryJob,
         SlotHoldCleanupJob,
+        SnCompanySyncJob,
     ],
 })
 export class MonolithModule implements NestModule {

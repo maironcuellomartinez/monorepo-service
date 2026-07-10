@@ -20,7 +20,7 @@ import { SERVICENOW_INTEGRATION_SERVICE } from '../../core/ports/incoming/servic
  *
  * Causas habituales de incidencias huérfanas:
  *  1. SN/snowq estaba caído cuando se creó la incidencia y el OutboxWorker
- *     agotó sus 3 reintentos (~35 s).
+ *     agotó sus 5 reintentos (~2.5 min).
  *  2. El ReconcilerJob recibió status FAILED de snowq y limpió el correlationId
  *     sin haber registrado el ticket.
  *  3. Bugs previos (ej. cast inseguro de ServiceNowId) que persistieron null.

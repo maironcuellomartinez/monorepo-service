@@ -29,7 +29,7 @@ export class OutboxEventEntity {
     retry_count: number;
 
     /** Máximo de reintentos antes de mover a fallidos. */
-    @Column({ type: 'int', default: 3 })
+    @Column({ type: 'int', default: 5 })
     max_retries: number;
 
     /** Último mensaje de error capturado. */
