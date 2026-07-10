@@ -277,27 +277,44 @@ event-corner-app                 API Gateway :3000        ABAC :3005            
 
 ---
 
-## 4d. M2M Token (servicio interno)
+## 4d. M2M Token (servicio de infraestructura)
+
+Los servicios de infraestructura (api-gateway, monolith, api-snowq-service, integration-service,
+observability-service) **no** intercambian `apiKey`/`apiSecret` en runtime — el JWT M2M de larga
+duración se emite **manualmente por un admin, una sola vez**, y se copia al `.env` de cada
+servicio como `ABAC_M2M_TOKEN`.
 
 ```
-Servicio Interno (ej. monolith)         ABAC :3005                 API Gateway :3000
-      │
-      │  POST /auth/m2m-token
-      │  { apiKey, apiSecret }
-      ├───────────────────────────►│
-      │                            │  SELECT application + owner + permissions
-      │                            │  bcrypt.compare + expiración + usageLimit
-      │                            │  JwtEd25519Service.sign(
-      │                            │    { sub, type:'service', applicationId,
-      │                            │      permissions, ownerApplicationId },
-      │                            │    ED25519_PRIVATE_KEY, kid: ED25519_KID)
-      │  { accessToken, tokenType: │
-      │    'Bearer', expiresIn,    │
-      │    permissions }           │
-      │◄───────────────────────────┤
+Admin                              ABAC :3005                        Servicio Interno
+  │                                                                    (ej. monolith)
+  │  (una sola vez, setup/rotación)
+  │  POST /applications/m2m-service   (@Roles admin)
+  │  registra la Application type='m2m_service', SIN apiKey/apiSecret
+  ├──────────────────────────►│
+  │                            │
+  │  POST /applications/:id/issue-token   (@Roles admin)
+  ├──────────────────────────►│
+  │                            │  JwtEd25519Service.sign(
+  │                            │    { sub: applicationId, type:'service',
+  │                            │      applicationId, permissions, ownerApplicationId },
+  │                            │    ED25519_PRIVATE_KEY, kid: ED25519_KID)
+  │  { token }  (se muestra    │
+  │   UNA sola vez)            │
+  │◄──────────────────────────┤
+  │
+  │  copia el token al .env del servicio → ABAC_M2M_TOKEN
+  ├───────────────────────────────────────────────────────────────►│
+  │                                                                  │
+  │                                                                  │  usa ABAC_M2M_TOKEN
+  │                                                                  │  como Bearer en cada
+  │                                                                  │  llamada M2M saliente
+```
+
+```
+Servicio Interno (ej. monolith)                                    API Gateway :3000
       │
       │  POST /outbound/servicenow/...
-      │  Authorization: Bearer <JWT EdDSA>
+      │  Authorization: Bearer <ABAC_M2M_TOKEN>
       ├───────────────────────────────────────────────────────►│
       │                                                        │  JwtGuard: @InternalOnly()
       │                                                        │  Verifica LOCAL con
@@ -307,9 +324,13 @@ Servicio Interno (ej. monolith)         ABAC :3005                 API Gateway :
       │◄───────────────────────────────────────────────────────┤
 ```
 
-> El JWT M2M se firma con **Ed25519 (EdDSA)**, no con HMAC/`JWT.sign` genérico. Cada servicio
-> consumidor lo verifica localmente con `ED25519_PUBLIC_KEY` — sin llamar a ABAC por cada
-> request. Ver `libs/ed25519.service/`.
+> `POST /auth/m2m-token` **no existe** (verificado por auditoría 2026-07-09). Los servicios de
+> infraestructura usan el flujo de arriba. Distinto es `POST /auth/service-token` — intercambio
+> `apiKey`+`apiSecret` → JWT de 1h, pensado para integraciones ad-hoc `type='internal'`, no para
+> los servicios de infraestructura del ecosistema. El JWT M2M se firma con **Ed25519 (EdDSA)**,
+> no HMAC/`JWT.sign` genérico. Cada servicio consumidor lo verifica localmente con
+> `ED25519_PUBLIC_KEY` — sin llamar a ABAC por cada request. Ver `libs/ed25519.service/` y
+> `abac-microservice/src/abac/controllers/application.controller.ts`.
 
 ---
 
@@ -591,6 +612,86 @@ API Gateway (AbacGuard)              ABAC :3005                    MySQL abac_db
 
 > Los servicios **no** hablan directo con Prometheus/Jaeger — todo pasa primero por
 > `observability-service`, que reenvía opcionalmente si esas variables están configuradas.
+
+---
+
+## 11. Mapa de credenciales — qué vive dónde
+
+Verificado contra los `.env.development` reales de cada servicio (2026-07-09).
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ abac-microservice — ÚNICO lugar con la clave PRIVADA                        │
+│                                                                                │
+│   ED25519_PRIVATE_KEY  ─┐                                                    │
+│   ED25519_KID           ├─► firma los JWT M2M/OAuth (EdDSA)                  │
+│                          │                                                    │
+│   ED25519_PUBLIC_KEY  ──┘  (también la tiene, para posible verificación local)│
+│                                                                                │
+│   AZURE_TENANT_ID   ─┐                                                       │
+│   AZURE_CLIENT_ID    ├─► validar tokens Entra ID de USUARIOS (JWKS,          │
+│   AZURE_JWKS_URI    ─┘    login.microsoftonline.com) — ver diagrama 4c       │
+│                                                                                │
+│   MySQL abac_db: Application.apiKey / apiSecret (hash bcrypt)                │
+│     → SOLO para type='internal' (POST /auth/service-token) y                │
+│       type='oauth_client' (POST /auth/oauth/token, clientId/clientSecret)    │
+│     → los servicios de infraestructura (m2m_service) NO tienen apiKey/       │
+│       apiSecret — su JWT se emite manual vía POST /applications/:id/         │
+│       issue-token (ver diagrama 4d)                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     │  ED25519_PUBLIC_KEY se distribuye
+                                     │  (para verificar M2M localmente,
+                                     │  sin llamar a ABAC por request)
+                                     ▼
+┌────────────────┬────────────────┬────────────────┬────────────────┬────────────────┐
+│  api-gateway    │   monolith     │ api-snowq-svc  │ integration-svc│observability-svc│
+│                 │                │                │                │                 │
+│ ED25519_PUBLIC_ │ED25519_PUBLIC_ │ED25519_PUBLIC_ │ED25519_PUBLIC_ │ED25519_PUBLIC_  │
+│ KEY             │KEY             │KEY             │KEY             │KEY              │
+│ ABAC_M2M_TOKEN  │ABAC_M2M_TOKEN  │ABAC_M2M_TOKEN  │ABAC_M2M_TOKEN  │ABAC_M2M_TOKEN   │
+│ ABAC_APP_ID     │ABAC_APP_ID     │ABAC_APP_ID     │ABAC_APP_ID     │ (sin ABAC_APP_ID)│
+│ JWT_ISSUER      │JWT_ISSUER      │                │                │JWT_ISSUER        │
+│                 │                │                │                │JWT_AUDIENCE      │
+│ ABAC_API_KEY ⚠️ │                │                │                │                 │
+│  (solo acá —    │                │                │                │                 │
+│   x-api-key     │                │                │                │                 │
+│   para /auth/    │                │                │                │                 │
+│   validate-entra,│                │                │                │                 │
+│   /abac/*)      │                │                │                │                 │
+│                 │                │                │AZURE_TENANT_ID │                 │
+│                 │                │                │AZURE_CLIENT_ID │                 │
+│                 │                │                │AZURE_CLIENT_   │                 │
+│                 │                │                │SECRET ⚠️ (Outlook│                 │
+│                 │                │                │/MS Graph — NO   │                 │
+│                 │                │                │es Entra ID de  │                 │
+│                 │                │                │usuarios, es otro│                │
+│                 │                │                │app registration)│                │
+└────────────────┴────────────────┴────────────────┴────────────────┴────────────────┘
+```
+
+Puntos que suelen confundir:
+
+- **`ABAC_API_KEY` solo vive en `api-gateway`.** Es el `x-api-key` que identifica al gateway
+  como caller confiable de los endpoints "públicos" de ABAC (`/auth/validate-entra`,
+  `/abac/can-access`, `/abac/user-roles`). Ningún otro servicio llama esos endpoints — el resto
+  solo usa su `ABAC_M2M_TOKEN` para llamar a otros servicios de infraestructura.
+- **`ED25519_PRIVATE_KEY` nunca sale de `abac-microservice`.** Todo lo demás en el ecosistema
+  solo tiene la mitad pública (`ED25519_PUBLIC_KEY`), suficiente para *verificar* firmas pero no
+  para firmar. Rotar la clave implica: generar nuevo par, propagar la pública nueva a los 5
+  servicios, reemitir todos los `ABAC_M2M_TOKEN` — idealmente soportando 2 `kid` en paralelo
+  durante la transición.
+- **`integration-service` tiene un SEGUNDO par `AZURE_TENANT_ID`/`AZURE_CLIENT_ID`** (más
+  `AZURE_CLIENT_SECRET`) que **no tiene nada que ver** con el Entra ID de usuarios finales de
+  `abac-microservice`. Es un app registration aparte para Outlook/MS Graph (sync de calendario).
+  Confundir estos dos pares es un error fácil — misma forma de variable, propósito totalmente
+  distinto.
+- **`apiKey`/`apiSecret` de `Application` viven solo en la base de datos de ABAC (hasheados),
+  nunca como variable de entorno en un servicio consumidor** — excepto en `simulators/.env`
+  (`SNOWQ_M2M_TOKEN`), que guarda un JWT ya emitido, no las credenciales crudas.
+- **`api-snowq-service` no tiene `ABAC_API_KEY` ni llama a `/auth/validate-entra`** — solo
+  necesita verificar M2M localmente (`ED25519_PUBLIC_KEY`) y, ocasionalmente, llamar a otros
+  servicios con su `ABAC_M2M_TOKEN`.
 
 ---
 
