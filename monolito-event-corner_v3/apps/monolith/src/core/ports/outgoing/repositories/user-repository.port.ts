@@ -10,6 +10,7 @@ export interface IUserRepository {
     findById(id: UserId): Promise<Result<User | null>>;
     findByExternalId(externalId: string): Promise<Result<User | null>>;
     findByEmail(email: string): Promise<Result<User | null>>;
+    search(query: string, options?: { limit?: number; requireCompany?: boolean; activeOnly?: boolean }): Promise<Result<User[]>>;
     findByCompany(companyId: CompanyId): Promise<Result<User[]>>;
     update(user: User): Promise<Result<void>>;
     delete(id: UserId): Promise<Result<void>>;

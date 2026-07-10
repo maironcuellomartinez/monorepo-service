@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, CheckCircle2, AlertCircle, Calendar, Clock, Search, Monitor, User, RefreshCw } from 'lucide-react'
+import { useUserSearch } from '@/hooks/use-user-search'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -44,7 +45,6 @@ export function CreateIncidentPage() {
 
   // Data lists
   const [corners, setCorners] = useState<Corner[]>([])
-  const [users, setUsers] = useState<MonolithUser[]>([])
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
   const [slots, setSlots] = useState<AvailabilitySlot[]>([])
@@ -78,9 +78,8 @@ export function CreateIncidentPage() {
   const [notes, setNotes] = useState('')
 
   // UI state
-  const [userSearch, setUserSearch] = useState('')
+  const { query: userSearch, setQuery: setUserSearch, results: filteredUsers, loading: loadingUsers } = useUserSearch(usersApi.search)
   const [deviceSearch, setDeviceSearch] = useState('')
-  const [loadingUsers, setLoadingUsers] = useState(false)
   const [loadingDevices, setLoadingDevices] = useState(false)
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -106,20 +105,6 @@ export function CreateIncidentPage() {
       setSelectedDevice(null)
     }
   }, [devices, presetDeviceSerial])
-
-  // Load users when entering step 2
-  const loadUsers = async () => {
-    if (users.length > 0) return
-    setLoadingUsers(true)
-    try {
-      const data = await usersApi.list()
-      setUsers(data.filter((u) => u.isActive && u.companyId !== null))
-    } catch {
-      setError('Error al cargar usuarios')
-    } finally {
-      setLoadingUsers(false)
-    }
-  }
 
   // Load devices when entering step 3 — syncs from Minerva first, then reads local DB
   const loadDevices = async (userId: string) => {
@@ -196,16 +181,6 @@ export function CreateIncidentPage() {
 
   const corner = corners.find((c) => c.id === selectedCornerId)
   const issueType = issueTypes.find((it) => it.id === selectedIssueTypeId)
-
-  const filteredUsers = users.filter((u) => {
-    if (!userSearch.trim()) return true
-    const q = userSearch.toLowerCase()
-    return (
-      u.fullName?.toLowerCase().includes(q) ||
-      u.email?.toLowerCase().includes(q) ||
-      u.principalName?.toLowerCase().includes(q)
-    )
-  })
 
   const filteredDevices = devices.filter((d) => {
     if (!deviceSearch.trim()) return true
@@ -350,7 +325,6 @@ export function CreateIncidentPage() {
                       loadDevices(presetCustomerId)
                     } else {
                       goToStep(2)
-                      loadUsers()
                     }
                   }}
                 >
@@ -378,11 +352,13 @@ export function CreateIncidentPage() {
                 </div>
 
                 {loadingUsers ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">Cargando usuarios...</p>
+                  <p className="text-sm text-muted-foreground text-center py-6">Buscando...</p>
                 ) : (
                   <div className="space-y-1 max-h-72 overflow-y-auto border rounded-md divide-y">
                     {filteredUsers.length === 0 && (
-                      <p className="text-sm text-muted-foreground text-center py-6">Sin resultados</p>
+                      <p className="text-sm text-muted-foreground text-center py-6">
+                        {userSearch.trim().length < 2 ? 'Escribí al menos 2 caracteres para buscar' : 'Sin resultados'}
+                      </p>
                     )}
                     {filteredUsers.map((u) => (
                       <div

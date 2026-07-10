@@ -16,6 +16,7 @@ import {
   techniciansApi, cornersApi, usersApi, companiesApi,
   TechnicianProfile, MonolithUser, Corner, Company,
 } from '@/lib/api'
+import { useUserSearch } from '@/hooks/use-user-search'
 import { cn } from '@/lib/utils'
 
 // ─── CopyableId ───────────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ function UsersTab() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
+  const { query: search, setQuery: setSearch, results: searchResults, loading: searching } = useUserSearch(usersApi.searchAll)
 
   // Edit dialog
   const [editTarget, setEditTarget] = useState<MonolithUser | null>(null)
@@ -88,17 +89,7 @@ function UsersTab() {
 
   useEffect(() => { load() }, [])
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return users
-    return users.filter(
-      (u) =>
-        u.fullName?.toLowerCase().includes(q) ||
-        u.name?.toLowerCase().includes(q) ||
-        u.email?.toLowerCase().includes(q) ||
-        u.principalName?.toLowerCase().includes(q),
-    )
-  }, [users, search])
+  const filtered = search.trim().length >= 2 ? searchResults : users
 
   const openEdit = (u: MonolithUser) => {
     setEditTarget(u)
@@ -177,14 +168,16 @@ function UsersTab() {
         </Alert>
       )}
 
-      {loading ? (
+      {loading || (search.trim().length >= 2 && searching) ? (
         <div className="space-y-2">
           {[1, 2, 3, 4].map((i) => <div key={i} className="h-12 bg-muted animate-pulse rounded-lg" />)}
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Users className="h-10 w-10 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">No hay usuarios registrados</p>
+          <p className="text-muted-foreground">
+            {search.trim() ? 'Sin resultados' : 'No hay usuarios registrados'}
+          </p>
         </div>
       ) : (
         <div className="border rounded-lg overflow-hidden">

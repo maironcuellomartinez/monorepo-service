@@ -14,6 +14,7 @@ export interface IUserService {
     getUser(id: string): Promise<Result<User | null>>;
     getUserByExternalId(externalId: string): Promise<Result<User | null>>;
     getUserByEmail(email: string): Promise<Result<User | null>>;
+    searchUsers(query: string, options?: { requireCompany?: boolean; activeOnly?: boolean }): Promise<Result<User[]>>;
     assignCompany(userId: string, companyId: string | null): Promise<Result<User>>;
     updateUserProfile(userId: string, command: UpdateUserProfileCommand): Promise<Result<User>>;
     deactivateUser(userId: string): Promise<Result<void>>;

@@ -1,6 +1,6 @@
 // api-gateway/inbound/admin/users.controller.ts
-import { Controller, Get, Patch, Delete, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam } from '@nestjs/swagger';
+import { Controller, Get, Patch, Delete, Param, Query, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { MonolithClient } from '../../client/monolith.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { TracingService } from '@app/observability';
@@ -19,6 +19,14 @@ export class AdminUsersController {
     @ApiOperation({ summary: 'Listar todos los usuarios activos' })
     listAll() {
         return this.monolith.get('/users/all');
+    }
+
+    @Get('search')
+    @Permission('user', 'list')
+    @ApiOperation({ summary: 'Buscar usuarios (activos e inactivos) por nombre, email o principal_name' })
+    @ApiQuery({ name: 'q', required: true, description: 'Término de búsqueda (mínimo 2 caracteres)' })
+    search(@Query('q') q: string) {
+        return this.monolith.get('/users/search', { q, activeOnly: 'false' });
     }
 
     @Patch(':id')

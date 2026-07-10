@@ -18,6 +18,7 @@ import {
 import { es } from 'date-fns/locale'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
+import { useUserSearch } from '@/hooks/use-user-search'
 import { Header } from '@/components/header'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -115,7 +116,6 @@ interface CreateIncidentModalProps {
 }
 
 function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateIncidentModalProps) {
-  const [users, setUsers] = useState<MonolithUser[]>([])
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [selectedUser, setSelectedUser] = useState<MonolithUser | null>(null)
@@ -123,16 +123,15 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
   const [selectedIssueTypeId, setSelectedIssueTypeId] = useState('')
   const [manualSerial, setManualSerial] = useState('')
   const [notes, setNotes] = useState('')
-  const [userSearch, setUserSearch] = useState('')
+  const { query: userSearch, setQuery: setUserSearch, results: filteredUsers, loading: loadingUsers, reset: resetUserSearch } = useUserSearch(usersApi.search)
   const [deviceSearch, setDeviceSearch] = useState('')
-  const [loadingUsers, setLoadingUsers] = useState(false)
   const [loadingDevices, setLoadingDevices] = useState(false)
   const [loadingIssueTypes, setLoadingIssueTypes] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // Load users + issue types when modal opens
+  // Reset state + load issue types when modal opens
   useEffect(() => {
     if (!open) return
     setSelectedUser(null)
@@ -141,15 +140,9 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
     setSelectedIssueTypeId('')
     setManualSerial('')
     setNotes('')
-    setUserSearch('')
+    resetUserSearch()
     setDeviceSearch('')
     setError('')
-
-    setLoadingUsers(true)
-    usersApi.list()
-      .then((data) => setUsers(data.filter((u) => u.isActive && u.companyId !== null)))
-      .catch(() => setError('Error al cargar usuarios'))
-      .finally(() => setLoadingUsers(false))
 
     setLoadingIssueTypes(true)
     issueTypesApi.list()
@@ -158,6 +151,7 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
       .finally(() => setLoadingIssueTypes(false))
 
     setTimeout(() => searchRef.current?.focus(), 100)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   // Load devices when a customer is selected — sync from Minerva first, then read local DB
@@ -187,16 +181,6 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
     loadDevices(selectedUser.id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUser])
-
-  const filteredUsers = users.filter((u) => {
-    if (!userSearch.trim()) return true
-    const q = userSearch.toLowerCase()
-    return (
-      u.fullName?.toLowerCase().includes(q) ||
-      u.email?.toLowerCase().includes(q) ||
-      u.principalName?.toLowerCase().includes(q)
-    )
-  })
 
   const filteredDevices = devices.filter((d) => {
     if (!deviceSearch.trim()) return true
@@ -291,11 +275,13 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
               />
             </div>
             {loadingUsers ? (
-              <p className="text-sm text-muted-foreground text-center py-3">Cargando usuarios...</p>
+              <p className="text-sm text-muted-foreground text-center py-3">Buscando...</p>
             ) : (
               <div className="border rounded-md divide-y max-h-40 overflow-y-auto">
                 {filteredUsers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-3">Sin resultados</p>
+                  <p className="text-sm text-muted-foreground text-center py-3">
+                    {userSearch.trim().length < 2 ? 'Escribí al menos 2 caracteres para buscar' : 'Sin resultados'}
+                  </p>
                 ) : filteredUsers.map((u) => (
                   <div
                     key={u.id}

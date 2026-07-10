@@ -38,6 +38,15 @@ export class IncidentsController {
         return this.monolith.get('/users');
     }
 
+    @Get('users/search')
+    @Permission('incident', 'create')
+    @Roles('technician', 'admin', 'super-admin')
+    @ApiOperation({ summary: 'Buscar usuarios activos con empresa — para el picker al crear incidencias' })
+    @ApiQuery({ name: 'q', required: true, description: 'Término de búsqueda (mínimo 2 caracteres)' })
+    async searchUsers(@Query('q') q: string) {
+        return this.monolith.get('/users/search', { q, withCompany: 'true' });
+    }
+
     @Get()
     @Permission('incident', 'list')
     @ApiOperation({ summary: 'Listar incidencias con filtros', description: 'Búsqueda paginada con filtros opcionales.' })

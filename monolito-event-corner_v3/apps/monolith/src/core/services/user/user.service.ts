@@ -103,6 +103,10 @@ export class UserService implements IUserService {
         return this.userRepo.findByEmail(email);
     }
 
+    async searchUsers(query: string, options: { requireCompany?: boolean; activeOnly?: boolean } = {}): Promise<Result<User[]>> {
+        return this.userRepo.search(query, options);
+    }
+
     async updateUserProfile(userId: string, command: UpdateUserProfileCommand): Promise<Result<User>> {
         return this.tracing.run(
             'monolith.updateUserProfile',

@@ -1,6 +1,6 @@
 // internal-api/users/internal-users.controller.ts
-import { Controller, Get, Post, Patch, Delete, Body, Param, Inject, HttpCode, HttpStatus, HttpException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Inject, HttpCode, HttpStatus, HttpException, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { IsString, IsEmail, IsOptional, IsNotEmpty } from 'class-validator';
 import { USER_SERVICE } from '@app/core/ports/incoming/service-tokens';
 import { IUserService } from '@app/core/ports/incoming/user/user-service.port';
@@ -231,6 +231,46 @@ export class InternalUsersController {
         if (result.isFailure) {
             throw new HttpException({ message: result.unwrapError().message }, HttpStatus.BAD_REQUEST);
         }
+    }
+
+    /**
+     * Búsqueda de usuarios activos por nombre, email o principal_name (UPN).
+     * Reemplaza el filtrado client-side sobre el listado completo.
+     */
+    @Get('search')
+    @ApiOperation({ summary: 'Buscar usuarios por nombre, email o principal_name' })
+    @ApiQuery({ name: 'q', required: true, description: 'Término de búsqueda (mínimo 2 caracteres)' })
+    @ApiQuery({ name: 'withCompany', required: false, description: 'Si es "true", solo devuelve usuarios con empresa asignada' })
+    @ApiQuery({ name: 'activeOnly', required: false, description: 'Si es "false", incluye usuarios inactivos (default: true)' })
+    async search(
+        @Query('q') q: string,
+        @Query('withCompany') withCompany?: string,
+        @Query('activeOnly') activeOnly?: string,
+    ) {
+        if (!q || q.trim().length < 2) {
+            throw new BadRequestException('El parámetro q debe tener al menos 2 caracteres');
+        }
+        const result = await this.userService.searchUsers(q.trim(), {
+            requireCompany: withCompany === 'true',
+            activeOnly: activeOnly !== 'false',
+        });
+        if (result.isFailure) {
+            throw new HttpException(
+                { message: result.unwrapError().message },
+                HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+        }
+        return result.unwrap().map((user) => ({
+            id: user.id.toString(),
+            externalId: user.externalId,
+            email: user.email?.value ?? null,
+            name: user.name,
+            lastName: user.lastName,
+            fullName: user.fullName,
+            companyId: user.companyId?.toString() ?? null,
+            principalName: user.principalName,
+            isActive: user.isActive,
+        }));
     }
 
     /**

@@ -117,7 +117,7 @@ export class AuthController {
             name: user.firstName,
             last_name: user.lastName,
             full_name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || undefined,
-            principal_name: user.username,
+            principal_name: user.email,
         });
 
         // Bloquear acceso si el usuario fue desactivado en el monolito

@@ -68,6 +68,25 @@ export class TypeOrmUserRepository implements IUserRepository {
         }
     }
 
+    async search(query: string, options: { limit?: number; requireCompany?: boolean; activeOnly?: boolean } = {}): Promise<Result<User[]>> {
+        const { limit = 20, requireCompany = false, activeOnly = true } = options;
+        try {
+            const like = `%${query}%`;
+            const qb = this.repo.createQueryBuilder('u')
+                .where('(u.full_name LIKE :like OR u.email LIKE :like OR u.principal_name LIKE :like)', { like });
+            if (activeOnly) {
+                qb.andWhere('u.is_active = :active', { active: true });
+            }
+            if (requireCompany) {
+                qb.andWhere('u.company_id IS NOT NULL');
+            }
+            const entities = await qb.orderBy('u.full_name', 'ASC').take(limit).getMany();
+            return Result.ok(entities.map(e => this.toDomain(e)));
+        } catch (error) {
+            return Result.err(error);
+        }
+    }
+
     async findAll(): Promise<Result<User[]>> {
         try {
             const entities = await this.repo.find({

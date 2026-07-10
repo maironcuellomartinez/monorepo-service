@@ -520,8 +520,12 @@ export interface MonolithUser {
 export const usersApi = {
   /** Lista usuarios activos CON empresa — para incident creation picker */
   list: () => apiClient.get<MonolithUser[]>('/api/incidents/users').then((r) => r.data),
+  /** Busca usuarios activos CON empresa por nombre/email/UPN — para incident creation picker */
+  search: (q: string) => apiClient.get<MonolithUser[]>('/api/incidents/users/search', { params: { q } }).then((r) => r.data),
   /** Lista TODOS los usuarios activos (admin) */
   listAll: () => apiClient.get<MonolithUser[]>('/api/admin/users').then((r) => r.data),
+  /** Busca usuarios por nombre/email/UPN (admin) */
+  searchAll: (q: string) => apiClient.get<MonolithUser[]>('/api/admin/users/search', { params: { q } }).then((r) => r.data),
   /** Actualizar perfil (nombre, apellido, empresa) */
   update: (userId: string, dto: { name?: string; lastName?: string; companyId?: string | null }) =>
     apiClient.patch(`/api/admin/users/${userId}`, dto).then((r) => r.data),

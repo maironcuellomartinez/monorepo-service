@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Trash2, Pencil, Send, CheckCircle2, AlertCircle,
@@ -6,6 +6,7 @@ import {
   Calendar, Loader2, PackagePlus, History, X,
 } from 'lucide-react'
 import { useBatchDraft, UIBatchItem } from '@/hooks/use-batch-draft'
+import { useUserSearch } from '@/hooks/use-user-search'
 import { useAuth } from '@/context/auth'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
@@ -67,9 +68,6 @@ interface WizardDialogProps {
   onSave: (values: WizardValues) => Promise<void>
   corners: Corner[]
   issueTypes: IssueType[]
-  users: MonolithUser[]
-  loadingUsers: boolean
-  onLoadUsers: () => void
   initial?: WizardValues
   takenSlots?: TakenSlot[]
   currentUserId?: string
@@ -77,7 +75,7 @@ interface WizardDialogProps {
 
 function IncidentWizardDialog({
   open, onClose, onSave,
-  corners, issueTypes, users, loadingUsers, onLoadUsers,
+  corners, issueTypes,
   initial, takenSlots = [], currentUserId,
 }: WizardDialogProps) {
   const [step, setStep] = useState<WizardStep>(1)
@@ -93,7 +91,7 @@ function IncidentWizardDialog({
   const [notes, setNotes] = useState('')
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [slots, setSlots] = useState<AvailabilitySlot[]>([])
-  const [userSearch, setUserSearch] = useState('')
+  const { query: userSearch, setQuery: setUserSearch, results: filteredUsers, loading: loadingUsers, reset: resetUserSearch } = useUserSearch(usersApi.search)
   const [deviceSearch, setDeviceSearch] = useState('')
   const [loadingDevices, setLoadingDevices] = useState(false)
   const [loadingSlots, setLoadingSlots] = useState(false)
@@ -106,7 +104,7 @@ function IncidentWizardDialog({
     setError('')
     setSlots([])
     setDevices([])
-    setUserSearch('')
+    resetUserSearch()
     setDeviceSearch('')
     setSaving(false)
 
@@ -123,8 +121,7 @@ function IncidentWizardDialog({
         slotIds: initial.slotIds,
         available: true,
       } as AvailabilitySlot)
-      const found = users.find((u) => u.id === initial.customerId)
-      setSelectedUser(found ?? {
+      setSelectedUser({
         id: initial.customerId,
         email: initial.customerEmail,
         fullName: initial.customerName,
@@ -222,11 +219,6 @@ function IncidentWizardDialog({
 
   const corner = corners.find((c) => c.id === selectedCornerId)
   const issueType = issueTypes.find((it) => it.id === selectedIssueTypeId)
-  const filteredUsers = users.filter((u) => {
-    if (!userSearch.trim()) return true
-    const q = userSearch.toLowerCase()
-    return u.fullName?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.principalName?.toLowerCase().includes(q)
-  })
   const filteredDevices = devices.filter((d) => {
     if (!deviceSearch.trim()) return true
     const q = deviceSearch.toLowerCase()
@@ -278,7 +270,7 @@ function IncidentWizardDialog({
             {corner?.description && (
               <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2">{corner.description}</p>
             )}
-            <Button className="w-full" disabled={!selectedCornerId} onClick={() => { goToStep(2); onLoadUsers() }}>
+            <Button className="w-full" disabled={!selectedCornerId} onClick={() => goToStep(2)}>
               Continuar <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
@@ -292,10 +284,14 @@ function IncidentWizardDialog({
               <Input className="pl-9" placeholder="Buscar por nombre o email..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)} />
             </div>
             {loadingUsers ? (
-              <p className="text-sm text-muted-foreground text-center py-6">Cargando usuarios...</p>
+              <p className="text-sm text-muted-foreground text-center py-6">Buscando...</p>
             ) : (
               <div className="space-y-0 max-h-60 overflow-y-auto border rounded-md divide-y">
-                {filteredUsers.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">Sin resultados</p>}
+                {filteredUsers.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    {userSearch.trim().length < 2 ? 'Escribí al menos 2 caracteres para buscar' : 'Sin resultados'}
+                  </p>
+                )}
                 {filteredUsers.map((u) => (
                   <div key={u.id} onClick={() => setSelectedUser(u)}
                     className={cn('flex items-center gap-3 p-3 cursor-pointer transition-colors',
@@ -583,9 +579,6 @@ export function BatchIncidentPage() {
 
   const [corners, setCorners] = useState<Corner[]>([])
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
-  const [users, setUsers] = useState<MonolithUser[]>([])
-  const [loadingUsers, setLoadingUsers] = useState(false)
-  const usersLoaded = useRef(false)
 
   const {
     items, isLoading, addItem, editItem, removeItem, submit, discard,
@@ -604,20 +597,6 @@ export function BatchIncidentPage() {
       setIssueTypes(it)
     })
   }, [])
-
-  const loadUsers = async () => {
-    if (usersLoaded.current) return
-    setLoadingUsers(true)
-    try {
-      const data = await usersApi.list()
-      setUsers(data.filter((u) => u.isActive && u.companyId !== null))
-      usersLoaded.current = true
-    } catch {
-      // non-fatal
-    } finally {
-      setLoadingUsers(false)
-    }
-  }
 
   const openAdd = () => {
     setEditingItem(null)
@@ -862,9 +841,6 @@ export function BatchIncidentPage() {
         onSave={handleSave}
         corners={corners}
         issueTypes={issueTypes}
-        users={users}
-        loadingUsers={loadingUsers}
-        onLoadUsers={loadUsers}
         initial={editingItem ?? undefined}
         currentUserId={user!.abacUserId ?? undefined}
         takenSlots={items
