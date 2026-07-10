@@ -125,6 +125,8 @@ Shared libraries under `libs/`:
 
 Attribute-Based Access Control engine. Three auth entry points: Entra ID (JWKS/RS256 validation + lazy user sync), M2M (apiKey+apiSecret → JWT EdDSA), OAuth 2.0 Client Credentials (scoped JWT). All converge on ABAC for authorization via `json-rules-engine`. Redis for permission/API-key caching. **Firma los tokens M2M con Ed25519 (`ED25519_PRIVATE_KEY`, `ED25519_KID`); los servicios los verifican localmente con `ED25519_PUBLIC_KEY`.**
 
+> **Entra ID — quién es el cliente real:** `abac-microservice` **no** es un cliente de Azure AD registrado que hace login; solo es **verificador** de tokens. `EntraIdService` (`abac-microservice/src/abac/services/entra-id.service.ts`) usa `jwks-rsa` para obtener las claves públicas de Microsoft (`https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys`), resuelve la clave por `kid` y valida la firma (RS256) + `issuer`/`audience` con `AZURE_TENANT_ID`/`AZURE_CLIENT_ID`. El cliente real de Entra ID es **`event-corner-app`** (`event-corner-app/src/pages/login-page.tsx`): es quien autentica al usuario contra Azure y envía el token resultante al backend para su verificación. El warning `AZURE_TENANT_ID o AZURE_CLIENT_ID no configurados — validación Entra ID deshabilitada` solo indica que faltan esas dos env vars en abac-microservice; no implica que abac-microservice deba tener su propio app registration de login.
+
 ### integration-service (standalone — `integration-service/`)
 
 External integrations (Minerva SOAP, DropPoint, Outlook Calendar). CQRS + Event Sourcing. Sincroniza dispositivos hacia el monolith. **No maneja ServiceNow** — ese egress es exclusivo de api-gateway → api-snowq-service. Auth M2M Ed25519 contra ABAC.
@@ -461,6 +463,8 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
 | `apps/monolith/src/infrastructure/jobs/snow-sync.job.ts` | ServiceNow → monolith state polling |
 | `apps/monolith/src/scripts/seed-test-data.ts` | Full seed (companies, corners, users, issue types, CICs, groups) |
 | `abac-microservice/src/abac/services/auth.service.ts` | Entra ID sync, M2M token (EdDSA), OAuth 2.0 Client Credentials |
+| `abac-microservice/src/abac/services/entra-id.service.ts` | Verifica tokens Entra ID vía JWKS (RS256) — NO es el cliente Azure, solo el verificador |
+| `event-corner-app/src/pages/login-page.tsx` | Cliente real de Entra ID — realiza el login contra Azure AD |
 | `abac-microservice/src/abac/services/abac.service.ts` | Core ABAC engine — canAccess(), permission resolution, policy evaluation |
 | `abac-microservice/src/abac/guards/api-key.guard.ts` | API key validation guard with cache-first strategy |
 | `abac-microservice/src/scripts/seed-initial-data.ts` | Initial ABAC seed (users, roles, permissions, policies, applications) |
