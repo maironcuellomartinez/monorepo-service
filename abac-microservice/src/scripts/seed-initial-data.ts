@@ -45,7 +45,7 @@ interface Ed25519KeyPair {
 //  Roles definidos:
 //    super-admin  → todos los permisos
 //    admin        → configuración completa (corners, lockers, usuarios, etc.)
-//    manager      → operaciones (incidencias, solicitudes, reportes)
+//    manager      → operaciones (incidencias, solicitudes, horarios, técnicos, reportes)
 //    technician   → atención de incidencias asignadas
 //    employee     → usuario final (crea incidencias / solicitudes)
 
@@ -188,9 +188,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         'incident:create', 'incident:read', 'incident:list', 'incident:list-all',
         'incident:deliver', 'incident:take', 'incident:release', 'incident:change-status',
         'incident:validate', 'incident:reopen',
-        // Corners & schedules — solo lectura
+        // Corners — solo lectura; schedules/slots — gestión completa
         'corner:read', 'corner:list',
-        'schedule:read', 'schedule:list',
+        'schedule:create', 'schedule:read', 'schedule:list',
+        'schedule:update', 'schedule:delete', 'schedule:assign-technicians',
         'slot:read', 'slot:list', 'slot:expire',
         // Lockers — operación
         'locker:read', 'locker:list', 'locker:assign', 'locker:release',
@@ -200,8 +201,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         // Issue types & companies — solo lectura
         'issue-type:read', 'issue-type:list',
         'company:read', 'company:list',
-        // Technicians — lectura + asignación
-        'technician:read', 'technician:list',
+        // Technicians — gestión completa + asignación
+        'technician:create', 'technician:read', 'technician:list', 'technician:update',
         'corner:assign-technician',
         // Users — lectura
         'user:read',

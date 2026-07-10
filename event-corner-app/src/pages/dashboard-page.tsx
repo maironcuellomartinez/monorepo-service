@@ -1783,31 +1783,308 @@ function TechnicianDashboard() {
   )
 }
 
+// ── Manager dashboard ──────────────────────────────────────────────────────
+// Vista operativa cross-técnico (incident:list-all / request:list-all) — a
+// diferencia de TechnicianDashboard, no depende de user.technicianId.
+
+function ManagerDashboard() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [requests, setRequests] = useState<ServiceRequest[]>([])
+  const [corners, setCorners] = useState<Corner[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [inc, req, corn] = await Promise.allSettled([
+        incidentsApi.listFiltered({ limit: 100 }),
+        requestsApi.list(),
+        cornersApi.list(),
+      ])
+      if (inc.status === 'fulfilled') setIncidents(inc.value.data)
+      if (req.status === 'fulfilled') setRequests(req.value)
+      if (corn.status === 'fulfilled') setCorners(corn.value)
+      if (inc.status === 'rejected' && req.status === 'rejected')
+        setError('Error al cargar datos. Verifica que el api-gateway esté activo.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const activeIncidents = incidents.filter((i) => ACTIVE_STATUSES.has(i.status))
+  const activeRequests = requests.filter((r) => ACTIVE_REQUEST_STATUSES.has(r.status))
+  const unassignedIncidents = activeIncidents.filter((i) => !i.technicianId)
+
+  const incidentQueue = [...activeIncidents].sort((a, b) => {
+    if (!a.scheduledRange && !b.scheduledRange) return 0
+    if (!a.scheduledRange) return 1
+    if (!b.scheduledRange) return -1
+    return new Date(a.scheduledRange.start).getTime() - new Date(b.scheduledRange.start).getTime()
+  })
+
+  return (
+    <div className="flex-1 p-6 space-y-6 overflow-auto">
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">
+            Bienvenido{user?.name ? `, ${user.name}` : ''}
+          </h2>
+          <p className="text-muted-foreground text-sm">Vista operativa del equipo</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
+          Actualizar
+        </Button>
+      </div>
+
+      {/* Quick actions */}
+      <div>
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Acciones rápidas</h3>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => navigate('/incidents/new')}>
+            <Plus className="h-4 w-4" /> Nueva incidencia
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate('/requests/new')}>
+            <Plus className="h-4 w-4" /> Nuevo request
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate('/incidents')}>
+            <AlertCircle className="h-4 w-4" /> Ver incidencias
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate('/requests')}>
+            <ClipboardList className="h-4 w-4" /> Ver requests
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate('/availability')}>
+            <Calendar className="h-4 w-4" /> Disponibilidad
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-medium">Incidencias activas</CardTitle>
+            <Inbox className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loading ? <div className="h-8 w-12 bg-muted animate-pulse rounded" /> : <div className="text-2xl font-bold">{activeIncidents.length}</div>}
+            <p className="text-xs text-muted-foreground mt-1">de todo el equipo</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-medium">Sin técnico asignado</CardTitle>
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="h-8 w-12 bg-muted animate-pulse rounded" />
+            ) : (
+              <div className={cn('text-2xl font-bold', unassignedIncidents.length > 0 && 'text-amber-600 dark:text-amber-400')}>
+                {unassignedIncidents.length}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">requieren asignación</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-medium">Requests activos</CardTitle>
+            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loading ? <div className="h-8 w-12 bg-muted animate-pulse rounded" /> : <div className="text-2xl font-bold">{activeRequests.length}</div>}
+            <p className="text-xs text-muted-foreground mt-1">de todo el equipo</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-medium">Corners activos</CardTitle>
+            <MapPin className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loading ? <div className="h-8 w-12 bg-muted animate-pulse rounded" /> : <div className="text-2xl font-bold">{corners.filter((c) => c.isActive).length}</div>}
+            <p className="text-xs text-muted-foreground mt-1">{corners.length} totales</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Work queues side by side */}
+      <div className="grid gap-6 lg:grid-cols-2">
+
+        {/* Incidents queue */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wrench className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-base">Incidencias</CardTitle>
+                {!loading && <Badge variant="secondary" className="text-xs">{incidentQueue.length}</Badge>}
+              </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/incidents')}>
+                Ver todas <ChevronRight className="h-3 w-3 ml-0.5" />
+              </Button>
+            </div>
+            <CardDescription>Activas del equipo — sin filtrar por técnico</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-14 bg-muted animate-pulse rounded" />)}</div>
+            ) : incidentQueue.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <CheckCircle2 className="h-7 w-7 mx-auto mb-2 text-green-500" />
+                <p className="text-sm">Sin incidencias activas</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {incidentQueue.slice(0, 6).map((inc) => (
+                  <div
+                    key={inc.id}
+                    className="flex items-center gap-3 p-2.5 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(`/incidents/${inc.id}`)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <IncidentStatusBadge status={inc.status} />
+                        <span className="text-xs font-medium truncate">{inc.issueType?.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                        {inc.corner?.name && <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" />{inc.corner.name}</span>}
+                        <span className="flex items-center gap-1 shrink-0">
+                          <Clock className="h-3 w-3" />
+                          {inc.scheduledRange ? formatDate(inc.scheduledRange.start) : formatDate(inc.createdAt)}
+                        </span>
+                        {!inc.technicianId && (
+                          <span className="text-amber-600 dark:text-amber-400 shrink-0">· sin asignar</span>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </div>
+                ))}
+                {incidentQueue.length > 6 && (
+                  <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/incidents')}>
+                    Ver {incidentQueue.length - 6} más
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Requests queue */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-base">Requests</CardTitle>
+                {!loading && <Badge variant="secondary" className="text-xs">{activeRequests.length}</Badge>}
+              </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/requests')}>
+                Ver todos <ChevronRight className="h-3 w-3 ml-0.5" />
+              </Button>
+            </div>
+            <CardDescription>Activos del equipo</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-14 bg-muted animate-pulse rounded" />)}</div>
+            ) : activeRequests.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <CheckCircle2 className="h-7 w-7 mx-auto mb-2 text-green-500" />
+                <p className="text-sm">Sin requests activos</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {activeRequests.slice(0, 6).map((req) => (
+                  <div
+                    key={req.id}
+                    className="flex items-center gap-3 p-2.5 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate('/requests')}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={req.status === 'IN_PROGRESS' ? 'default' : 'secondary'} className="text-xs">{req.status}</Badge>
+                        <span className="text-xs font-medium truncate">{req.issueType?.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                        {req.corner?.name && <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" />{req.corner.name}</span>}
+                        <span className="flex items-center gap-1 shrink-0">
+                          <Clock className="h-3 w-3" />
+                          {req.scheduledRange ? formatDate(req.scheduledRange.start) : formatDate(req.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </div>
+                ))}
+                {activeRequests.length > 6 && (
+                  <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/requests')}>
+                    Ver {activeRequests.length - 6} más
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+      </div>
+    </div>
+  )
+}
+
 // ── Root DashboardPage ─────────────────────────────────────────────────────
 
 export function DashboardPage() {
   const { user, can } = useAuth()
 
-  // Permisos explícitos de dashboard (post-seed) con fallback por permisos de negocio
+  // Permisos explícitos de dashboard (post-seed) con fallback por permisos de negocio.
+  // isAdmin usa permisos exclusivos de admin — company:list/user:list se comparten
+  // con manager y readonly, así que no sirven para distinguir el rol.
   const isAdmin = can('dashboard-admin:read')
-    || can('corner:manage-schedules') || can('company:list') || can('user:list')
-  const isTechnician = !isAdmin && (
+    || can('corner:manage-schedules') || can('user:update') || can('company:update')
+  const isManager = !isAdmin && (
+    can('dashboard-manager:read')
+    || (can('incident:list-all') && can('request:list-all'))
+  )
+  const isTechnician = !isAdmin && !isManager && (
     can('dashboard-technician:read')
     || (!!(user?.technicianId) && (can('incident:take') || can('incident:release')))
   )
-  const isEmployee = !isAdmin && !isTechnician
-
+  const isEmployee = !isAdmin && !isManager && !isTechnician
 
   const title = isEmployee
     ? `Bienvenido${user?.name ? `, ${user.name}` : ''}`
     : isTechnician
     ? 'Panel Técnico'
+    : isManager
+    ? 'Panel de Gestión'
     : 'Dashboard Event Corner'
 
   return (
     <div className="flex flex-col h-full">
       <Header title={title} />
-      {isAdmin ? <AdminDashboard /> : isTechnician ? <TechnicianDashboard /> : <EmployeeDashboard />}
+      {isAdmin ? <AdminDashboard />
+        : isManager ? <ManagerDashboard />
+        : isTechnician ? <TechnicianDashboard />
+        : <EmployeeDashboard />}
     </div>
   )
 }

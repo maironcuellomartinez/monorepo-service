@@ -8,6 +8,7 @@ import {
   Calendar,
   Tag,
   Users,
+  UserCheck,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -26,10 +27,12 @@ import { Button } from '@/components/ui/button'
  *
  * Lógica de visibilidad por rol:
  *  - Dashboard              → todos
- *  - Incidencias / Requests → solo técnicos/admins (staffOnly)
- *  - Disponibilidad         → solo técnicos/admins (staffOnly)
- *  - Corners                → solo admin (corner:manage-schedules)
- *  - Usuarios               → solo admin (user:list)
+ *  - Incidencias / Requests → solo técnicos/admins/managers (staffOnly)
+ *  - Disponibilidad         → solo técnicos/admins/managers (staffOnly)
+ *  - Corners                → admin y manager (schedule:create) — el CRUD de Corner
+ *                             en sí queda gateado adentro de CornersPage (admin-only)
+ *  - Técnicos               → admin y manager (technician:list)
+ *  - Usuarios               → solo admin (user:list) — manager solo tiene user:read
  *  - Tipos de Incidencia    → solo admin (issue-type:create)
  */
 const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; permission?: string; staffOnly?: boolean }[] = [
@@ -37,7 +40,8 @@ const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; permissio
   { to: '/incidents',    icon: AlertCircle,     label: 'Incidencias',         permission: 'incident:list',         staffOnly: true },
   { to: '/incidents/batch', icon: PackagePlus, label: 'Lote Incidencias',    permission: 'incident:list',         staffOnly: true },
   { to: '/requests',     icon: ClipboardList,   label: 'Requests',            permission: 'request:list',          staffOnly: true },
-  { to: '/corners',      icon: MapPin,          label: 'Corners',             permission: 'corner:manage-schedules' },
+  { to: '/corners',      icon: MapPin,          label: 'Corners',             permission: 'schedule:create' },
+  { to: '/technicians',  icon: UserCheck,       label: 'Técnicos',            permission: 'technician:list' },
   { to: '/users',        icon: Users,           label: 'Usuarios',            permission: 'user:list' },
   { to: '/availability', icon: Calendar,        label: 'Disponibilidad',      permission: 'availability:read',     staffOnly: true },
   { to: '/issue-types',  icon: Tag,             label: 'Tipos de Citas',      permission: 'issue-type:create' },
@@ -47,8 +51,10 @@ const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; permissio
 
 export function Sidebar() {
   const { user, logout, can } = useAuth()
-  // Employees manage incidents from the Dashboard — they don't need staff-only pages
-  const isEmployee = !user?.technicianId && can('incident:create') && !can('corner:manage-schedules')
+  // Employees manage incidents from the Dashboard — they don't need staff-only pages.
+  // incident:list-all (no lo tiene employee) distingue staff (admin/manager/technician)
+  // de un empleado común — corner:manage-schedules no sirve porque manager tampoco lo tiene.
+  const isEmployee = !user?.technicianId && can('incident:create') && !can('incident:list-all')
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('ec_sidebar') === 'collapsed'

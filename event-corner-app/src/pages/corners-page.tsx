@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cornersApi, techniciansApi, snowGroupsApi, companiesApi, Corner, CornerSchedule, TechnicianProfile, ServiceNowGroup, SnProfile } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/context/auth'
 
 const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
@@ -109,6 +110,11 @@ function locationLabel(city?: string | null, country?: string) {
 }
 
 export function CornersPage() {
+  const { can } = useAuth()
+  const canCreateCorner = can('corner:create')
+  const canUpdateCorner = can('corner:update')
+  const canDeleteCorner = can('corner:delete')
+
   const [corners, setCorners] = useState<Corner[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -230,6 +236,7 @@ export function CornersPage() {
   // ── Create / Edit ─────────────────────────────────────────────────────────────
 
   const openCreate = () => {
+    if (!canCreateCorner) return
     setEditingCorner(null)
     setForm(EMPTY_CORNER)
     setFormError('')
@@ -241,6 +248,7 @@ export function CornersPage() {
   }
 
   const openEdit = (corner: Corner) => {
+    if (!canUpdateCorner) return
     setEditingCorner(corner)
     const snLoc = corner.servicenowLocation ?? ''
     const snGroup = corner.snowAssignmentGroup ?? ''
@@ -387,6 +395,7 @@ export function CornersPage() {
   // ── Deactivate ────────────────────────────────────────────────────────────────
 
   const handleDeactivate = async (cornerId: string) => {
+    if (!canDeleteCorner) return
     if (!confirm('¿Desactivar este corner?')) return
     try {
       await cornersApi.deactivate(cornerId)
@@ -402,10 +411,12 @@ export function CornersPage() {
   return (
     <div className="flex flex-col h-full">
       <Header title="Corners" onRefresh={load} loading={loading}>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4" />
-          Nuevo Corner
-        </Button>
+        {canCreateCorner && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            Nuevo Corner
+          </Button>
+        )}
       </Header>
 
       <div className="flex-1 p-6 space-y-4 overflow-auto">
@@ -426,10 +437,12 @@ export function CornersPage() {
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <MapPin className="h-10 w-10 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No hay corners configurados</p>
-            <Button className="mt-4" onClick={openCreate}>
-              <Plus className="h-4 w-4" />
-              Crear primer corner
-            </Button>
+            {canCreateCorner && (
+              <Button className="mt-4" onClick={openCreate}>
+                <Plus className="h-4 w-4" />
+                Crear primer corner
+              </Button>
+            )}
           </div>
         ) : (
           <div className="border rounded-lg overflow-hidden">
@@ -508,16 +521,18 @@ export function CornersPage() {
 
                       <TableCell>
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 px-2"
-                            title="Editar corner"
-                            onClick={() => openEdit(corner)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            <span className="ml-1 text-xs">Editar</span>
-                          </Button>
+                          {canUpdateCorner && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2"
+                              title="Editar corner"
+                              onClick={() => openEdit(corner)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              <span className="ml-1 text-xs">Editar</span>
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -528,7 +543,7 @@ export function CornersPage() {
                             <Clock className="h-3.5 w-3.5" />
                             <span className="ml-1 text-xs">Horario</span>
                           </Button>
-                          {corner.isActive && (
+                          {corner.isActive && canDeleteCorner && (
                             <Button
                               variant="ghost"
                               size="sm"

@@ -18,6 +18,7 @@ import {
 } from '@/lib/api'
 import { useUserSearch } from '@/hooks/use-user-search'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/context/auth'
 
 // ─── CopyableId ───────────────────────────────────────────────────────────────
 
@@ -53,6 +54,10 @@ function CopyableId({ value }: { value: string | null | undefined }) {
 // ─── Users Tab ────────────────────────────────────────────────────────────────
 
 function UsersTab() {
+  const { can } = useAuth()
+  const canUpdateUser = can('user:update')
+  const canDeleteUser = can('user:delete')
+
   const [users, setUsers] = useState<MonolithUser[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
@@ -92,6 +97,7 @@ function UsersTab() {
   const filtered = search.trim().length >= 2 ? searchResults : users
 
   const openEdit = (u: MonolithUser) => {
+    if (!canUpdateUser) return
     setEditTarget(u)
     setEditName(u.name ?? '')
     setEditLastName(u.lastName ?? '')
@@ -120,6 +126,7 @@ function UsersTab() {
   }
 
   const handleToggle = async (u: MonolithUser) => {
+    if (!canUpdateUser) return
     try {
       if (u.isActive) {
         await usersApi.deactivate(u.id)
@@ -131,7 +138,7 @@ function UsersTab() {
   }
 
   const handleDelete = async () => {
-    if (!deleteTarget) return
+    if (!deleteTarget || !canDeleteUser) return
     setDeleting(true)
     setDeleteError('')
     try {
@@ -223,33 +230,39 @@ function UsersTab() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          title="Editar usuario"
-                          onClick={() => openEdit(u)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={cn('h-8 w-8', u.isActive ? 'text-amber-600 hover:text-amber-700' : 'text-green-600 hover:text-green-700')}
-                          title={u.isActive ? 'Deshabilitar' : 'Habilitar'}
-                          onClick={() => handleToggle(u)}
-                        >
-                          {u.isActive ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          title="Eliminar usuario"
-                          onClick={() => { setDeleteError(''); setDeleteTarget(u) }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {canUpdateUser && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              title="Editar usuario"
+                              onClick={() => openEdit(u)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn('h-8 w-8', u.isActive ? 'text-amber-600 hover:text-amber-700' : 'text-green-600 hover:text-green-700')}
+                              title={u.isActive ? 'Deshabilitar' : 'Habilitar'}
+                              onClick={() => handleToggle(u)}
+                            >
+                              {u.isActive ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
+                            </Button>
+                          </>
+                        )}
+                        {canDeleteUser && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            title="Eliminar usuario"
+                            onClick={() => { setDeleteError(''); setDeleteTarget(u) }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -341,6 +354,11 @@ function UsersTab() {
 // ─── Technicians Tab ──────────────────────────────────────────────────────────
 
 function TechniciansTab() {
+  const { can } = useAuth()
+  const canCreateTechnician = can('technician:create')
+  const canUpdateTechnician = can('technician:update')
+  const canDeleteTechnician = can('technician:delete')
+
   const [technicians, setTechnicians] = useState<TechnicianProfile[]>([])
   const [corners, setCorners] = useState<Corner[]>([])
   const [allUsers, setAllUsers] = useState<MonolithUser[]>([])
@@ -377,6 +395,7 @@ function TechniciansTab() {
   useEffect(() => { load() }, [])
 
   const openCreate = async () => {
+    if (!canCreateTechnician) return
     setSearch('')
     setSelectedUser(null)
     setFormError('')
@@ -427,7 +446,7 @@ function TechniciansTab() {
   }
 
   const handleDelete = async () => {
-    if (!deleteTarget) return
+    if (!deleteTarget || !canDeleteTechnician) return
     setDeleting(true)
     setDeleteError('')
     try {
@@ -443,6 +462,7 @@ function TechniciansTab() {
   }
 
   const handleToggle = async (tech: TechnicianProfile) => {
+    if (!canUpdateTechnician) return
     try {
       if (tech.disabled) {
         await techniciansApi.enable(tech.id)
@@ -455,12 +475,14 @@ function TechniciansTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4" />
-          Nuevo técnico
-        </Button>
-      </div>
+      {canCreateTechnician && (
+        <div className="flex justify-end">
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            Nuevo técnico
+          </Button>
+        </div>
+      )}
 
       {error && (
         <Alert variant="destructive">
@@ -477,10 +499,12 @@ function TechniciansTab() {
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <UserCheck className="h-10 w-10 text-muted-foreground mb-4" />
           <p className="text-muted-foreground">No hay técnicos registrados</p>
-          <Button className="mt-4" onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Crear primer técnico
-          </Button>
+          {canCreateTechnician && (
+            <Button className="mt-4" onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              Crear primer técnico
+            </Button>
+          )}
         </div>
       ) : (
         <div className="border rounded-lg overflow-hidden">
@@ -519,24 +543,28 @@ function TechniciansTab() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn('h-8 w-8', t.disabled ? 'text-green-600 hover:text-green-700' : 'text-amber-600 hover:text-amber-700')}
-                        title={t.disabled ? 'Habilitar' : 'Deshabilitar'}
-                        onClick={() => handleToggle(t)}
-                      >
-                        {t.disabled ? <ToggleLeft className="h-5 w-5" /> : <ToggleRight className="h-5 w-5" />}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        title="Eliminar técnico"
-                        onClick={() => { setDeleteError(''); setDeleteTarget(t) }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {canUpdateTechnician && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn('h-8 w-8', t.disabled ? 'text-green-600 hover:text-green-700' : 'text-amber-600 hover:text-amber-700')}
+                          title={t.disabled ? 'Habilitar' : 'Deshabilitar'}
+                          onClick={() => handleToggle(t)}
+                        >
+                          {t.disabled ? <ToggleLeft className="h-5 w-5" /> : <ToggleRight className="h-5 w-5" />}
+                        </Button>
+                      )}
+                      {canDeleteTechnician && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          title="Eliminar técnico"
+                          onClick={() => { setDeleteError(''); setDeleteTarget(t) }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -647,29 +675,42 @@ function TechniciansTab() {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function UsersPage() {
+  const { can } = useAuth()
+  // Usuarios (edición/borrado de cuentas reales) queda exclusivo de admin.
+  // Técnicos lo ven admin y manager — manager solo tiene user:read, no user:list.
+  const canSeeUsersTab = can('user:list')
+  const canSeeTechniciansTab = can('technician:list')
+  const defaultTab = canSeeUsersTab ? 'users' : 'technicians'
+
   return (
     <div className="flex flex-col h-full">
       <Header title="Usuarios" />
       <div className="flex-1 p-6 overflow-auto">
-        <Tabs defaultValue="users">
-          <TabsList className="mb-6">
-            <TabsTrigger value="users" className="gap-2">
-              <Users className="h-4 w-4" />
-              Usuarios
-            </TabsTrigger>
-            <TabsTrigger value="technicians" className="gap-2">
-              <UserCheck className="h-4 w-4" />
-              Técnicos
-            </TabsTrigger>
-          </TabsList>
+        <Tabs defaultValue={defaultTab}>
+          {(canSeeUsersTab && canSeeTechniciansTab) && (
+            <TabsList className="mb-6">
+              <TabsTrigger value="users" className="gap-2">
+                <Users className="h-4 w-4" />
+                Usuarios
+              </TabsTrigger>
+              <TabsTrigger value="technicians" className="gap-2">
+                <UserCheck className="h-4 w-4" />
+                Técnicos
+              </TabsTrigger>
+            </TabsList>
+          )}
 
-          <TabsContent value="users">
-            <UsersTab />
-          </TabsContent>
+          {canSeeUsersTab && (
+            <TabsContent value="users">
+              <UsersTab />
+            </TabsContent>
+          )}
 
-          <TabsContent value="technicians">
-            <TechniciansTab />
-          </TabsContent>
+          {canSeeTechniciansTab && (
+            <TabsContent value="technicians">
+              <TechniciansTab />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>

@@ -122,8 +122,10 @@ function AppRoutes() {
           <PermissionRoute permission="request:list"><RequestsPage /></PermissionRoute>
         } />
         <Route path="/requests/new" element={<CreateRequestPage />} />
+        {/* schedule:create: lo tienen admin y manager (corner CRUD queda gateado
+            adentro de CornersPage con corner:create/update/delete, admin-only) */}
         <Route path="/corners" element={
-          <PermissionRoute permission="corner:manage-schedules"><CornersPage /></PermissionRoute>
+          <PermissionRoute permission="schedule:create"><CornersPage /></PermissionRoute>
         } />
         <Route path="/availability" element={
           <PermissionRoute permission="availability:read"><AvailabilityPage /></PermissionRoute>
@@ -137,8 +139,10 @@ function AppRoutes() {
         <Route path="/users" element={
           <PermissionRoute permission="user:list"><UsersPage /></PermissionRoute>
         } />
+        {/* technician:list: lo tienen admin y manager. UsersPage decide internamente
+            qué tabs mostrar según can('user:list') / can('technician:list') */}
         <Route path="/technicians" element={
-          <PermissionRoute permission="user:list"><UsersPage /></PermissionRoute>
+          <PermissionRoute permission="technician:list"><UsersPage /></PermissionRoute>
         } />
         <Route path="/devices" element={
           <PermissionRoute permission="user:list"><DevicesPage /></PermissionRoute>
