@@ -28,7 +28,7 @@ Event Corner es un sistema de gestión de citas técnicas en ubicaciones física
 | Actor | Mecanismo | Token |
 |---|---|---|
 | Usuarios finales | **Entra ID (Azure AD)** — token obtenido via MSAL | Bearer JWT de Microsoft → validado por ABAC via JWKS |
-| Servicios internos | **M2M JWT** — `POST /auth/m2m-token` en ABAC | Bearer JWT firmado con `JWT_SECRET` |
+| Servicios internos | **M2M JWT (Ed25519/EdDSA)** — `POST /auth/m2m-token` en ABAC | ABAC firma con `ED25519_PRIVATE_KEY`/`ED25519_KID`; cada servicio verifica localmente con `ED25519_PUBLIC_KEY` (sin llamada de red) |
 | Apps externas | **OAuth 2.0 Client Credentials** — `POST /auth/oauth/token` | Bearer JWT con scopes limitados |
 
 ---
@@ -558,12 +558,19 @@ enum DayOfWeek {
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| `GET` | `/api/technicians` | Lista técnicos |
-| `GET` | `/api/technicians/:id` | Detalle de técnico |
-| `POST` | `/api/technicians` | Crear técnico |
-| `PUT` | `/api/technicians/:id` | Actualizar técnico |
-| `PATCH` | `/api/technicians/:id/disable` | Deshabilitar técnico |
-| `PATCH` | `/api/technicians/:id/enable` | Habilitar técnico |
+Controller real: `@Controller('api/admin/technicians')` (`apps/api-gateway/src/inbound/admin/technicians.controller.ts`). No existe `PUT` genérico de actualización.
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `GET` | `/api/admin/technicians` | Lista técnicos (filtro opcional `cornerId`) |
+| `GET` | `/api/admin/technicians/:id` | Detalle de técnico |
+| `GET` | `/api/admin/technicians/users` | Lista usuarios disponibles para vincular como técnico |
+| `GET` | `/api/admin/technicians/lookup-user?email=` | Busca usuario por email para vincular |
+| `POST` | `/api/admin/technicians` | Crea técnico vinculado a un `User` existente |
+| `PATCH` | `/api/admin/technicians/:id/corner` | Asigna/transfiere técnico a un corner |
+| `PATCH` | `/api/admin/technicians/:id/disable` | Deshabilitar técnico |
+| `PATCH` | `/api/admin/technicians/:id/enable` | Habilitar técnico |
+| `DELETE` | `/api/admin/technicians/:id` | Eliminar técnico |
 
 ### Usuarios
 
@@ -572,7 +579,7 @@ enum DayOfWeek {
 | `GET` | `/api/users/:id` | Detalle de usuario |
 | `PATCH` | `/api/users/:id/corner` | Actualizar corner habitual |
 
-> Los usuarios se crean automáticamente en el primer login con Entra ID (lazy sync). No hay endpoint de creación manual ni sincronización LDAP.
+> Los usuarios se crean automáticamente en el primer login con Entra ID (lazy sync). **No existe sincronización LDAP ni endpoint de creación manual de usuarios** (`POST /api/users/sync` no existe en el código). La gestión de usuarios/técnicos vive en `apps/api-gateway/src/inbound/admin/technicians.controller.ts` (`GET users`, `GET lookup-user`) y `apps/api-gateway/src/inbound/admin/users.controller.ts`.
 
 ---
 
@@ -837,24 +844,7 @@ curl -X POST http://localhost:3000/api/technicians \
   }'
 ```
 
-### 14. Sincronizar Usuario desde LDAP
-
-```bash
-curl -X POST http://localhost:3000/api/users/sync \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ldap_id": "jperez",
-    "name": "Juan",
-    "last_name": "Pérez",
-    "full_name": "Juan Pérez García",
-    "email": "juan.perez@empresa.com",
-    "company_ldap_name": "santander_es",
-    "ldap_domain": "EMPRESA",
-    "ldap_principal_name": "jperez@empresa.com"
-  }'
-```
-
-### 15. Registrar Token de Dispositivo
+### 14. Registrar Token de Dispositivo
 
 ```bash
 curl -X POST http://localhost:3000/api/users/user_123/device-token \
@@ -917,49 +907,73 @@ sequenceDiagram
 
 ### Flujo 3: Técnico Gestiona Incidencia
 
+El monolith **nunca llama directo a ServiceNow**. La entrega es asíncrona vía patrón Outbox: el cambio de estado se persiste transaccionalmente junto a un `OutboxEvent`, y un worker (`OutboxWorkerService`) lo despacha a un handler (`IncidentServiceNowHandler`) que llama al gateway.
+
 ```mermaid
 sequenceDiagram
     participant T as Técnico
-    participant S as Sistema
+    participant S as Monolith
     participant DB as Base de Datos
+    participant OW as OutboxWorkerService
+    participant GW as api-gateway (ServiceNowOutboundController)
+    participant SQ as api-snowq-service
     participant SN as ServiceNow
 
     T->>S: 1. Ver incidencias disponibles
     S->>DB: SELECT * FROM incidents WHERE status='CREATED'
-    
+
     T->>S: 2. Tomar incidencia
     S->>DB: UPDATE status='IN_PROGRESS', technician_id
-    
+
     T->>S: 3. Durante atención (cambios de estado)
     S->>DB: UPDATE status
     S->>DB: INSERT INTO timeline
-    
+
     T->>S: 4. Cerrar incidencia
-    S->>DB: UPDATE status='CLOSED'
-    S->>SN: Cerrar ticket
-    S-->>U: Notificar cierre
+    S->>DB: UPDATE status='CLOSED' + INSERT OutboxEvent (misma transacción)
+
+    OW->>DB: 5. Polling periódico de eventos pendientes
+    OW->>S: 6. IncidentServiceNowHandler procesa el evento
+    S->>GW: 7. Bearer M2M EdDSA → PATCH /outbound/servicenow/immediate/incidents/{sysId}/close
+    GW->>SQ: 8. Bearer M2M EdDSA → PATCH /snow-requests/immediate/incidents/{sysId}/close
+    SQ->>SN: 9. Basic Auth → PATCH /api/now/v2/table/incident/{sysId}
+    SN-->>SQ: 10. Ticket cerrado
+    SQ-->>GW: 11. OK
+    GW-->>S: 12. OK
+    S-->>T: 13. Notificar cierre
 ```
 
 ### Flujo 4: Técnico Crea Request
 
+La creación también pasa por Outbox: el `Request` se persiste junto a su `OutboxEvent`, y el worker crea el ticket en ServiceNow en dos fases (síncrona inmediata + fallback async) a través del gateway y api-snowq-service.
+
 ```mermaid
 sequenceDiagram
     participant T as Técnico
-    participant S as Sistema
+    participant S as Monolith
     participant DB as Base de Datos
+    participant OW as OutboxWorkerService
+    participant GW as api-gateway (ServiceNowOutboundController)
+    participant SQ as api-snowq-service
     participant SN as ServiceNow
 
     T->>S: 1. Selecciona tipo REQUEST
     T->>S: 2. Busca usuario
     T->>S: 3. Introduce datos
     T->>S: 4. Confirma
-    
-    S->>DB: 5. Crea request
-    S->>SN: 6. Crea ticket en ServiceNow
-    SN-->>S: 7. sys_id, number
-    S->>DB: 8. Actualiza con IDs SN
-    
-    S-->>T: 9. Request creada
+
+    S->>DB: 5. Crea request + INSERT OutboxEvent (misma transacción)
+
+    OW->>DB: 6. Polling periódico de eventos pendientes
+    OW->>GW: 7. Bearer M2M EdDSA → POST /outbound/servicenow/immediate/service-catalog (fase síncrona)
+    GW->>SQ: 8. Bearer M2M EdDSA → POST /snow-requests/immediate/service-catalog
+    SQ->>SN: 9. Basic Auth → POST /api/now/v2/table/sc_req_item
+    SN-->>SQ: 10. sys_id, number
+    SQ-->>GW: 11. sys_id, number
+    GW-->>S: 12. sys_id, number (o correlationId si cae al fallback async)
+    S->>DB: 13. Actualiza request con servicenow_id/servicenow_number
+
+    S-->>T: 14. Request creada
 ```
 
 ---
@@ -972,7 +986,7 @@ sequenceDiagram
 |----------|-------------------|-------------------|
 | `company` | `user.companyId` → `company.servicenowProfile.snowCompanySysId` | `request.companyId` → `company.servicenowProfile.snowCompanySysId` |
 | `category` | `issueType.servicenowCategory` | `issueType.servicenowCategory` |
-| `assignment_group` | Calculado por lógica de negocio (ubicación + tipo) | Calculado por lógica de negocio |
+| `assignment_group` | `resolveAssignmentGroup()` — cadena de 3 niveles (ver abajo) | `resolveAssignmentGroup()` — misma cadena de 3 niveles |
 | `location` | `corner.servicenowLocation` | `corner.servicenowLocation` |
 | `short_description` | `Incidente: {issueType.name}` | `Solicitud: {issueType.name}` |
 | `caller_id` | `user.email` | `technician.email` |
@@ -980,21 +994,13 @@ sequenceDiagram
 
 ### Lógica de Asignación de Grupo
 
-```typescript
-function getServiceNowGroup(corner: Corner, issueType: IssueType): string {
-  // Lógica basada en ubicación y tipo
-  if (corner.name.includes('Madrid')) {
-    if (issueType.deviceType === 'Portátil') return 'SOPORTE_HW_MAD';
-    if (issueType.deviceType === 'Impresora') return 'SOPORTE_IMP_MAD';
-  }
-  
-  if (corner.name.includes('Barcelona')) {
-    if (issueType.deviceType === 'Portátil') return 'SOPORTE_HW_BCN';
-    if (issueType.deviceType === 'Impresora') return 'SOPORTE_IMP_BCN';
-  }
-  
-  return 'SOPORTE_GENERAL';
-}
+`resolveAssignmentGroup()` en `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts:331` sigue esta cadena de fallback (sin lógica hardcodeada por ciudad):
+
+```
+1. CompanyIssueConfig(company.id, issueTypeId)              → servicenow_group específico de la empresa
+2. CompanyIssueConfig(SN_DEFAULT_COMPANY_ID, issueTypeId)   → fallback a la config de la empresa default
+3. Corner.snowAssignmentGroup                                → fallback al grupo configurado en el corner
+4. 'SOPORTE_GENERAL'                                          → fallback final + warn log (indica config faltante)
 ```
 
 ---
@@ -1049,9 +1055,10 @@ if (result.isSuccess) {
 ## Consideraciones de Seguridad
 
 ### Autenticación
-- JWT para usuarios y técnicos
-- LDAP para sincronización de usuarios
-- Roles: `user`, `technician`, `manager`, `admin`
+- **Usuarios finales**: exclusivamente Entra ID (Azure AD) — sin login por contraseña ni LDAP. Token Bearer JWT de Microsoft validado por ABAC vía JWKS/RS256, con lazy sync del usuario en el primer login.
+- **Servicios internos (M2M)**: JWT firmado con Ed25519/EdDSA por ABAC (`ED25519_PRIVATE_KEY`/`ED25519_KID`); cada servicio lo verifica localmente con `ED25519_PUBLIC_KEY`, sin llamada de red.
+- **Apps externas**: OAuth 2.0 Client Credentials, JWT con scopes limitados (scopes = permisos ABAC `resource:action`).
+- Autorización vía ABAC (`json-rules-engine`): permisos `resource:action` resueltos por rol/política, no por roles fijos hardcodeados.
 
 ### Validaciones
 - Todos los inputs se validan con class-validator

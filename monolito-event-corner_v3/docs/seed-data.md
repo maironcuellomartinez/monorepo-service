@@ -23,7 +23,7 @@ cd ../servicenow-clone-backend && npm run seed
 
 ---
 
-## Seed ABAC (`npm run abac:seed`)
+## Seed ABAC (`npm run seed`, desde `abac-microservice/`)
 
 ### Aplicación creada
 
@@ -44,11 +44,11 @@ ABAC_API_KEY=<apiKey>
 
 > **Nota:** Estos son usuarios ABAC de administración/desarrollo. Los **usuarios finales** no se crean vía seed — se crean automáticamente en el primer login con Entra ID (lazy sync).
 
+`seed-initial-data.ts` crea un único usuario (array `usersToCreate` con una sola entrada) — **no crea** usuarios "Admin" ni "Manager", aunque los roles `admin` y `manager` sí quedan definidos en ABAC para asignarlos manualmente después.
+
 | Usuario | Email | Rol | Propósito |
 |---|---|---|---|
-| Super Admin | ver `initial-credentials.json` | `super-admin` | Administración del sistema |
-| Admin | `admin@eventcorner.com` | `admin` | Gestión de la plataforma |
-| Manager | `manager@eventcorner.com` | `manager` | Gestión de corners y técnicos |
+| Super Admin | ver `initial-credentials.json` (default `superadmin@eventcorner.com`) | `super-admin` | Administración del sistema |
 
 > Las contraseñas del seed son solo para acceso de administración en desarrollo.
 > Se generan aleatoriamente en cada ejecución — ver `apps/abac-microservice/initial-credentials.json` (gitignored).
@@ -56,12 +56,13 @@ ABAC_API_KEY=<apiKey>
 
 ---
 
-## Seed M2M (`npm run abac:seed:m2m`)
+## Seed M2M (`npm run seed:m2m`, desde `abac-microservice/`)
 
-Crea 4 cuentas de servicio (`accountType = 'service'`). Las credenciales se imprimen
-en consola al finalizar y **no se almacenan en claro** — si se pierden, rotar con:
+Crea 6 cuentas de servicio (`accountType = 'service'`, `SERVICE_DEFINITIONS` en
+`seed-m2m-services.ts`). Las credenciales se imprimen en consola al finalizar y
+**no se almacenan en claro** — si se pierden, rotar con:
 ```bash
-npm run abac:seed:m2m
+npm run seed:m2m
 ```
 
 ### Cuentas de servicio
@@ -72,6 +73,10 @@ npm run abac:seed:m2m
 | Monolith | `svc-monolith@eventcorner.internal` | `service-account` |
 | Integration Service | `svc-integration@eventcorner.internal` | `service-account` |
 | api-snowq-service | `svc-snowq@eventcorner.internal` | `service-account` |
+| api-middleware-service | `svc-api-middleware-service@eventcorner.internal` | `service-account` |
+| observability-service | `svc-observability-service@eventcorner.internal` | `service-account` |
+
+> `api-middleware-service` fue retirado del ecosistema (ver nota en CLAUDE.md) pero el script de seed todavía genera su cuenta M2M. `observability-service` sí es parte activa del ecosistema (sink de telemetría) y necesita su `ABAC_M2M_TOKEN` igual que el resto.
 
 ### Variables de entorno a actualizar
 
@@ -166,11 +171,11 @@ SN_DEFAULT_COMPANY_SYS_ID=c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8
 ## Re-seed (reset completo)
 
 ```bash
-# Resetear ABAC y M2M (pregunta confirmación)
-npm run abac:seed:full
+# Resetear ABAC y M2M (pregunta confirmación) — desde abac-microservice/
+npm run seed:full
 
 # Luego actualizar .env en cada servicio con las nuevas credenciales
-# Luego re-seed monolith si es necesario
+# Luego re-seed monolith si es necesario — desde monolito-event-corner_v3/
 npm run monolith:seed
 ```
 

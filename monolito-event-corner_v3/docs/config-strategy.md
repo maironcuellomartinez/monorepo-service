@@ -33,12 +33,12 @@ Muchas eran artefactos de sistemas que no existen en el nuevo (Minerva, lockers 
 
 | Config legacy             | Variable actual en api-gateway            |
 |---------------------------|-------------------------------------------|
-| `servicenow_url`          | `OUTBOUND_GATEWAY_URL`                    |
-| `servicenow_token`        | `OUTBOUND_GATEWAY_CLIENT_ID/SECRET`       |
 | JWT secret                | `JWT_SECRET`                              |
 | JWT issuer / audience     | `JWT_ISSUER` / `JWT_AUDIENCE`             |
 | ABAC microservice URL     | `ABAC_URL`                                |
 | Inventory URL             | `EXTERNAL_INVENTORY_URL`                  |
+
+> ⚠️ **`OUTBOUND_GATEWAY_URL` / `OUTBOUND_GATEWAY_CLIENT_ID` / `OUTBOUND_GATEWAY_SECRET`**: siguen presentes en `apps/api-gateway/.env.*` pero son config **muerta** de un diseño previo ("Corporate Gateway" con OAuth) que fue descartado. No se leen en ningún archivo de `apps/api-gateway/src`. El egress real hacia ServiceNow es vía `SNOWQ_URL` → `api-snowq-service` (ver `apps/api-gateway/src/outbound/servicenow/servicenow-outbound.controller.ts`). Pendiente de limpieza: eliminar esas variables de los `.env.*`.
 
 ---
 

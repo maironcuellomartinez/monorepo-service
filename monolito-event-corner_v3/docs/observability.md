@@ -99,11 +99,11 @@
             CorrelationMiddleware_v2 → ALS: { correlationId: 'abc-123' }  ✓
             CorrelationInterceptor  → ALS: { correlationId: 'abc-123' }  ✓
               │
-              ├─ ServiceNowProxyAdapter  (@nestjs/axios, sin propagación)
-              │      headers: { Authorization: Bearer ... }  ← NO x-correlation-id  ✗
+              ├─ ServiceNowProxyAdapter  (@nestjs/axios, usa CorrelationIdService)
+              │      headers: { Authorization: Bearer ..., x-correlation-id: abc-123 }  ✓
               │
-              └─ InventoryHttpAdapter  (@nestjs/axios, sin propagación)
-                     headers: { Authorization: Bearer ... }  ← NO x-correlation-id  ✗
+              └─ InventoryHttpAdapter  (@nestjs/axios, usa CorrelationIdService)
+                     headers: { Authorization: Bearer ..., x-correlation-id: abc-123 }  ✓
 
 ---
 

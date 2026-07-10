@@ -252,23 +252,15 @@ se salta (`SKIP`) y se evalúa la siguiente.
 | `employee` | Usuario final | Crea y consulta sus propias incidencias y solicitudes. Puede cancelar y cerrar las suyas. |
 | `readonly` | Auditoría | Solo lectura en todos los recursos. Sin ninguna acción de escritura. |
 
-### Constraints por rol
+### Constraints por rol — NO IMPLEMENTADO
 
-Los constraints se almacenan en el campo `constraints` de la tabla `roles` (JSON).
-Afectan la lógica de sesión/autenticación del microservicio.
-
-| Rol | maxSessions | sessionTimeout | canDeactivateSelf |
-|---|---|---|---|
-| `super-admin` | 1 | 1 800 s (30 min) | No |
-| `admin` | 3 | 14 400 s (4 h) | No |
-| `manager` | 5 | 28 800 s (8 h) | No |
-| `technician` | 3 | 28 800 s (8 h) | No |
-| `employee` | 2 | 14 400 s (4 h) | Sí |
-| `readonly` | 2 | 28 800 s (8 h) | No |
-
-- **maxSessions**: cantidad máxima de tokens de sesión activos simultáneamente.
-- **sessionTimeout**: segundos de inactividad antes de que la sesión expire.
-- **canDeactivateSelf**: si el usuario puede deshabilitar su propia cuenta.
+> **Nota:** esta sección describía un campo `constraints` (JSON, con `maxSessions` /
+> `sessionTimeout` / `canDeactivateSelf`) en la tabla `roles`. Ese campo **no existe** en
+> `role.entity.ts` — `Role` no tiene columna `constraints`. Hubo un campo `constraints` en
+> `role_permissions` en migraciones antiguas, pero fue eliminado y `role-permission.entity.ts`
+> tampoco lo declara actualmente. No hay ninguna lógica de sesión/autenticación en el código
+> que lea `maxSessions`, `sessionTimeout` ni `canDeactivateSelf` para ningún rol.
+> La tabla se retira de esta guía hasta que exista una implementación real que la respalde.
 
 ---
 
@@ -559,13 +551,19 @@ Authorization: Bearer <admin-jwt>
 
 **Distinción importante vs M2M interno:**
 
-| | M2M interno (`POST /auth/m2m-token`) | OAuth externo (`POST /auth/oauth/token`) |
-|---|---|---|
-| Quién lo usa | Servicios internos (monolith, snowq) | Apps externas (BI, integraciones) |
-| `Application.type` | `'internal'` | `'oauth_client'` |
-| Scopes | No aplica | Filtrado por `application.scopes` |
-| Endpoint en gateway | `@IsInternal()` — bypassa guards | Ruta normal — `AbacGuard` evalúa |
-| Respuesta | `{ accessToken, ... }` | `{ access_token, ... }` (RFC 6749) |
+No existe un único endpoint `/auth/m2m-token`. Hay dos mecanismos distintos según el tipo de
+`Application`, más el flujo OAuth externo:
+
+| | M2M infraestructura (`POST /applications/:id/issue-token`) | M2M ad-hoc (`POST /auth/service-token`) | OAuth externo (`POST /auth/oauth/token`) |
+|---|---|---|---|
+| Quién lo usa | Servicios de infraestructura (api-gateway, monolith, snowq, etc.) | Integraciones puntuales que ya tienen `apiKey`/`apiSecret` | Apps externas (BI, integraciones) |
+| `Application.type` | `'m2m_service'` | `'internal'` | `'oauth_client'` |
+| Credenciales | Ninguna — requiere JWT admin (`JwtAuthGuard` + rol `admin`) | `apiKey` + `apiSecret` en el body | `client_id` + `client_secret` |
+| Duración del token | `durationDays` del body (máx. 730) o `Application.tokenDurationDays` (default 365) | Fija: 1 hora (3600 s) | Configurable, RFC 6749 (`expires_in`) |
+| Scopes | No aplica | No aplica | Filtrado por `application.scopes` |
+| Respuesta | `{ token, expiresAt, applicationName, durationDays }` | `{ accessToken, ... }` | `{ access_token, ... }` (RFC 6749) |
+
+Ver `auth.controller.ts` (`serviceToken`) y `application.controller.ts` (`issueM2mToken`) para el detalle exacto.
 
 ---
 
@@ -597,14 +595,14 @@ AZURE_JWKS_URI=https://login.microsoftonline.com/${AZURE_TENANT_ID}/discovery/v2
 **Primer login de un usuario Entra ID:**
 El usuario se crea automáticamente en ABAC (lazy sync) sin roles → `permissions: []`. Un admin debe asignarle roles:
 ```bash
-POST /user-roles
+POST /users/<USER_ID>/roles
 Authorization: Bearer <admin-jwt>
 {
-  "userId": "<uuid-creado-por-sync>",
   "roleId": "<uuid-del-rol>",
   "applicationId": "<ABAC_APP_ID>"
 }
 ```
+`<USER_ID>` va en el path (uuid creado por el lazy sync), no en el body.
 
 ---
 
@@ -615,7 +613,7 @@ Authorization: Bearer <admin-jwt>
 | Comando | Qué hace |
 |---|---|
 | `npm run abac:seed` | Seed principal: aplicación, roles, permisos, políticas, 7 usuarios |
-| `npm run abac:seed:m2m` | Cuentas de servicio M2M para 4 servicios internos |
+| `npm run abac:seed:m2m` | Registra/actualiza las 6 Applications `type='m2m_service'` (ver `SERVICE_DEFINITIONS` en `seed-m2m-services.ts`) y (re)emite sus JWT |
 | `npm run abac:seed:full` | `abac:seed` + `abac:seed:m2m` en el orden correcto |
 | `npm run monolith:seed` | Datos de negocio del monolito (companies, corners, etc.) |
 
@@ -657,17 +655,23 @@ Al finalizar genera `apps/abac-microservice/initial-credentials.json` con las cr
 # apps/api-gateway/.env.*  (y equivalente en cada servicio)
 ABAC_APP_ID=<appId del initial-credentials.json>
 ABAC_API_KEY=<apiKey del initial-credentials.json>
-ABAC_M2M_TOKEN=<JWT obtenido con POST /auth/m2m-token — ver procedimiento abajo>
+ABAC_M2M_TOKEN=<JWT obtenido con `npm run abac:seed:m2m` o POST /applications/:id/issue-token — ver procedimiento abajo>
 ```
 
-Las credenciales de cada servicio (apiKey + apiSecret) se muestran una vez en consola
-al ejecutar `abac:seed:m2m`. Si se pierden, re-ejecutar para rotarlas.
+Las credenciales de usuarios (email/password) se muestran una vez en consola al ejecutar
+`abac:seed`. **Los servicios M2M de infraestructura no tienen `apiKey`/`apiSecret`** — ver más abajo.
 
 ### Rotación M2M
 
-El modelo de autenticación M2M usa JWT de larga duración (configurable por servicio).
-Las credenciales (`apiKey`/`apiSecret`) se usan **solo para obtener el JWT**; el JWT resultante
-es lo que se guarda en `ABAC_M2M_TOKEN` de cada `.env`.
+> **Modelo real (post-refactor):** las Applications `type='m2m_service'` (api-gateway, monolith,
+> integration-service, api-snowq-service, api-middleware-service, observability-service) se crean
+> con `apiKey=NULL` y `apiSecret=NULL` (`application.service.ts` → `createM2mService`,
+> `seed-m2m-services.ts:156-190`). **No existen cuentas de servicio (`svc-*@*.internal`), ni
+> roles ni permisos asociados** — el script `seed-m2m-services.ts` limpia activamente cualquier
+> resto de ese diseño legacy (líneas 114-149) en cada corrida. La identidad del servicio es el
+> propio `applicationId`: el JWT se firma con `sub = applicationId` (no `sub = ownerId` de un
+> usuario) y payload `{ sub, type: 'service', applicationId, applicationName, accountType:
+> 'service', iss, aud }`.
 
 | Servicio | `tokenDurationDays` | Rotación aproximada |
 |---|---|---|
@@ -675,43 +679,64 @@ es lo que se guarda en `ABAC_M2M_TOKEN` de cada `.env`.
 | monolith | 180 | ~Septiembre / ~Marzo |
 | integration-service | 90 | Trimestral |
 | api-snowq-service | 365 | Anual (~Marzo) |
+| api-middleware-service | 180 | ~Septiembre / ~Marzo *(nota: retirado de la infraestructura activa según CLAUDE.md, pero el seed lo sigue registrando)* |
+| observability-service | 365 | Anual (~Marzo) |
 
-> Escalonar las fechas reales para que no coincidan todas el mismo día.
+> Valores tomados de `SERVICE_DEFINITIONS` en `seed-m2m-services.ts`. Escalonar las fechas
+> reales para que no coincidan todas el mismo día.
 
-#### Procedimiento de rotación (por servicio)
+#### Procedimiento de rotación — opción A: re-seed masivo (todos los servicios)
 
 ```bash
-# 1. Si las credenciales del servicio se perdieron, regenerarlas (idempotente)
+# Idempotente: upsertea las 6 Applications m2m_service y re-firma + imprime los 6 JWT
+# usando ED25519_PRIVATE_KEY directamente (sin llamada HTTP)
 npm run abac:seed:m2m
 
-# 2. Obtener un nuevo JWT M2M para el servicio objetivo
-curl -s -X POST http://localhost:3005/auth/m2m-token \
-  -H "x-api-key: <ABAC_API_KEY_del_servicio>" \
-  -H "Content-Type: application/json" \
-  -d '{"apiKey":"<apiKey>","apiSecret":"<apiSecret>"}' \
-  | jq '.accessToken'
+# Copiar el token impreso para cada servicio a su .env
+#   ABAC_M2M_TOKEN=<token>
 
-# 3. Copiar el accessToken al .env del servicio receptor
-#    ABAC_M2M_TOKEN=<accessToken>
-
-# 4. Reiniciar solo ese servicio
+# Reiniciar cada servicio afectado
 npm run pm2:dev   # o el comando específico del servicio
 
-# 5. Verificar conectividad (ej. gateway → monolith)
+# Verificar conectividad (ej. gateway → monolith)
 curl -s http://localhost:3000/health
 ```
 
-> Las credenciales M2M (`apiKey`/`apiSecret`) de cada servicio están en la salida de
-> `npm run abac:seed:m2m` o en `apps/abac-microservice/initial-credentials.json`.
-
-### Rotar solo credenciales M2M (sin re-seed completo)
+#### Procedimiento de rotación — opción B: un solo servicio, vía API admin
 
 ```bash
-npm run abac:seed:m2m
+# 1. Obtener JWT admin
+curl -s -X POST http://localhost:3005/auth/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@abac.internal","password":"<tu-password>"}' \
+  | jq -r '.token'
+
+# 2. Emitir un nuevo JWT M2M para ese servicio (id = uuid de la Application m2m_service)
+curl -s -X POST http://localhost:3005/applications/<APP_ID>/issue-token \
+  -H "Authorization: Bearer <TOKEN_ADMIN>" \
+  -H "Content-Type: application/json" \
+  -d '{"issuedBy":"<admin-user-id>","durationDays":180}' \
+  | jq '.token'
+# Response: { token, expiresAt, applicationName, durationDays }
+
+# 3. Copiar el token al .env del servicio receptor y reiniciarlo
 ```
 
-Este script es idempotente sobre los usuarios y permisos — solo rota las `apiKey`/`apiSecret`
-de las 4 Applications de servicio. Puede ejecutarse en cualquier momento sin perder datos.
+> `POST /applications/:id/issue-token` requiere JWT admin (`JwtAuthGuard` + rol `admin`,
+> `application.controller.ts:154-163`). Solo aplica a Applications `type='m2m_service'`.
+
+#### Token corto para integraciones ad-hoc (no infraestructura)
+
+Para una app `type='internal'` que sí tiene `apiKey`/`apiSecret` (no un `m2m_service`), existe
+`POST /auth/service-token` — devuelve un JWT de **1 hora** (`{ accessToken, ... }`), pensado para
+integraciones puntuales, no para los servicios del ecosistema:
+
+```bash
+curl -s -X POST http://localhost:3005/auth/service-token \
+  -H "Content-Type: application/json" \
+  -d '{"apiKey":"<apiKey>","apiSecret":"<apiSecret>"}' \
+  | jq '.accessToken'
+```
 
 ---
 

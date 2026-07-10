@@ -1,7 +1,7 @@
 # Modelo Entidad-Relación — Event Corner v3
 
 > Generado a partir de las entidades TypeORM del monolito y ABAC.
-> Última actualización: 2026-04-19
+> Última actualización: 2026-07-09
 ```mermaid
 erDiagram
 
@@ -11,6 +11,8 @@ erDiagram
     servicenow_profiles |o--o{ companies : "configura SN en"
 
     companies |o--o{ users : "tiene"
+    companies ||--o{ company_issue_configs : "configura"
+    issue_types ||--o{ company_issue_configs : "aplica a"
 
     corners ||--o{ technicians : "tiene"
     corners ||--o{ lockers : "tiene"
@@ -157,7 +159,7 @@ erDiagram
         varchar device_type "nullable — Tipo: laptop, phone, tablet, etc."
         varchar assigned_user_id "nullable — soft ref al usuario asignado (sin FK)"
         varchar assigned_user_name "nullable — Nombre del usuario asignado (desnormalizado)"
-        enum    status "ACTIVE | STALE | RETIRED — estado del equipo"
+        enum    status "SYNCED | STALE | NOT_FOUND | SYNC_ERROR | VIRTUAL | DISABLED — estado del equipo"
         boolean is_virtual "true = dispositivo virtual o simulado"
         timestamp last_sync_at "Última sincronización con inventario externo"
         timestamp created_at "Fecha de primera sincronización"
@@ -209,7 +211,7 @@ erDiagram
         varchar current_technician_id FK "nullable — Técnico actualmente asignado"
         varchar device_id FK "nullable — Dispositivo involucrado en la reparación"
         varchar locker_id FK "nullable — Locker asignado durante la atención"
-        varchar status "CREATED|DELIVERED|IN_PROGRESS|PAUSED|CLOSED|CANCELLED|VALIDATED|REOPENED"
+        varchar status "CREATED|DELIVERED|IN_PROGRESS|PENDING_THIRD_PARTY|PENDING_USER|PENDING_SPARE_PART|PENDING_PICKUP|PENDING_REPLACEMENT_DELIVERY|CLOSED|REOPENED|VALIDATED|CANCELED — ver incident-status.enum.ts"
         int     priority "Prioridad del ticket (1 = alta)"
         varchar origin_channel "Canal de origen: CUSTOMER_APP | TECHNICIAN_APP"
         timestamp scheduled_start "Inicio planificado de la cita"
@@ -217,6 +219,7 @@ erDiagram
         int     duration_minutes "Duración calculada a partir de los slots ocupados"
         varchar servicenow_id "nullable — sys_id del ticket en ServiceNow"
         varchar servicenow_number "nullable — número legible del ticket (INC0012345)"
+        varchar snowq_correlation_id "nullable — correlationId de api-snowq-service mientras el ticket está en modo async; se limpia al reconciliar"
         json    metadata "nullable — datos extra del canal de origen"
         text    comment "nullable — último comentario registrado por el técnico"
         timestamp closed_at "nullable — fecha y hora de cierre efectivo"
@@ -257,6 +260,7 @@ erDiagram
         timestamp scheduled_at "Fecha y hora programada para la atención"
         varchar servicenow_id "nullable — sys_id del ticket en ServiceNow"
         varchar servicenow_number "nullable — número legible del ticket (REQ0012345)"
+        varchar snowq_correlation_id "nullable — correlationId de api-snowq-service mientras el ticket está en modo async; se limpia al reconciliar"
         text    notes "nullable — Notas del técnico sobre la solicitud"
         timestamp closed_at "nullable — Fecha y hora de cierre"
         timestamp created_at "Fecha de creación"
@@ -313,6 +317,11 @@ erDiagram
         json    payload "Evento completo serializado (DomainEvent)"
         timestamp published_at "nullable — null = pendiente; fecha = ya despachado"
         timestamp created_at "Fecha de inserción (orden de procesamiento)"
+        int     retry_count "Número de intentos de procesamiento realizados (default 0)"
+        int     max_retries "Máximo de reintentos antes de mover a fallidos (default 5)"
+        text    last_error "nullable — último mensaje de error capturado"
+        timestamp retry_after "nullable — fecha mínima para el próximo reintento (backoff exponencial)"
+        timestamp failed_at "nullable — fecha en que el evento fue marcado como fallido definitivamente"
     }
 
     %% ── Perfiles ServiceNow ───────────────────────────────────────────────────
@@ -326,6 +335,26 @@ erDiagram
         timestamp updated_at "Fecha de última modificación"
     }
 
+    %% ── Configuración de grupo SN por empresa/tipo ────────────────────────────
+    company_issue_configs {
+        varchar config_id PK "Identificador único de la configuración"
+        varchar company_id FK "Empresa a la que aplica esta configuración"
+        varchar issue_type_id FK "Tipo de incidencia al que aplica esta configuración"
+        varchar servicenow_group "Grupo de asignación en SN para esta empresa+tipo (unique junto a company_id, issue_type_id)"
+        int     work_minutes_override "nullable — sobreescribe issue_type.work_minutes para esta empresa"
+        timestamp created_at "Fecha de creación"
+    }
+
+    %% ── Catálogo de grupos ServiceNow ─────────────────────────────────────────
+    servicenow_groups {
+        varchar group_id PK "Identificador único del grupo (sys_id en ServiceNow)"
+        varchar group_name "unique — Nombre del grupo de asignación"
+        varchar description "nullable — Descripción del grupo"
+        boolean is_active "false = grupo desactivado"
+        timestamp created_at "Fecha de creación"
+        timestamp updated_at "Fecha de última modificación"
+    }
+
     %% ── Relaciones ────────────────────────────────────────────────────────────
 
     issue_type_trees ||--o{ issue_types : "agrupa"
@@ -334,6 +363,8 @@ erDiagram
     servicenow_profiles |o--o{ companies : "configura SN en"
 
     companies |o--o{ users : "tiene"
+    companies ||--o{ company_issue_configs : "configura"
+    issue_types ||--o{ company_issue_configs : "aplica a"
 
     corners ||--o{ technicians : "tiene"
     corners ||--o{ lockers : "tiene"
@@ -387,7 +418,7 @@ erDiagram
 | **Disponibilidad** | `corner_schedules`, `schedule_assignments`, `corner_slots` | Horarios y slots generados |
 | **Operaciones** | `incidents`, `incident_slots`, `incident_timeline` | Ciclo de vida de incidencias |
 | **Solicitudes** | `requests`, `request_activities` | Ciclo de vida de solicitudes REQ |
-| **Catálogo SN** | `servicenow_profiles` | Catálogo de configuraciones ServiceNow. Una empresa referencia su perfil vía `profile_id FK`. |
+| **Catálogo SN** | `servicenow_profiles`, `servicenow_groups`, `company_issue_configs` | Catálogo de configuraciones ServiceNow. Una empresa referencia su perfil vía `profile_id FK`. `company_issue_configs` resuelve el grupo de asignación SN por empresa+tipo de incidencia (primer eslabón de `resolveAssignmentGroup()`); `servicenow_groups` es el catálogo local de grupos SN conocidos (sin FK entrante — solo referencia informativa). |
 | **Outbox** | `outbox_events` | Persistencia transaccional de eventos de dominio. El worker los despacha al bus in-memory cada 5 s. |
 | **Batch Drafts** | `incident_batch_drafts`, `incident_batch_draft_items` | Lote de incidencias pendiente de confirmación. Los slots se retienen (HELD) 15 min mientras el técnico arma el lote. |
 
@@ -405,6 +436,8 @@ erDiagram
 | Tabla | Descripción |
 |---|---|
 | `servicenow_profiles` | Catálogo de configuraciones de empresa en ServiceNow. Almacena el `snow_company_sys_id` (sys_id del tenant SN) y el nombre tal como aparece en SN. Varias empresas del mismo cliente corporativo pueden compartir un perfil. |
+| `company_issue_configs` | Configuración de grupo de asignación SN por empresa + tipo de incidencia (`Unique(company_id, issue_type_id)`). Es el **primer eslabón** de `resolveAssignmentGroup()`: si existe fila, su `servicenow_group` gana sobre el fallback de `SN_DEFAULT_COMPANY_ID` y sobre `corners.snow_assignment_group`. También permite `work_minutes_override` por empresa. |
+| `servicenow_groups` | Catálogo local de grupos de asignación SN conocidos (`group_id` = sys_id en SN). Tabla de referencia sin FK entrante — no impone integridad referencial sobre `company_issue_configs.servicenow_group` ni `corners.snow_assignment_group`, solo documenta qué grupos existen. |
 | `companies` | Empresa registrada en el sistema, identificada de forma única por su `name`. Vincula al árbol de tipos de incidencia que le corresponde y, opcionalmente, al perfil SN. Sin perfil asignado, los tickets SN usan la empresa DEFAULT del `.env`. La asignación de usuarios a una empresa la realiza un administrador de forma manual. |
 | `users` | Empleado del sistema. Se crea o actualiza automáticamente al hacer login (sync con el proveedor de identidad). Guarda tokens push para notificaciones móviles (`device_tokens`). No está ligado a un corner fijo: puede ser atendido en cualquier punto. |
 
@@ -429,7 +462,7 @@ erDiagram
 
 | Tabla | Descripción |
 |---|---|
-| `incidents` | Incidencia de soporte creada por un usuario. Registra el técnico actual, el dispositivo y locker involucrados (opcionales), los tiempos planificados y el ticket SN asociado. Estados: `PENDING → IN_PROGRESS → COMPLETED / CANCELLED`. |
+| `incidents` | Incidencia de soporte creada por un usuario. Registra el técnico actual, el dispositivo y locker involucrados (opcionales), los tiempos planificados y el ticket SN asociado. Máquina de estados completa (12 valores + transiciones válidas) en `apps/monolith/src/core/domain/enums/incident-status.enum.ts` — fuente de verdad, no repetir aquí para evitar desincronización. |
 | `incident_slots` | Tabla pivot que relaciona una incidencia con los slots que ocupa. Una incidencia puede requerir múltiples slots contiguos si la atención supera la duración de un slot. |
 | `incident_timeline` | Historial inmutable de cambios de estado de una incidencia. Cada fila registra quién actuó, qué cambio de estado ocurrió, los tiempos reales de trabajo y un comentario opcional. Es la fuente de verdad para auditoría y métricas. |
 
@@ -1137,8 +1170,7 @@ graph TB
           end
 
           subgraph SN_INT["ServiceNowIntegrationService"]
-              RESOLVE["resolveAssignmentGroup()\n─────────────────────────\n1. cornerIssueConfigRepo\n
-  .getServiceNowGroup(cornerId, issueTypeId)\n2. fallback → corner.snowAssignmentGroup\n3. fallback → 'SOPORTE_GENERAL'"]
+              RESOLVE["resolveAssignmentGroup()\n─────────────────────────\n1. CompanyIssueConfig(company.id, issueTypeId)\n2. CompanyIssueConfig(SN_DEFAULT_COMPANY_ID, issueTypeId)\n3. fallback → corner.snowAssignmentGroup\n4. fallback → 'SOPORTE_GENERAL' + warn log"]
               CREATE_INC["createIncidentTicket()"]
               CREATE_REQ["createRequestTicket()"]
               CLOSE_INC["closeIncidentTicket()"]
@@ -1159,7 +1191,7 @@ graph TB
 
           subgraph DB["MySQL event_corner"]
 
-  DB_CIC[("corner_issue_configs\n─────────────\nconfig_id\ncorner_id\nissue_type_id\nservicenow_group\nwork_minutes_override")]
+  DB_CIC[("company_issue_configs\n─────────────\nconfig_id\ncompany_id\nissue_type_id\nservicenow_group\nwork_minutes_override")]
               DB_SNG[("servicenow_groups\n─────────────\ngroup_id\ngroup_name\ndescription\nis_active")]
               DB_INC[("incidents\n─────────────\nincident_id\nstatus\nservicenow_id\nservicenow_number\nsnowq_correlation_id")]
           end
@@ -1218,7 +1250,8 @@ graph TB
   ┌─────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────┐
   │          Flujo          │                                            Qué muestra                                             │
   ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ Resolución de grupo     │ CornerIssueConfig → fallback corner.snow_assignment_group → fallback 'SOPORTE_GENERAL'             │
+  │ Resolución de grupo     │ CompanyIssueConfig(company) → CompanyIssueConfig(default) → corner.snow_assignment_group →         │
+  │                         │ fallback 'SOPORTE_GENERAL'                                                                          │
   ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
   │ Catálogo                │ CRUD admin, referencia local de todos los grupos SN conocidos                                      │
   │ servicenow_groups       │                                                                                                    │
@@ -1233,41 +1266,51 @@ graph TB
   flowchart TD
       START(["Crear ticket en ServiceNow\n(Incident o Request)"])
 
-      Q1{"¿Existe CornerIssueConfig\npara este corner + issueType?"}
-      USE_CIC["Usar servicenow_group\nde CornerIssueConfig\n(configuración específica)"]
+      Q1{"¿Existe CompanyIssueConfig\npara company.id + issueType?"}
+      USE_CIC["Usar servicenow_group\nde CompanyIssueConfig(company)\n(configuración específica)"]
 
-      Q2{"¿Tiene el corner\nsnow_assignment_group?"}
+      Q2{"¿Existe CompanyIssueConfig\npara SN_DEFAULT_COMPANY_ID + issueType?"}
+      USE_DEFAULT_CIC["Usar servicenow_group\nde CompanyIssueConfig(default)\n(configuración por defecto)"]
+
+      Q3{"¿Tiene el corner\nsnow_assignment_group?"}
       USE_CORNER["Usar snow_assignment_group\ndel corner\n(configuración general)"]
 
-      USE_DEFAULT["Usar 'SOPORTE_GENERAL'\n(fallback final)"]
+      USE_DEFAULT["Usar 'SOPORTE_GENERAL'\n(fallback final, + warn log)"]
 
       CALL_SN["Llamar a ServiceNow\ncon assignment_group resuelto"]
 
       START --> Q1
       Q1 -->|"Sí"| USE_CIC
       Q1 -->|"No"| Q2
-      Q2 -->|"Sí"| USE_CORNER
-      Q2 -->|"No"| USE_DEFAULT
+      Q2 -->|"Sí"| USE_DEFAULT_CIC
+      Q2 -->|"No"| Q3
+      Q3 -->|"Sí"| USE_CORNER
+      Q3 -->|"No"| USE_DEFAULT
       USE_CIC --> CALL_SN
+      USE_DEFAULT_CIC --> CALL_SN
       USE_CORNER --> CALL_SN
       USE_DEFAULT --> CALL_SN
 
       style USE_CIC fill:#d4edda,stroke:#28a745
+      style USE_DEFAULT_CIC fill:#d4edda,stroke:#28a745
       style USE_CORNER fill:#fff3cd,stroke:#ffc107
       style USE_DEFAULT fill:#f8d7da,stroke:#dc3545
 
   ```
-   La lógica es simple: prioridad de lo más específico a lo más genérico.
+   La lógica es simple: prioridad de lo más específico a lo más genérico (4 niveles, ver `resolveAssignmentGroup()` en `servicenow-integration.service.ts`).
 
-  ┌───────────────┬───────────────────────────────┬───────────────────────────────────────────────────────────┐
-  │     Nivel     │            Fuente             │                       Cuándo aplica                       │
-  ├───────────────┼───────────────────────────────┼───────────────────────────────────────────────────────────┤
-  │ 🟢 Específico │ corner_issue_configs          │ Hay config para ese corner + tipo de incidencia puntual   │
-  ├───────────────┼───────────────────────────────┼───────────────────────────────────────────────────────────┤
-  │ 🟡 General    │ corners.snow_assignment_group │ El corner tiene un grupo por defecto pero sin config fina │
-  ├───────────────┼───────────────────────────────┼───────────────────────────────────────────────────────────┤
-  │ 🔴 Fallback   │ 'SOPORTE_GENERAL'             │ No hay ninguna configuración definida                     │
-  └───────────────┴───────────────────────────────┴───────────────────────────────────────────────────────────┘
+  ┌───────────────┬────────────────────────────────────────┬───────────────────────────────────────────────────────────┐
+  │     Nivel     │                 Fuente                  │                       Cuándo aplica                       │
+  ├───────────────┼────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ 🟢 Específico │ company_issue_configs (company.id)      │ Hay config para esa empresa + tipo de incidencia puntual  │
+  ├───────────────┼────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ 🟢 Default    │ company_issue_configs (SN_DEFAULT_      │ No hay config para la empresa, pero sí para la empresa     │
+  │               │ COMPANY_ID)                              │ default configurada en el monolith                        │
+  ├───────────────┼────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ 🟡 General    │ corners.snow_assignment_group           │ El corner tiene un grupo por defecto pero sin config fina  │
+  ├───────────────┼────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
+  │ 🔴 Fallback   │ 'SOPORTE_GENERAL'                       │ No hay ninguna configuración definida — se loguea warning │
+  └───────────────┴────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
 
 
   ```mermaid
