@@ -39,18 +39,10 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
         const RESET = '[39m';
 
         const consoleFormat = format.printf(
-            ({ timestamp, level, message, context, correlationId, ...rest }) => {
+            ({ timestamp, level, message, context, correlationId }) => {
                 const now = performance.now();
                 const diff = Math.round(now - this.lastTs);
                 this.lastTs = now;
-
-                // rest-spread arrastra los symbols internos de winston (LEVEL/MESSAGE/SPLAT)
-                // y los campos fijos (label/service); Object.entries() descarta los symbols
-                // (solo toma claves string), y sacamos label/service para no repetirlos
-                // en cada linea — solo queda meta "extra" real, si la hay.
-                const meta = Object.fromEntries(Object.entries(rest));
-                delete meta.label;
-                delete meta.service;
 
                 const cid = correlationId ?? this.correlationId.getCorrelationId();
                 const ctx = context ? ` [${context}]` : '';
@@ -66,16 +58,10 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
                     msg = util.inspect(message, { colors: true, depth: 4, compact: false });
                 }
 
-                let details = '';
-                if (meta?.stack) {
-                    const stack = meta.stack as string | string[];
-                    const lines = Array.isArray(stack) ? stack : stack.split('\n');
-                    details = '\n' + lines.map((l: string) => '  ' + l).join('\n');
-                } else if (Object.keys(meta).length > 0) {
-                    details = '\n' + util.inspect(meta, { colors: true, depth: 4, compact: false });
-                }
-
-                return `[Nest] ${process.pid}  - ${date}   ${lvl}${ctx}${cidPart} ${msg} ${delta}${details}`;
+                // El stack/meta extra no se imprime en consola (queda una sola linea por log);
+                // igual se envia a observability-service porque WinstonHttpTransport lee
+                // info.stack directo del objeto, sin depender de este formateador de consola.
+                return `[Nest] ${process.pid}  - ${date}   ${lvl}${ctx}${cidPart} ${msg} ${delta}`;
             },
         );
 
