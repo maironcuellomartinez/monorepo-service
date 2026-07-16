@@ -15,11 +15,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
-import * as compression from 'compression';
-import * as cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 
 import { AppModule } from './app.module';
+import { LoggerService } from './infrastructure/logging/logger.service';
 import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
 import { TransformResponseInterceptor } from './shared/interceptors/transform-response.interceptor';
@@ -40,10 +39,12 @@ function validateConfig(): void {
   );
 
   if (invalid.length > 0) {
-    const lines = invalid.map(([key, desc]) => `  • ${key} — ${desc}`).join('\n');
+    const lines = invalid
+      .map(([key, desc]) => `  • ${key} — ${desc}`)
+      .join('\n');
     throw new Error(
       `Variables de entorno requeridas no configuradas:\n${lines}\n` +
-      `Revisa el archivo .env.${env} antes de iniciar el servicio.`,
+        `Revisa el archivo .env.${env} antes de iniciar el servicio.`,
     );
   }
 }
@@ -57,24 +58,26 @@ async function bootstrap() {
   }
 
   const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
     bufferLogs: true,
   });
+  app.useLogger(app.get(LoggerService));
 
   const configService = app.get(ConfigService);
   const reflector = app.get(Reflector);
 
   // Security Middleware
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+        },
       },
-    },
-    crossOriginEmbedderPolicy: false,
-  }));
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
 
   // app.use(compression());
   // app.use(cookieParser());
@@ -90,7 +93,11 @@ async function bootstrap() {
       'X-Correlation-ID',
       'X-API-Key',
     ],
-    exposedHeaders: ['X-Correlation-ID', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+    exposedHeaders: [
+      'X-Correlation-ID',
+      'X-RateLimit-Limit',
+      'X-RateLimit-Remaining',
+    ],
   });
 
   // Rate Limiting

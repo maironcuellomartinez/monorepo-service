@@ -15,6 +15,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AuditInterceptor } from './abac/interceptors/audit.interceptor';
 import { prometheusRegistry } from './observability/services/metrics/prometheus.metrics';
+import { LoggerService } from './observability/services/logger.service';
 
 function validateConfig(): void {
     if (env === 'development') return;
@@ -53,7 +54,8 @@ async function bootstrap() {
     await initOpenTelemetry();
     registerOtelShutdownHooks();
 
-    const app = await NestFactory.create(AppModule);
+    const app = await NestFactory.create(AppModule, { bufferLogs: true });
+    app.useLogger(app.get(LoggerService));
     const logger = new Logger('Bootstrap');
 
     // CORS: abierto en development, restringido a orígenes explícitos en staging/production

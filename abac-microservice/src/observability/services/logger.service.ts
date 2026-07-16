@@ -50,6 +50,7 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
 
                 const cid = correlationId ?? this.correlationId.getCorrelationId();
                 const ctx = context ? ` [${context}]` : '';
+                const cidPart = cid ? ` [${cid}]` : '';
                 const delta = diff > 0 ? ` +${diff.toFixed(2)}ms` : '';
 
                 const date = new Date(timestamp as string).toLocaleString('es-ES', { hour12: true });
@@ -68,7 +69,7 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
                     details = '\n' + util.inspect(meta, { colors: true, depth: 4, compact: false });
                 }
 
-                return `[Nest] ${process.pid}  - ${date}   ${level}${ctx} [${cid}] ${msg} ${delta}`;
+                return `[Nest] ${process.pid}  - ${date}   ${level}${ctx}${cidPart} ${msg} ${delta}${details}`;
             },
         );
 
