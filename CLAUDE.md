@@ -259,7 +259,7 @@ OBS_TRACES_URL=http://localhost:3099/ingest/traces
 ```
 API_GATEWAY_PORT=4000                    # dev (staging/prod: 3000)
 MONOLITH_URL=http://localhost:3002       # dev (staging/prod: http://monolith:3001)
-INTEGRATION_SERVICE_URL=http://localhost:3008   # solo Minerva/DropPoint — ya no se usa para ServiceNow
+INTEGRATION_SERVICE_INVENTORY_URL=http://localhost:3008/api/v1/minerva   # solo Minerva/DropPoint — ya no se usa para ServiceNow
 SNOWQ_URL=http://localhost:3090                 # único egress hacia ServiceNow (vía api-snowq-service)
 ABAC_URL=http://localhost:3005
 ABAC_API_KEY=...

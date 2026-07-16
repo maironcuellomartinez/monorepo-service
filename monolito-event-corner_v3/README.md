@@ -109,7 +109,7 @@ cp apps/abac-microservice/.env.example apps/abac-microservice/.env.development
 | `ABAC_URL`                      | URL del microservicio ABAC                       |
 | `ABAC_API_KEY`                  | API key para llamadas al ABAC                    |
 | `INTERNAL_API_TOKEN`            | Token secreto para comunicación interna          |
-| `EXTERNAL_INVENTORY_URL`        | URL del sistema de inventario externo            |
+| `INTEGRATION_SERVICE_INVENTORY_URL` | URL de integration-service (Minerva)         |
 | `OUTBOUND_GATEWAY_URL`          | URL del gateway corporativo (ServiceNow)         |
 | `OUTBOUND_GATEWAY_TOKEN_URL`    | URL para obtener OAuth2 token                    |
 | `OUTBOUND_GATEWAY_CLIENT_ID`    | Client ID OAuth2                                 |

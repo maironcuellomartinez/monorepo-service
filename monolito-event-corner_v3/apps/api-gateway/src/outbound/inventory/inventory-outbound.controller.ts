@@ -21,7 +21,7 @@ import { InternalOnly } from '../../auth/decorators/internal.decorator';
  *   ApiDevice  → { serial_number, model, brand, device_type, assigned_user }
  *   ApiUser    → { userId, nombre, dispositivosAsignados }
  *
- * Env: EXTERNAL_INVENTORY_URL = http://localhost:3008/api/v1/minerva
+ * Env: INTEGRATION_SERVICE_INVENTORY_URL = http://localhost:3008/api/v1/minerva
  *
  * El integration-service envuelve respuestas en { success, data, ... } vía
  * TransformResponseInterceptor. Este controller desenvuelve esa capa antes
@@ -38,7 +38,7 @@ export class InventoryOutboundController {
     private readonly config: ConfigService,
   ) {
     this.inventoryUrl = this.config.get<string>(
-      'EXTERNAL_INVENTORY_URL',
+      'INTEGRATION_SERVICE_INVENTORY_URL',
       'http://localhost:3008/api/v1/minerva',
     );
   }
