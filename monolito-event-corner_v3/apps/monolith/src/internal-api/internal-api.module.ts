@@ -1,7 +1,6 @@
 // internal-api/internal-api.module.ts
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
-import { AllExceptionsFilter } from '@app/shared/filters/http-exception.filter';
+import { APP_GUARD } from '@nestjs/core';
 import { InternalTokenGuard } from './guards/internal-token.guard';
 import { InternalIncidentsController } from './incidents/internal-incidents.controller';
 import { InternalCornersController } from './corners/internal-corners.controller';
@@ -27,29 +26,26 @@ import { BatchDraftService } from '../core/services/batch-draft/batch-draft.serv
  * Solo accesible desde el API Gateway — nunca exponer a internet.
  */
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([BatchDraftEntity, BatchDraftItemEntity]),
-    ],
-    controllers: [
-        InternalIncidentsController,
-        InternalCornersController,
-        InternalAvailabilityController,
-        InternalRequestsController,
-        InternalDevicesController,
-        InternalIssueTypesController,
-        InternalCompanyIssueConfigsController,
-        InternalServiceNowGroupsController,
-        InternalUsersController,
-        InternalTechniciansController,
-        InternalCompaniesController,
-        InternalIssueTypeTreesController,
-        InternalBatchDraftsController,
-    ],
-    providers: [
-        { provide: APP_FILTER, useClass: AllExceptionsFilter },
-        { provide: APP_GUARD, useClass: InternalTokenGuard },
-        TypeOrmBatchDraftRepository,
-        BatchDraftService,
-    ],
+  imports: [TypeOrmModule.forFeature([BatchDraftEntity, BatchDraftItemEntity])],
+  controllers: [
+    InternalIncidentsController,
+    InternalCornersController,
+    InternalAvailabilityController,
+    InternalRequestsController,
+    InternalDevicesController,
+    InternalIssueTypesController,
+    InternalCompanyIssueConfigsController,
+    InternalServiceNowGroupsController,
+    InternalUsersController,
+    InternalTechniciansController,
+    InternalCompaniesController,
+    InternalIssueTypeTreesController,
+    InternalBatchDraftsController,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: InternalTokenGuard },
+    TypeOrmBatchDraftRepository,
+    BatchDraftService,
+  ],
 })
-export class InternalApiModule { }
+export class InternalApiModule {}
