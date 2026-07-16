@@ -29,28 +29,34 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
     ) {
         this.httpTransport = new WinstonHttpTransport();
 
-        const jsonFormat = format.combine(
-            format.timestamp(),
-            format.errors({ stack: true }),
-            format.json({
-                replacer: (_k, v) => {
-                    if (v instanceof Error) {
-                        return { name: v.name, message: v.message, stack: v.stack?.split('\n') };
-                    }
-                    return v;
-                },
-            }),
-        );
+        const LEVEL_COLORS: Record<string, string> = {
+            error: '[31m',
+            warn: '[33m',
+            info: '[32m',
+            debug: '[36m',
+            verbose: '[35m',
+        };
+        const RESET = '[39m';
 
         const consoleFormat = format.printf(
-            ({ timestamp, level, message, context, correlationId, ...meta }) => {
+            ({ timestamp, level, message, context, correlationId, ...rest }) => {
                 const now = performance.now();
                 const diff = Math.round(now - this.lastTs);
                 this.lastTs = now;
 
+                // rest-spread arrastra los symbols internos de winston (LEVEL/MESSAGE/SPLAT)
+                // y los campos fijos (label/service); Object.entries() descarta los symbols
+                // (solo toma claves string), y sacamos label/service para no repetirlos
+                // en cada linea — solo queda meta "extra" real, si la hay.
+                const meta = Object.fromEntries(Object.entries(rest));
+                delete meta.label;
+                delete meta.service;
+
                 const cid = correlationId ?? this.correlationId.getCorrelationId();
                 const ctx = context ? ` [${context}]` : '';
                 const cidPart = cid ? ` [${cid}]` : '';
+                const color = LEVEL_COLORS[level] ?? '';
+                const lvl = `${color}${level.toUpperCase().padStart(5, ' ')}${RESET}`;
                 const delta = diff > 0 ? ` +${diff.toFixed(2)}ms` : '';
 
                 const date = new Date(timestamp as string).toLocaleString('es-ES', { hour12: true });
@@ -69,7 +75,7 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
                     details = '\n' + util.inspect(meta, { colors: true, depth: 4, compact: false });
                 }
 
-                return `[Nest] ${process.pid}  - ${date}   ${level}${ctx}${cidPart} ${msg} ${delta}${details}`;
+                return `[Nest] ${process.pid}  - ${date}   ${lvl}${ctx}${cidPart} ${msg} ${delta}${details}`;
             },
         );
 
@@ -80,8 +86,8 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
                 new transports.Console({
                     format: format.combine(
                         format.label({ label: this.serviceName }),
-                        format.colorize({ all: true }),
-                        jsonFormat,
+                        format.timestamp(),
+                        format.errors({ stack: true }),
                         consoleFormat,
                     ),
                 }),
