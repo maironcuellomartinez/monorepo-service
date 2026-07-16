@@ -256,6 +256,25 @@ export class SnowRequestProcessingService {
     return this.snClient.getCompanies();
   }
 
+  /** Consulta una empresa por sys_id. Retorna null si no existe. */
+  async getCompanyBySysId(
+    sysId: string,
+  ): Promise<{ sys_id: string; name: string } | null> {
+    return this.snClient.getCompanyBySysId(sysId);
+  }
+
+  /** Lista el catálogo de grupos de asignación de ServiceNow (usado por api-gateway). */
+  async getGroups(): Promise<Array<{ sys_id: string; name: string }>> {
+    return this.snClient.getGroups();
+  }
+
+  /** Consulta un grupo de asignación por sys_id. Retorna null si no existe. */
+  async getGroupBySysId(
+    sysId: string,
+  ): Promise<{ sys_id: string; name: string } | null> {
+    return this.snClient.getGroupBySysId(sysId);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
 
   /**

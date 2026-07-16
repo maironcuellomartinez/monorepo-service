@@ -206,6 +206,35 @@ export class SnowRequestImmediateController {
     );
   }
 
+  @Get('companies/:sysId')
+  async getCompanyBySysId(@Param('sysId') sysId: string) {
+    const result = await this.processingService.getCompanyBySysId(sysId);
+    if (result === null)
+      throw new NotFoundException(`Company ${sysId} not found in ServiceNow`);
+    return result;
+  }
+
+  // =============================================
+  // GROUPS CATALOG
+  // =============================================
+
+  @Get('groups')
+  getGroups() {
+    return TracingClient.getInstance().run(
+      'snowq.controller.immediate.getGroups',
+      { kind: 'server' },
+      () => this.processingService.getGroups(),
+    );
+  }
+
+  @Get('groups/:sysId')
+  async getGroupBySysId(@Param('sysId') sysId: string) {
+    const result = await this.processingService.getGroupBySysId(sysId);
+    if (result === null)
+      throw new NotFoundException(`Group ${sysId} not found in ServiceNow`);
+    return result;
+  }
+
   // =============================================
   // GENERIC UPDATE (any table, arbitrary fields)
   // =============================================

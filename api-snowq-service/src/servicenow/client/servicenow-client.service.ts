@@ -202,6 +202,122 @@ export class ServiceNowClientService {
   }
 
   /**
+   * Lista el catálogo de grupos de asignación de ServiceNow (usado por api-gateway
+   * para el picker de corners/CompanyIssueConfig).
+   */
+  async getGroups(): Promise<Array<{ sys_id: string; name: string }>> {
+    return TracingClient.getInstance().run(
+      'snowq.client.servicenow.getGroups',
+      { kind: 'client' },
+      () => this._getGroups(),
+    );
+  }
+
+  private async _getGroups(): Promise<Array<{ sys_id: string; name: string }>> {
+    const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+    const endpoint = `${baseUrl}/sn-groups`;
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(endpoint, {
+          headers: { Authorization: `Basic ${process.env.SN_AUTH}` },
+          timeout: 10000,
+        }),
+      );
+      return response.data;
+    } catch (error: any) {
+      this.logger.error(
+        `getGroups: Error consultando ServiceNow: ${error.message}`,
+      );
+      throw this.errorFactory.create(
+        error.response?.status || 500,
+        `error getting groups from ServiceNow: ${error.message}`,
+        error.message,
+      );
+    }
+  }
+
+  /**
+   * Consulta un grupo de asignación por sys_id. Retorna null si no existe (404).
+   */
+  async getGroupBySysId(
+    sysId: string,
+  ): Promise<{ sys_id: string; name: string } | null> {
+    return TracingClient.getInstance().run(
+      'snowq.client.servicenow.getGroupBySysId',
+      { kind: 'client', attributes: { 'sn.sysId': sysId } },
+      () => this._getGroupBySysId(sysId),
+    );
+  }
+
+  private async _getGroupBySysId(
+    sysId: string,
+  ): Promise<{ sys_id: string; name: string } | null> {
+    const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+    const endpoint = `${baseUrl}/sn-groups/${sysId}`;
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(endpoint, {
+          headers: { Authorization: `Basic ${process.env.SN_AUTH}` },
+          timeout: 10000,
+        }),
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) return null;
+      this.logger.error(
+        `getGroupBySysId: Error consultando ServiceNow: ${error.message}`,
+      );
+      throw this.errorFactory.create(
+        error.response?.status || 500,
+        `error getting group from ServiceNow: ${error.message}`,
+        error.message,
+      );
+    }
+  }
+
+  /**
+   * Consulta una empresa por sys_id. Retorna null si no existe (404).
+   */
+  async getCompanyBySysId(
+    sysId: string,
+  ): Promise<{ sys_id: string; name: string } | null> {
+    return TracingClient.getInstance().run(
+      'snowq.client.servicenow.getCompanyBySysId',
+      { kind: 'client', attributes: { 'sn.sysId': sysId } },
+      () => this._getCompanyBySysId(sysId),
+    );
+  }
+
+  private async _getCompanyBySysId(
+    sysId: string,
+  ): Promise<{ sys_id: string; name: string } | null> {
+    const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+    const endpoint = `${baseUrl}/sn-companies/${sysId}`;
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(endpoint, {
+          headers: { Authorization: `Basic ${process.env.SN_AUTH}` },
+          timeout: 10000,
+        }),
+      );
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 404) return null;
+      this.logger.error(
+        `getCompanyBySysId: Error consultando ServiceNow: ${error.message}`,
+      );
+      throw this.errorFactory.create(
+        error.response?.status || 500,
+        `error getting company from ServiceNow: ${error.message}`,
+        error.message,
+      );
+    }
+  }
+
+  /**
    * Consulta el estado actual de un ticket en ServiceNow.
    * Retorna null si el ticket no existe (404).
    */

@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ServiceNowOutboundController } from './servicenow-outbound.controller';
+import { ServiceNowCatalogClient } from './servicenow-catalog.client';
 import { OutboundResilienceModule } from '../outbound-resilience.module';
 
 /**
@@ -16,21 +17,23 @@ import { OutboundResilienceModule } from '../outbound-resilience.module';
  *   ABAC_M2M_TOKEN   JWT M2M del api-gateway (Ed25519, verificado por M2mJwtGuard en snowq)
  */
 @Module({
-    imports: [
-        ConfigModule,
-        HttpModule.registerAsync({
-            imports: [ConfigModule],
-            useFactory: (config: ConfigService) => ({
-                baseURL: config.get('SNOWQ_URL', 'http://localhost:3090'),
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                },
-            }),
-            inject: [ConfigService],
-        }),
-        OutboundResilienceModule,
-    ],
-    controllers: [ServiceNowOutboundController],
+  imports: [
+    ConfigModule,
+    HttpModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: (config: ConfigService) => ({
+        baseURL: config.get('SNOWQ_URL', 'http://localhost:3090'),
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      }),
+      inject: [ConfigService],
+    }),
+    OutboundResilienceModule,
+  ],
+  controllers: [ServiceNowOutboundController],
+  providers: [ServiceNowCatalogClient],
+  exports: [ServiceNowCatalogClient],
 })
-export class ServiceNowOutboundModule { }
+export class ServiceNowOutboundModule {}

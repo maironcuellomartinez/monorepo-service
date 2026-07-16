@@ -9,6 +9,7 @@ import { InventoryOutboundModule } from './inventory/inventory-outbound.module';
  * Añadir aquí nuevos módulos cuando se integren otros sistemas externos.
  */
 @Module({
-    imports: [ServiceNowOutboundModule, InventoryOutboundModule],
+  imports: [ServiceNowOutboundModule, InventoryOutboundModule],
+  exports: [ServiceNowOutboundModule],
 })
 export class OutboundGatewayModule {}
