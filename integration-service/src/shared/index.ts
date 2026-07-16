@@ -4,3 +4,4 @@ export * from './interceptors/cache.interceptor';
 export * from './interceptors/logging.interceptor';
 export * from './interceptors/timeout.interceptor';
 export * from './interceptors/transform-response.interceptor';
+export * from './utils/error.util';

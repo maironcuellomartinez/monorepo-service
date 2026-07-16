@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MinervaSoapClient, SoapDevice } from './minerva-soap.client';
 import { TracingService } from '../../monitoring/tracing.service';
+import { describeError } from '../../../shared/utils/error.util';
 
 export interface MinervaDevice {
   serialNumber: string;
@@ -53,8 +54,10 @@ export class MinervaConnector {
       const response = await this.soapClient.getDeviceBySerial(serialNumber);
       if (response.status === 'ERROR' || !response.device) return null;
       return this.mapDevice(response.device);
-    } catch (error: any) {
-      this.logger.error(`getDeviceBySerial(${serialNumber}): ${error.message}`);
+    } catch (error) {
+      this.logger.error(
+        `getDeviceBySerial(${serialNumber}): ${describeError(error)}`,
+      );
       throw error;
     }
   }
@@ -63,8 +66,10 @@ export class MinervaConnector {
     try {
       const response = await this.soapClient.getDevicesByUser(usuarioId);
       return (response.devices ?? []).map((d) => this.mapDevice(d));
-    } catch (error: any) {
-      this.logger.error(`getDevicesByUser(${usuarioId}): ${error.message}`);
+    } catch (error) {
+      this.logger.error(
+        `getDevicesByUser(${usuarioId}): ${describeError(error)}`,
+      );
       throw error;
     }
   }
@@ -80,17 +85,27 @@ export class MinervaConnector {
       return response.devices
         .filter((d) => d.tipo === deviceType && !d.usuarioId)
         .map((d) => this.mapDevice(d));
-    } catch (error: any) {
-      this.logger.error(`listAvailableDevices(${deviceType}): ${error.message}`);
+    } catch (error) {
+      this.logger.error(
+        `listAvailableDevices(${deviceType}): ${describeError(error)}`,
+      );
       throw error;
     }
   }
 
-  async assignDevice(request: MinervaAssignmentRequest): Promise<MinervaAssignmentResponse> {
-    return this.tracing.run('integration.connector.minerva.assignDevice', { kind: 'client', attributes: { 'device.serial': request.serialNumber } }, () => this._assignDevice(request));
+  async assignDevice(
+    request: MinervaAssignmentRequest,
+  ): Promise<MinervaAssignmentResponse> {
+    return this.tracing.run(
+      'integration.connector.minerva.assignDevice',
+      { kind: 'client', attributes: { 'device.serial': request.serialNumber } },
+      () => this._assignDevice(request),
+    );
   }
 
-  private async _assignDevice(request: MinervaAssignmentRequest): Promise<MinervaAssignmentResponse> {
+  private async _assignDevice(
+    request: MinervaAssignmentRequest,
+  ): Promise<MinervaAssignmentResponse> {
     try {
       const response = await this.soapClient.assignDevice(
         request.serialNumber,
@@ -100,20 +115,28 @@ export class MinervaConnector {
       if (response.status === 'ERROR') {
         throw new Error(response.message);
       }
-      this.logger.log(`Device ${request.serialNumber} assigned to user ${request.userId}`);
+      this.logger.log(
+        `Device ${request.serialNumber} assigned to user ${request.userId}`,
+      );
       return {
         serialNumber: request.serialNumber,
         assignedAt: new Date().toISOString(),
         status: 'ASSIGNED',
       };
-    } catch (error: any) {
-      this.logger.error(`assignDevice(${request.serialNumber}): ${error.message}`);
+    } catch (error) {
+      this.logger.error(
+        `assignDevice(${request.serialNumber}): ${describeError(error)}`,
+      );
       throw error;
     }
   }
 
   async releaseDevice(serialNumber: string): Promise<void> {
-    return this.tracing.run('integration.connector.minerva.releaseDevice', { kind: 'client', attributes: { 'device.serial': serialNumber } }, () => this._releaseDevice(serialNumber));
+    return this.tracing.run(
+      'integration.connector.minerva.releaseDevice',
+      { kind: 'client', attributes: { 'device.serial': serialNumber } },
+      () => this._releaseDevice(serialNumber),
+    );
   }
 
   private async _releaseDevice(serialNumber: string): Promise<void> {
@@ -123,13 +146,18 @@ export class MinervaConnector {
         throw new Error(response.message);
       }
       this.logger.log(`Device ${serialNumber} released`);
-    } catch (error: any) {
-      this.logger.error(`releaseDevice(${serialNumber}): ${error.message}`);
+    } catch (error) {
+      this.logger.error(
+        `releaseDevice(${serialNumber}): ${describeError(error)}`,
+      );
       throw error;
     }
   }
 
-  async healthCheck(): Promise<{ status: 'HEALTHY' | 'UNHEALTHY'; latencyMs?: number }> {
+  async healthCheck(): Promise<{
+    status: 'HEALTHY' | 'UNHEALTHY';
+    latencyMs?: number;
+  }> {
     try {
       const start = Date.now();
       await this.soapClient.getDeviceBySerial('__health_check__');
