@@ -15,7 +15,7 @@ export class LogEntryEntity {
     @Column({ type: 'text' })
     message: string;
 
-    @Column({ type: 'varchar', length: 36, nullable: true })
+    @Column({ type: 'varchar', length: 64, nullable: true })
     correlationId: string | null;
 
     @Column({ type: 'varchar', length: 64, nullable: true })

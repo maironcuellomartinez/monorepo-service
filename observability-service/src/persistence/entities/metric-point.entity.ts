@@ -26,7 +26,7 @@ export class MetricPointEntity {
     @Column({ type: 'json', nullable: true })
     labels: Record<string, string> | null;
 
-    @Column({ type: 'varchar', length: 36, nullable: true })
+    @Column({ type: 'varchar', length: 64, nullable: true })
     correlationId: string | null;
 
     @Column({ type: 'datetime', precision: 3 })

@@ -42,7 +42,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const correlationId =
             this.correlation.getCorrelationId() ||
             (request.headers['x-correlation-id'] as string) ||
-            `err-${randomUUID()}`;
+            randomUUID();
 
         const statusCode = this.resolveStatusCode(exception);
         const message = this.resolveMessage(exception, statusCode);

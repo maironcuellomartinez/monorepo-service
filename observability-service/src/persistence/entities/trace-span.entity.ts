@@ -24,7 +24,7 @@ export class TraceSpanEntity {
     @Column({ type: 'varchar', length: 100 })
     serviceName: string;
 
-    @Column({ type: 'varchar', length: 36, nullable: true })
+    @Column({ type: 'varchar', length: 64, nullable: true })
     correlationId: string | null;
 
     @Column({ type: 'varchar', length: 20, nullable: true })
