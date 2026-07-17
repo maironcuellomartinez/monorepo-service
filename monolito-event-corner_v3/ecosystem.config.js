@@ -49,7 +49,6 @@ const APPS = {
     'abac':                  '../abac-microservice',
     'integration-service':   '../integration-service',
     'observability-service': '../observability-service',
-    'api-snowq-service':     '../api-snowq-service',
 };
 
 module.exports = {
@@ -154,27 +153,6 @@ module.exports = {
             env_production: {
                 NODE_ENV: 'production',
                 ...loadEnv(APPS['observability-service'], 'production'),
-            },
-        },
-
-        // ── api-snowq-service ─────────────────────────────────────────────────
-        {
-            name:      'api-snowq-service',
-            script:    path.join(__dirname, '../api-snowq-service/dist/main.js'),
-            cwd:       path.join(__dirname, '../api-snowq-service'),
-            instances: 1,
-            exec_mode: 'fork',
-            env_development: {
-                NODE_ENV: 'development',
-                ...loadEnv(APPS['api-snowq-service'], 'development'),
-            },
-            env_staging: {
-                NODE_ENV: 'staging',
-                ...loadEnv(APPS['api-snowq-service'], 'staging'),
-            },
-            env_production: {
-                NODE_ENV: 'production',
-                ...loadEnv(APPS['api-snowq-service'], 'production'),
             },
         },
     ],
