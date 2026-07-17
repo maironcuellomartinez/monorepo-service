@@ -13,27 +13,25 @@ import { HealthModule } from './health/health.module';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
 
 @Module({
-    imports: [
-        CommonModule,
-        ScheduleModule.forRoot(),
-        CircuitBreakerModule,   // global — CircuitBreakerService injectable en todos los módulos
-        HttpModule.register({ global: true }),
-        BulkheadModule,
-        SnowRequestsModule,
-        MonitoringModule,
-        HealthModule,
-    ],
-    providers: [
-        { provide: APP_INTERCEPTOR, useClass: TracingInterceptor },
-    ],
+  imports: [
+    CommonModule,
+    ScheduleModule.forRoot(),
+    CircuitBreakerModule, // global — CircuitBreakerService injectable en todos los módulos
+    HttpModule.register({ global: true }),
+    BulkheadModule,
+    SnowRequestsModule,
+    MonitoringModule,
+    HealthModule,
+  ],
+  providers: [{ provide: APP_INTERCEPTOR, useClass: TracingInterceptor }],
 })
 export class AppModule implements NestModule {
-    configure(consumer: MiddlewareConsumer) {
-        consumer.apply(CorrelationMiddleware).forRoutes('*');
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationMiddleware).forRoutes('{*path}');
 
-        // BulkheadMiddleware cubre ambos flujos — cada uno con su propio pool:
-        //   /monitoring/*    → monitoring:alerts   (30c / 200q)  — aislado de snow-requests
-        //   /snow-requests/* → snow-requests:async  o :immediate  (según path)
-        consumer.apply(BulkheadMiddleware).forRoutes('snow-requests', 'monitoring');
-    }
+    // BulkheadMiddleware cubre ambos flujos — cada uno con su propio pool:
+    //   /monitoring/*    → monitoring:alerts   (30c / 200q)  — aislado de snow-requests
+    //   /snow-requests/* → snow-requests:async  o :immediate  (según path)
+    consumer.apply(BulkheadMiddleware).forRoutes('snow-requests', 'monitoring');
+  }
 }
