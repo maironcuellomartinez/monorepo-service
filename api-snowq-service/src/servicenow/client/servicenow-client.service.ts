@@ -24,21 +24,36 @@ function parseRetryAfterMs(header?: string): number | undefined {
   return undefined;
 }
 
-/** Estados de SN que se consideran "cerrado"
- *  6 = Resolved (incident), 7 = Closed (incident)
- *  3 = Closed (change_request / sc_req_item / sc_task)
- *  0 = Review/Resolved (change_request)
- *  4 = Closed/Resolved (problem / sc_req_item / sc_task)
+/**
+ * Códigos de estado "cerrado" de ServiceNow, por tipo de ticket — el mismo
+ * código numérico significa cosas distintas según la tabla (ej: state=3 es
+ * "Closed" en change_request pero "On Hold" en incident). Los strings
+ * semánticos ('resolved'/'closed') sí aplican a cualquier tipo — es lo que
+ * acepta el simulador local en PATCH.
+ *
+ *   incident:       6=Resolved, 7=Closed
+ *   change_request: 0=Review/Resolved, 3=Closed
+ *   sc_req_item:    3=Closed, 4=Closed/Resolved
+ *   problem:        4=Closed/Resolved
+ *
+ * kb_article / release_task / cmdb_ci no tienen un mapeo de códigos numéricos
+ * conocido — solo reconocen los strings semánticos.
  */
-const SN_CLOSED_STATES = new Set([
-  'resolved',
-  'closed',
-  '0',
-  '3',
-  '4',
-  '6',
-  '7',
-]);
+const SN_CLOSED_STATE_CODES: Partial<Record<RequestType, ReadonlySet<string>>> =
+  {
+    [RequestType.INCIDENT]: new Set(['6', '7']),
+    [RequestType.CHANGE_REQUEST]: new Set(['0', '3']),
+    [RequestType.SERVICE_CATALOG]: new Set(['3', '4']),
+    [RequestType.PROBLEM]: new Set(['4']),
+  };
+
+const SN_CLOSED_STATES_SEMANTIC = new Set(['resolved', 'closed']);
+
+export function isClosedState(type: RequestType, state: string): boolean {
+  const normalized = state.toLowerCase();
+  if (SN_CLOSED_STATES_SEMANTIC.has(normalized)) return true;
+  return SN_CLOSED_STATE_CODES[type]?.has(state) ?? false;
+}
 
 @Injectable()
 export class ServiceNowClientService {
@@ -351,7 +366,7 @@ export class ServiceNowClientService {
         }),
       );
       const state: string = String(response.data?.result?.state ?? 'unknown');
-      return { state, closed: SN_CLOSED_STATES.has(state.toLowerCase()) };
+      return { state, closed: isClosedState(type, state) };
     } catch (error: any) {
       if (error.response?.status === 404) return null;
       throw this.errorFactory.create(

@@ -1,466 +1,603 @@
+/* eslint-disable @typescript-eslint/unbound-method -- expect(repo.method).toHaveBeenCalledWith(...)
+ * es el patron estandar de jest para mocks tipados de Repository<T>; el chequeo type-aware de
+ * unbound-method no distingue esto de un unbind real, y falso-positivea en todo el archivo. */
 import { SnowRequestService } from './snow-request.service';
 import { SnowRequestEntity } from '../entities/snow-request.entity';
-import { RequestPriority, RequestPriorityUtils, RequestType, STATUS } from 'src/common';
+import {
+  RequestPriority,
+  RequestPriorityUtils,
+  RequestType,
+  STATUS,
+} from 'src/common';
 import { Repository, SelectQueryBuilder, UpdateResult } from 'typeorm';
 
 /**
  * Crea un mock completo de Repository<SnowRequestEntity>.
  */
 function createMockRepo(): jest.Mocked<Repository<SnowRequestEntity>> {
-    return {
-        create: jest.fn(),
-        save: jest.fn(),
-        findOne: jest.fn(),
-        find: jest.fn(),
-        update: jest.fn(),
-        createQueryBuilder: jest.fn(),
-    } as unknown as jest.Mocked<Repository<SnowRequestEntity>>;
+  return {
+    create: jest.fn(),
+    save: jest.fn(),
+    findOne: jest.fn(),
+    find: jest.fn(),
+    update: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  } as unknown as jest.Mocked<Repository<SnowRequestEntity>>;
 }
 
 /**
  * Crea un entity de ejemplo con valores por defecto.
  */
-function buildEntity(overrides: Partial<SnowRequestEntity> = {}): SnowRequestEntity {
-    return {
-        id: 1,
-        correlationId: 'test-correlation-id',
-        internalNumber: 'SNQ-TESTXX01',
-        type: RequestType.INCIDENT,
-        priority: RequestPriority.MEDIUM,
-        payload: { short_description: 'Test incident' },
-        sysId: null,
-        snowNumber: null,
-        status: STATUS.QUEUED,
-        source: 'test-source',
-        immediate: false,
-        fingerprint: null,
-        expiresAt: null,
-        retryCount: 0,
-        maxRetries: 3,
-        nextRetryAt: null,
-        lastError: null,
-        resolvedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        ...overrides,
-    } as SnowRequestEntity;
+function buildEntity(
+  overrides: Partial<SnowRequestEntity> = {},
+): SnowRequestEntity {
+  return {
+    id: 1,
+    correlationId: 'test-correlation-id',
+    internalNumber: 'SNQ-TESTXX01',
+    type: RequestType.INCIDENT,
+    priority: RequestPriority.MEDIUM,
+    payload: { short_description: 'Test incident' },
+    sysId: null,
+    snowNumber: null,
+    status: STATUS.QUEUED,
+    source: 'test-source',
+    immediate: false,
+    fingerprint: null,
+    expiresAt: null,
+    retryCount: 0,
+    maxRetries: 3,
+    nextRetryAt: null,
+    lastError: null,
+    resolvedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  } as SnowRequestEntity;
 }
 
 describe('SnowRequestService', () => {
-    let service: SnowRequestService;
-    let repo: jest.Mocked<Repository<SnowRequestEntity>>;
+  let service: SnowRequestService;
+  let repo: jest.Mocked<Repository<SnowRequestEntity>>;
 
-    beforeEach(() => {
-        repo = createMockRepo();
-        service = new SnowRequestService(repo as any);
+  beforeEach(() => {
+    repo = createMockRepo();
+    service = new SnowRequestService(repo as any);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // ─── create ──────────────────────────────────────────────────────────────
+
+  describe('create()', () => {
+    it('debería llamar a repo.create() y repo.save() y retornar la entidad', async () => {
+      const data: Partial<SnowRequestEntity> = {
+        correlationId: 'abc-123',
+        internalNumber: 'SNQ-ABC123',
+        type: RequestType.INCIDENT,
+        status: STATUS.QUEUED,
+        source: 'test',
+        priority: RequestPriority.MEDIUM,
+        payload: {},
+        immediate: false,
+        fingerprint: null,
+        expiresAt: null,
+      };
+      const entity = buildEntity(data);
+
+      repo.create.mockReturnValue(entity);
+      repo.save.mockResolvedValue(entity);
+
+      const result = await service.create(data);
+
+      expect(repo.create).toHaveBeenCalledWith({
+        ...data,
+        maxRetries: RequestPriorityUtils.getMaxRetries(RequestPriority.MEDIUM),
+      });
+      expect(repo.save).toHaveBeenCalledWith(entity);
+      expect(result).toBe(entity);
     });
 
-    afterEach(() => {
-        jest.clearAllMocks();
+    it('debería respetar un maxRetries explícito en vez de recalcularlo por prioridad', async () => {
+      const data: Partial<SnowRequestEntity> = {
+        correlationId: 'abc-123',
+        internalNumber: 'SNQ-ABC123',
+        type: RequestType.INCIDENT,
+        status: STATUS.QUEUED,
+        source: 'test',
+        priority: RequestPriority.MEDIUM,
+        payload: {},
+        immediate: false,
+        fingerprint: null,
+        expiresAt: null,
+        maxRetries: 3,
+      };
+      const entity = buildEntity(data);
+
+      repo.create.mockReturnValue(entity);
+      repo.save.mockResolvedValue(entity);
+
+      await service.create(data);
+
+      expect(repo.create).toHaveBeenCalledWith({ ...data, maxRetries: 3 });
+    });
+  });
+
+  // ─── findByCorrelationId ──────────────────────────────────────────────────
+
+  describe('findByCorrelationId()', () => {
+    it('debería llamar a repo.findOne con el correlationId correcto', async () => {
+      const entity = buildEntity();
+      repo.findOne.mockResolvedValue(entity);
+
+      const result = await service.findByCorrelationId('test-correlation-id');
+
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { correlationId: 'test-correlation-id' },
+      });
+      expect(result).toBe(entity);
     });
 
-    // ─── create ──────────────────────────────────────────────────────────────
+    it('debería retornar null si no se encuentra la entidad', async () => {
+      repo.findOne.mockResolvedValue(null);
 
-    describe('create()', () => {
-        it('debería llamar a repo.create() y repo.save() y retornar la entidad', async () => {
-            const data: Partial<SnowRequestEntity> = {
-                correlationId: 'abc-123',
-                internalNumber: 'SNQ-ABC123',
-                type: RequestType.INCIDENT,
-                status: STATUS.QUEUED,
-                source: 'test',
-                priority: RequestPriority.MEDIUM,
-                payload: {},
-                immediate: false,
-                fingerprint: null,
-                expiresAt: null,
-            };
-            const entity = buildEntity(data);
+      const result = await service.findByCorrelationId('no-existe');
 
-            repo.create.mockReturnValue(entity);
-            repo.save.mockResolvedValue(entity);
+      expect(result).toBeNull();
+    });
+  });
 
-            const result = await service.create(data);
+  // ─── markAsDelivered ─────────────────────────────────────────────────────
 
-            expect(repo.create).toHaveBeenCalledWith({
-                ...data,
-                maxRetries: RequestPriorityUtils.getMaxRetries(RequestPriority.MEDIUM),
-            });
-            expect(repo.save).toHaveBeenCalledWith(entity);
-            expect(result).toBe(entity);
-        });
+  describe('markAsDelivered()', () => {
+    it('debería llamar a repo.update con status DELIVERED, sysId y snowNumber', async () => {
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
-        it('debería respetar un maxRetries explícito en vez de recalcularlo por prioridad', async () => {
-            const data: Partial<SnowRequestEntity> = {
-                correlationId: 'abc-123',
-                internalNumber: 'SNQ-ABC123',
-                type: RequestType.INCIDENT,
-                status: STATUS.QUEUED,
-                source: 'test',
-                priority: RequestPriority.MEDIUM,
-                payload: {},
-                immediate: false,
-                fingerprint: null,
-                expiresAt: null,
-                maxRetries: 3,
-            };
-            const entity = buildEntity(data);
+      await service.markAsDelivered('corr-id', 'sys-id-001', 'INC001');
 
-            repo.create.mockReturnValue(entity);
-            repo.save.mockResolvedValue(entity);
+      expect(repo.update).toHaveBeenCalledWith(
+        { correlationId: 'corr-id' },
+        { status: STATUS.DELIVERED, sysId: 'sys-id-001', snowNumber: 'INC001' },
+      );
+    });
+  });
 
-            await service.create(data);
+  // ─── markAsFailed ────────────────────────────────────────────────────────
 
-            expect(repo.create).toHaveBeenCalledWith({ ...data, maxRetries: 3 });
-        });
+  describe('markAsFailed()', () => {
+    it('debería llamar a repo.update con status FAILED y lastError truncado', async () => {
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+
+      await service.markAsFailed('corr-id', 'Error de prueba');
+
+      expect(repo.update).toHaveBeenCalledWith(
+        { correlationId: 'corr-id' },
+        { status: STATUS.FAILED, lastError: 'Error de prueba' },
+      );
     });
 
-    // ─── findByCorrelationId ──────────────────────────────────────────────────
+    it('debería llamar a repo.update con status FAILED sin lastError si no se pasa error', async () => {
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
-    describe('findByCorrelationId()', () => {
-        it('debería llamar a repo.findOne con el correlationId correcto', async () => {
-            const entity = buildEntity();
-            repo.findOne.mockResolvedValue(entity);
+      await service.markAsFailed('corr-id');
 
-            const result = await service.findByCorrelationId('test-correlation-id');
+      expect(repo.update).toHaveBeenCalledWith(
+        { correlationId: 'corr-id' },
+        { status: STATUS.FAILED },
+      );
+    });
+  });
 
-            expect(repo.findOne).toHaveBeenCalledWith({ where: { correlationId: 'test-correlation-id' } });
-            expect(result).toBe(entity);
-        });
+  // ─── markAsRetry ─────────────────────────────────────────────────────────
 
-        it('debería retornar null si no se encuentra la entidad', async () => {
-            repo.findOne.mockResolvedValue(null);
+  describe('markAsRetry()', () => {
+    it('debería volver a QUEUED con backoff cuando retryCount < maxRetries', async () => {
+      const entity = buildEntity({
+        retryCount: 0,
+        maxRetries: 3,
+        priority: RequestPriority.MEDIUM,
+      });
+      repo.findOne.mockResolvedValue(entity);
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
-            const result = await service.findByCorrelationId('no-existe');
+      const before = Date.now();
+      await service.markAsRetry('corr-id', 'timeout');
+      const after = Date.now();
 
-            expect(result).toBeNull();
-        });
+      expect(repo.update).toHaveBeenCalledWith(
+        { correlationId: 'corr-id' },
+        expect.objectContaining({
+          status: STATUS.QUEUED,
+          retryCount: 1,
+          lastError: 'timeout',
+          nextRetryAt: expect.any(Date),
+        }),
+      );
+
+      const updateCall = repo.update.mock.calls[0][1] as any;
+      expect(updateCall.nextRetryAt.getTime()).toBeGreaterThanOrEqual(before);
+      expect(updateCall.nextRetryAt.getTime()).toBeLessThanOrEqual(
+        after + 60000 + 100,
+      );
     });
 
-    // ─── markAsDelivered ─────────────────────────────────────────────────────
+    it('debería marcar como FAILED cuando retryCount + 1 >= maxRetries', async () => {
+      const entity = buildEntity({ retryCount: 2, maxRetries: 3 });
+      repo.findOne.mockResolvedValue(entity);
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
-    describe('markAsDelivered()', () => {
-        it('debería llamar a repo.update con status DELIVERED, sysId y snowNumber', async () => {
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+      await service.markAsRetry('corr-id', 'fatal error');
 
-            await service.markAsDelivered('corr-id', 'sys-id-001', 'INC001');
-
-            expect(repo.update).toHaveBeenCalledWith(
-                { correlationId: 'corr-id' },
-                { status: STATUS.DELIVERED, sysId: 'sys-id-001', snowNumber: 'INC001' },
-            );
-        });
+      expect(repo.update).toHaveBeenCalledWith(
+        { correlationId: 'corr-id' },
+        expect.objectContaining({
+          status: STATUS.FAILED,
+          retryCount: 3,
+          lastError: 'fatal error',
+        }),
+      );
     });
 
-    // ─── markAsFailed ────────────────────────────────────────────────────────
+    it('debería retornar sin hacer nada si no existe la entidad', async () => {
+      repo.findOne.mockResolvedValue(null);
 
-    describe('markAsFailed()', () => {
-        it('debería llamar a repo.update con status FAILED y lastError truncado', async () => {
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+      await service.markAsRetry('no-existe', 'error');
 
-            await service.markAsFailed('corr-id', 'Error de prueba');
-
-            expect(repo.update).toHaveBeenCalledWith(
-                { correlationId: 'corr-id' },
-                { status: STATUS.FAILED, lastError: 'Error de prueba' },
-            );
-        });
-
-        it('debería llamar a repo.update con status FAILED sin lastError si no se pasa error', async () => {
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
-
-            await service.markAsFailed('corr-id');
-
-            expect(repo.update).toHaveBeenCalledWith(
-                { correlationId: 'corr-id' },
-                { status: STATUS.FAILED },
-            );
-        });
+      expect(repo.update).not.toHaveBeenCalled();
     });
 
-    // ─── markAsRetry ─────────────────────────────────────────────────────────
+    it('debería truncar lastError a 500 caracteres', async () => {
+      const entity = buildEntity({ retryCount: 0, maxRetries: 3 });
+      repo.findOne.mockResolvedValue(entity);
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
-    describe('markAsRetry()', () => {
-        it('debería volver a QUEUED con backoff cuando retryCount < maxRetries', async () => {
-            const entity = buildEntity({ retryCount: 0, maxRetries: 3, priority: RequestPriority.MEDIUM });
-            repo.findOne.mockResolvedValue(entity);
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+      const longError = 'x'.repeat(600);
+      await service.markAsRetry('corr-id', longError);
 
-            const before = Date.now();
-            await service.markAsRetry('corr-id', 'timeout');
-            const after = Date.now();
+      const updateCall = repo.update.mock.calls[0][1] as any;
+      expect(updateCall.lastError.length).toBe(500);
+    });
+  });
 
-            expect(repo.update).toHaveBeenCalledWith(
-                { correlationId: 'corr-id' },
-                expect.objectContaining({
-                    status: STATUS.QUEUED,
-                    retryCount: 1,
-                    lastError: 'timeout',
-                    nextRetryAt: expect.any(Date),
-                }),
-            );
+  // ─── findActiveByFingerprint ──────────────────────────────────────────────
 
-            const updateCall = repo.update.mock.calls[0][1] as any;
-            expect(updateCall.nextRetryAt.getTime()).toBeGreaterThanOrEqual(before);
-            expect(updateCall.nextRetryAt.getTime()).toBeLessThanOrEqual(after + 60000 + 100);
-        });
+  describe('findActiveByFingerprint()', () => {
+    it('debería construir la query con Brackets correctamente y retornar la entidad', async () => {
+      const entity = buildEntity({ fingerprint: 'fp-abc' });
 
-        it('debería marcar como FAILED cuando retryCount + 1 >= maxRetries', async () => {
-            const entity = buildEntity({ retryCount: 2, maxRetries: 3 });
-            repo.findOne.mockResolvedValue(entity);
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(entity),
+      } as unknown as SelectQueryBuilder<SnowRequestEntity>;
 
-            await service.markAsRetry('corr-id', 'fatal error');
+      repo.createQueryBuilder.mockReturnValue(mockQb as any);
 
-            expect(repo.update).toHaveBeenCalledWith(
-                { correlationId: 'corr-id' },
-                expect.objectContaining({
-                    status: STATUS.FAILED,
-                    retryCount: 3,
-                    lastError: 'fatal error',
-                }),
-            );
-        });
+      const result = await service.findActiveByFingerprint('fp-abc');
 
-        it('debería retornar sin hacer nada si no existe la entidad', async () => {
-            repo.findOne.mockResolvedValue(null);
-
-            await service.markAsRetry('no-existe', 'error');
-
-            expect(repo.update).not.toHaveBeenCalled();
-        });
-
-        it('debería truncar lastError a 500 caracteres', async () => {
-            const entity = buildEntity({ retryCount: 0, maxRetries: 3 });
-            repo.findOne.mockResolvedValue(entity);
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
-
-            const longError = 'x'.repeat(600);
-            await service.markAsRetry('corr-id', longError);
-
-            const updateCall = repo.update.mock.calls[0][1] as any;
-            expect(updateCall.lastError.length).toBe(500);
-        });
+      expect(repo.createQueryBuilder).toHaveBeenCalledWith('r');
+      expect(mockQb.where).toHaveBeenCalledWith(
+        'r.fingerprint = :fingerprint',
+        { fingerprint: 'fp-abc' },
+      );
+      expect(mockQb.orderBy).toHaveBeenCalledWith('r.createdAt', 'DESC');
+      expect(result).toBe(entity);
     });
 
-    // ─── findActiveByFingerprint ──────────────────────────────────────────────
+    it('debería retornar null cuando no existe un registro activo con ese fingerprint', async () => {
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      } as unknown as SelectQueryBuilder<SnowRequestEntity>;
 
-    describe('findActiveByFingerprint()', () => {
-        it('debería construir la query con Brackets correctamente y retornar la entidad', async () => {
-            const entity = buildEntity({ fingerprint: 'fp-abc' });
+      repo.createQueryBuilder.mockReturnValue(mockQb as any);
 
-            const mockQb = {
-                where: jest.fn().mockReturnThis(),
-                andWhere: jest.fn().mockReturnThis(),
-                orderBy: jest.fn().mockReturnThis(),
-                getOne: jest.fn().mockResolvedValue(entity),
-            } as unknown as SelectQueryBuilder<SnowRequestEntity>;
+      const result = await service.findActiveByFingerprint('fp-no-existe');
 
-            repo.createQueryBuilder.mockReturnValue(mockQb as any);
+      expect(result).toBeNull();
+    });
+  });
 
-            const result = await service.findActiveByFingerprint('fp-abc');
+  // ─── cancelByFingerprint ──────────────────────────────────────────────────
 
-            expect(repo.createQueryBuilder).toHaveBeenCalledWith('r');
-            expect(mockQb.where).toHaveBeenCalledWith('r.fingerprint = :fingerprint', { fingerprint: 'fp-abc' });
-            expect(mockQb.orderBy).toHaveBeenCalledWith('r.createdAt', 'DESC');
-            expect(result).toBe(entity);
-        });
+  describe('cancelByFingerprint()', () => {
+    it('debería retornar CANCELLED cuando existe un registro QUEUED', async () => {
+      const entity = buildEntity({
+        fingerprint: 'fp-test',
+        status: STATUS.QUEUED,
+      });
+      repo.findOne
+        .mockResolvedValueOnce(entity) // QUEUED
+        .mockResolvedValue(null); // IN_PROGRESS
 
-        it('debería retornar null cuando no existe un registro activo con ese fingerprint', async () => {
-            const mockQb = {
-                where: jest.fn().mockReturnThis(),
-                andWhere: jest.fn().mockReturnThis(),
-                orderBy: jest.fn().mockReturnThis(),
-                getOne: jest.fn().mockResolvedValue(null),
-            } as unknown as SelectQueryBuilder<SnowRequestEntity>;
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
-            repo.createQueryBuilder.mockReturnValue(mockQb as any);
+      const result = await service.cancelByFingerprint('fp-test');
 
-            const result = await service.findActiveByFingerprint('fp-no-existe');
-
-            expect(result).toBeNull();
-        });
+      expect(result).not.toBeNull();
+      expect(result!.action).toBe('CANCELLED');
+      expect(result!.entity.status).toBe(STATUS.CANCELLED);
+      expect(repo.update).toHaveBeenCalledWith(
+        { correlationId: entity.correlationId, status: STATUS.QUEUED },
+        { status: STATUS.CANCELLED },
+      );
     });
 
-    // ─── cancelByFingerprint ──────────────────────────────────────────────────
+    it('debería retornar TOO_LATE si el worker gana la carrera (update afecta 0 filas)', async () => {
+      const entity = buildEntity({
+        fingerprint: 'fp-race',
+        status: STATUS.QUEUED,
+      });
+      const inProgress = buildEntity({
+        fingerprint: 'fp-race',
+        status: STATUS.IN_PROGRESS,
+      });
 
-    describe('cancelByFingerprint()', () => {
-        it('debería retornar CANCELLED cuando existe un registro QUEUED', async () => {
-            const entity = buildEntity({ fingerprint: 'fp-test', status: STATUS.QUEUED });
-            repo.findOne
-                .mockResolvedValueOnce(entity)   // QUEUED
-                .mockResolvedValue(null);        // IN_PROGRESS
+      repo.findOne
+        .mockResolvedValueOnce(entity) // 1. QUEUED (a punto de perder la carrera)
+        .mockResolvedValueOnce(inProgress); // 2. IN_PROGRESS (el worker ganó)
 
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+      // El update condicionado a status=QUEUED no afecta ninguna fila porque
+      // el worker ya lo movio a IN_PROGRESS entre el findOne y el update.
+      repo.update.mockResolvedValue({ affected: 0 } as UpdateResult);
 
-            const result = await service.cancelByFingerprint('fp-test');
+      const result = await service.cancelByFingerprint('fp-race');
 
-            expect(result).not.toBeNull();
-            expect(result!.action).toBe('CANCELLED');
-            expect(result!.entity.status).toBe(STATUS.CANCELLED);
-            expect(repo.update).toHaveBeenCalledWith(
-                { correlationId: entity.correlationId },
-                { status: STATUS.CANCELLED },
-            );
-        });
-
-        it('debería retornar TOO_LATE cuando existe un registro IN_PROGRESS', async () => {
-            const inProgressEntity = buildEntity({ fingerprint: 'fp-test', status: STATUS.IN_PROGRESS });
-
-            repo.findOne
-                .mockResolvedValueOnce(null)           // QUEUED no existe
-                .mockResolvedValueOnce(inProgressEntity); // IN_PROGRESS existe
-
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
-
-            const result = await service.cancelByFingerprint('fp-test');
-
-            expect(result).not.toBeNull();
-            expect(result!.action).toBe('TOO_LATE');
-            expect(result!.entity).toBe(inProgressEntity);
-            expect(repo.update).not.toHaveBeenCalled();
-        });
-
-        it('debería retornar RESOLVED cuando existe un registro DELIVERED con resolvedAt NULL', async () => {
-            const deliveredEntity = buildEntity({
-                fingerprint: 'fp-test',
-                status: STATUS.DELIVERED,
-                sysId: 'sys-001',
-                snowNumber: 'INC001',
-                resolvedAt: null,
-            });
-
-            repo.findOne
-                .mockResolvedValueOnce(null)  // QUEUED no existe
-                .mockResolvedValueOnce(null); // IN_PROGRESS no existe
-
-            const mockQb = {
-                where: jest.fn().mockReturnThis(),
-                andWhere: jest.fn().mockReturnThis(),
-                orderBy: jest.fn().mockReturnThis(),
-                getOne: jest.fn().mockResolvedValue(deliveredEntity),
-            } as unknown as SelectQueryBuilder<SnowRequestEntity>;
-
-            repo.createQueryBuilder.mockReturnValue(mockQb as any);
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
-
-            const result = await service.cancelByFingerprint('fp-test');
-
-            expect(result).not.toBeNull();
-            expect(result!.action).toBe('RESOLVED');
-            expect(result!.entity.resolvedAt).toBeInstanceOf(Date);
-        });
-
-        it('debería retornar null cuando no existe ningún registro activo', async () => {
-            repo.findOne
-                .mockResolvedValueOnce(null)  // QUEUED no existe
-                .mockResolvedValueOnce(null); // IN_PROGRESS no existe
-
-            const mockQb = {
-                where: jest.fn().mockReturnThis(),
-                andWhere: jest.fn().mockReturnThis(),
-                orderBy: jest.fn().mockReturnThis(),
-                getOne: jest.fn().mockResolvedValue(null),
-            } as unknown as SelectQueryBuilder<SnowRequestEntity>;
-
-            repo.createQueryBuilder.mockReturnValue(mockQb as any);
-            repo.find.mockResolvedValue([]);
-
-            const result = await service.cancelByFingerprint('fp-no-existe');
-
-            expect(result).toBeNull();
-        });
+      expect(result).not.toBeNull();
+      expect(result!.action).toBe('TOO_LATE');
+      expect(repo.update).toHaveBeenCalledWith(
+        { correlationId: entity.correlationId, status: STATUS.QUEUED },
+        { status: STATUS.CANCELLED },
+      );
     });
 
-    // ─── expireOverdue ────────────────────────────────────────────────────────
+    it('debería retornar TOO_LATE cuando existe un registro IN_PROGRESS', async () => {
+      const inProgressEntity = buildEntity({
+        fingerprint: 'fp-test',
+        status: STATUS.IN_PROGRESS,
+      });
 
-    describe('expireOverdue()', () => {
-        it('debería retornar el número de registros expirados (affected)', async () => {
-            const mockQb = {
-                update: jest.fn().mockReturnThis(),
-                set: jest.fn().mockReturnThis(),
-                where: jest.fn().mockReturnThis(),
-                andWhere: jest.fn().mockReturnThis(),
-                execute: jest.fn().mockResolvedValue({ affected: 5 }),
-            };
+      repo.findOne
+        .mockResolvedValueOnce(null) // QUEUED no existe
+        .mockResolvedValueOnce(inProgressEntity); // IN_PROGRESS existe
 
-            repo.createQueryBuilder.mockReturnValue(mockQb as any);
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
-            const count = await service.expireOverdue();
+      const result = await service.cancelByFingerprint('fp-test');
 
-            expect(count).toBe(5);
-        });
-
-        it('debería retornar 0 si affected es undefined', async () => {
-            const mockQb = {
-                update: jest.fn().mockReturnThis(),
-                set: jest.fn().mockReturnThis(),
-                where: jest.fn().mockReturnThis(),
-                andWhere: jest.fn().mockReturnThis(),
-                execute: jest.fn().mockResolvedValue({ affected: undefined }),
-            };
-
-            repo.createQueryBuilder.mockReturnValue(mockQb as any);
-
-            const count = await service.expireOverdue();
-
-            expect(count).toBe(0);
-        });
+      expect(result).not.toBeNull();
+      expect(result!.action).toBe('TOO_LATE');
+      expect(result!.entity).toBe(inProgressEntity);
+      expect(repo.update).not.toHaveBeenCalled();
     });
 
-    // ─── retryFailed ─────────────────────────────────────────────────────────
+    it('debería retornar RESOLVED cuando existe un registro DELIVERED con resolvedAt NULL', async () => {
+      const deliveredEntity = buildEntity({
+        fingerprint: 'fp-test',
+        status: STATUS.DELIVERED,
+        sysId: 'sys-001',
+        snowNumber: 'INC001',
+        resolvedAt: null,
+      });
 
-    describe('retryFailed()', () => {
-        it('debería retornar null si el registro no existe o no está en FAILED', async () => {
-            repo.findOne.mockResolvedValue(null);
+      repo.findOne
+        .mockResolvedValueOnce(null) // QUEUED no existe
+        .mockResolvedValueOnce(null); // IN_PROGRESS no existe
 
-            const result = await service.retryFailed('no-existe');
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(deliveredEntity),
+      } as unknown as SelectQueryBuilder<SnowRequestEntity>;
 
-            expect(result).toBeNull();
-            expect(repo.update).not.toHaveBeenCalled();
-        });
+      repo.createQueryBuilder.mockReturnValue(mockQb as any);
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
-        it('debería resetear retryCount y volver a QUEUED si el registro está en FAILED', async () => {
-            const failedEntity = buildEntity({ status: STATUS.FAILED, retryCount: 3, lastError: 'some error' });
-            const requeuedEntity = buildEntity({ status: STATUS.QUEUED, retryCount: 0, lastError: null });
+      const result = await service.cancelByFingerprint('fp-test');
 
-            repo.findOne
-                .mockResolvedValueOnce(failedEntity)  // primera llamada (busca FAILED)
-                .mockResolvedValueOnce(requeuedEntity); // segunda llamada (devuelve estado actualizado)
-
-            repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
-
-            const result = await service.retryFailed('corr-id');
-
-            expect(repo.update).toHaveBeenCalledWith(
-                { correlationId: 'corr-id' },
-                { status: STATUS.QUEUED, retryCount: 0, nextRetryAt: null, lastError: null },
-            );
-            expect(result).toBe(requeuedEntity);
-        });
+      expect(result).not.toBeNull();
+      expect(result!.action).toBe('RESOLVED');
+      expect(result!.entity.resolvedAt).toBeInstanceOf(Date);
     });
 
-    // ─── retryAllFailed ──────────────────────────────────────────────────────
+    it('debería retornar null cuando no existe ningún registro activo', async () => {
+      repo.findOne
+        .mockResolvedValueOnce(null) // QUEUED no existe
+        .mockResolvedValueOnce(null); // IN_PROGRESS no existe
 
-    describe('retryAllFailed()', () => {
-        it('debería actualizar todos los FAILED a QUEUED y retornar el count afectado', async () => {
-            repo.update.mockResolvedValue({ affected: 4 } as UpdateResult);
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      } as unknown as SelectQueryBuilder<SnowRequestEntity>;
 
-            const count = await service.retryAllFailed();
+      repo.createQueryBuilder.mockReturnValue(mockQb as any);
+      repo.find.mockResolvedValue([]);
 
-            expect(repo.update).toHaveBeenCalledWith(
-                { status: STATUS.FAILED },
-                { status: STATUS.QUEUED, retryCount: 0, nextRetryAt: null, lastError: null },
-            );
-            expect(count).toBe(4);
-        });
+      const result = await service.cancelByFingerprint('fp-no-existe');
 
-        it('debería retornar 0 si affected es undefined', async () => {
-            repo.update.mockResolvedValue({ affected: undefined } as UpdateResult);
-
-            const count = await service.retryAllFailed();
-
-            expect(count).toBe(0);
-        });
+      expect(result).toBeNull();
     });
+  });
+
+  // ─── expireOverdue ────────────────────────────────────────────────────────
+
+  describe('expireOverdue()', () => {
+    it('debería retornar el número de registros expirados (affected)', async () => {
+      const mockQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 5 }),
+      };
+
+      repo.createQueryBuilder.mockReturnValue(mockQb as any);
+
+      const count = await service.expireOverdue();
+
+      expect(count).toBe(5);
+    });
+
+    it('debería retornar 0 si affected es undefined', async () => {
+      const mockQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: undefined }),
+      };
+
+      repo.createQueryBuilder.mockReturnValue(mockQb as any);
+
+      const count = await service.expireOverdue();
+
+      expect(count).toBe(0);
+    });
+  });
+
+  // ─── recoverStuckProcessing ─────────────────────────────────────────────
+
+  describe('recoverStuckProcessing()', () => {
+    it('marca los IN_PROGRESS immediate=true atascados como FAILED (sin reintento)', async () => {
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+
+      await service.recoverStuckProcessing();
+
+      expect(repo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: STATUS.IN_PROGRESS,
+          immediate: true,
+        }),
+        expect.objectContaining({ status: STATUS.FAILED }),
+      );
+    });
+
+    it('reencola a QUEUED los IN_PROGRESS immediate=false atascados', async () => {
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+
+      await service.recoverStuckProcessing();
+
+      expect(repo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: STATUS.IN_PROGRESS,
+          immediate: false,
+        }),
+        { status: STATUS.QUEUED },
+      );
+    });
+
+    it('no toca los immediate=true al reencolar los async (llamadas separadas)', async () => {
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+
+      await service.recoverStuckProcessing();
+
+      expect(repo.update).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ─── findPendingQueue ────────────────────────────────────────────────────
+
+  describe('findPendingQueue()', () => {
+    it('excluye registros con expiresAt vencido', async () => {
+      const mockQb = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+
+      repo.createQueryBuilder.mockReturnValue(mockQb as any);
+
+      await service.findPendingQueue(20);
+
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        '(r.expiresAt IS NULL OR r.expiresAt > :now)',
+        expect.objectContaining({ now: expect.any(Date) }),
+      );
+    });
+  });
+
+  // ─── retryFailed ─────────────────────────────────────────────────────────
+
+  describe('retryFailed()', () => {
+    it('debería retornar null si el registro no existe o no está en FAILED', async () => {
+      repo.findOne.mockResolvedValue(null);
+
+      const result = await service.retryFailed('no-existe');
+
+      expect(result).toBeNull();
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('debería resetear retryCount y volver a QUEUED si el registro está en FAILED', async () => {
+      const failedEntity = buildEntity({
+        status: STATUS.FAILED,
+        retryCount: 3,
+        lastError: 'some error',
+      });
+      const requeuedEntity = buildEntity({
+        status: STATUS.QUEUED,
+        retryCount: 0,
+        lastError: null,
+      });
+
+      repo.findOne
+        .mockResolvedValueOnce(failedEntity) // primera llamada (busca FAILED)
+        .mockResolvedValueOnce(requeuedEntity); // segunda llamada (devuelve estado actualizado)
+
+      repo.update.mockResolvedValue({ affected: 1 } as UpdateResult);
+
+      const result = await service.retryFailed('corr-id');
+
+      expect(repo.update).toHaveBeenCalledWith(
+        { correlationId: 'corr-id' },
+        {
+          status: STATUS.QUEUED,
+          retryCount: 0,
+          nextRetryAt: null,
+          lastError: null,
+        },
+      );
+      expect(result).toBe(requeuedEntity);
+    });
+  });
+
+  // ─── retryAllFailed ──────────────────────────────────────────────────────
+
+  describe('retryAllFailed()', () => {
+    it('debería actualizar todos los FAILED a QUEUED y retornar el count afectado', async () => {
+      repo.update.mockResolvedValue({ affected: 4 } as UpdateResult);
+
+      const count = await service.retryAllFailed();
+
+      expect(repo.update).toHaveBeenCalledWith(
+        { status: STATUS.FAILED },
+        {
+          status: STATUS.QUEUED,
+          retryCount: 0,
+          nextRetryAt: null,
+          lastError: null,
+        },
+      );
+      expect(count).toBe(4);
+    });
+
+    it('debería retornar 0 si affected es undefined', async () => {
+      repo.update.mockResolvedValue({ affected: undefined } as UpdateResult);
+
+      const count = await service.retryAllFailed();
+
+      expect(count).toBe(0);
+    });
+  });
 });
