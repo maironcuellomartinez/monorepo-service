@@ -26,10 +26,7 @@ import { WinstonModule } from 'nest-winston';
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
-      envFilePath: [
-        `.env.${process.env.NODE_ENV || 'development'}`,
-        '.env',
-      ],
+      envFilePath: [`.env.${process.env.NODE_ENV || 'development'}`, '.env'],
       expandVariables: true,
       cache: true,
     }),
@@ -42,11 +39,13 @@ import { WinstonModule } from 'nest-winston';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        throttlers: [{
-          ttl: config.get('throttler.ttl', 60),
-          limit: config.get('throttler.limit', 100),
-          ignoreUserAgents: [/health-check/, /metrics/],
-        }]
+        throttlers: [
+          {
+            ttl: config.get('throttler.ttl', 60),
+            limit: config.get('throttler.limit', 100),
+            ignoreUserAgents: [/health-check/, /metrics/],
+          },
+        ],
       }),
     }),
 
@@ -94,7 +93,7 @@ import { WinstonModule } from 'nest-winston';
   ],
 })
 export class AppModule implements NestModule {
-    configure(consumer: MiddlewareConsumer): void {
-        consumer.apply(CorrelationMiddleware).forRoutes('*');
-    }
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(CorrelationMiddleware).forRoutes('{*path}');
+  }
 }
