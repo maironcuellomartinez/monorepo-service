@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ServiceNowService } from './servicenow.service';
 import { CircuitBreakerModule } from 'src/resilience/circuit-breaker';
 import { ServiceNowBreakerFactory } from './client/servicenow-breaker.factory';
@@ -30,18 +31,20 @@ import {
     ServiceNowTokenService,
     {
       provide: SN_OAUTH_CONFIG,
-      useFactory: (): ServiceNowOAuthConfig => ({
-        oauthUrl: process.env.SN_OAUTH_URL ?? '',
-        upn: process.env.SN_OAUTH_UPN ?? '',
-        kid: process.env.SN_OAUTH_KID ?? '',
-        clientId: process.env.SN_OAUTH_CLIENT_ID ?? '',
-        secretId: process.env.SN_OAUTH_CLIENT_SECRET ?? '',
-        iss: process.env.SN_OAUTH_ISS ?? '',
+      useFactory: (configService: ConfigService): ServiceNowOAuthConfig => ({
+        oauthUrl: configService.get<string>('servicenow.oauth_url') ?? '',
+        upn: configService.get<string>('servicenow.oauth_upn') ?? '',
+        kid: configService.get<string>('servicenow.oauth_kid') ?? '',
+        clientId: configService.get<string>('servicenow.oauth_client_id') ?? '',
+        secretId:
+          configService.get<string>('servicenow.oauth_client_secret') ?? '',
+        iss: configService.get<string>('servicenow.oauth_iss') ?? '',
         grantType:
-          process.env.SN_OAUTH_GRANT_TYPE ??
+          configService.get<string>('servicenow.oauth_grant_type') ??
           'urn:ietf:params:oauth:grant-type:jwt-bearer',
-        authCert: process.env.SN_OAUTH_CERT_PATH ?? '',
+        authCert: configService.get<string>('servicenow.oauth_cert_path') ?? '',
       }),
+      inject: [ConfigService],
     },
     SnowRequestProcessorFactory,
     IncidentProcessor,

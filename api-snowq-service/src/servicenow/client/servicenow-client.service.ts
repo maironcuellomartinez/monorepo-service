@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
 import {
   RequestType,
   RequestTypeUtils,
@@ -64,7 +65,14 @@ export class ServiceNowClientService {
     private readonly httpService: HttpService,
     private readonly errorFactory: ServiceNowErrorFactory,
     private readonly tokenService: ServiceNowTokenService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private getBaseUrl(): string {
+    return (
+      this.configService.get<string>('servicenow.base_url_servicenow') ?? ''
+    );
+  }
 
   /**
    * Header Authorization para las llamadas a ServiceNow.
@@ -72,11 +80,11 @@ export class ServiceNowClientService {
    * Cualquier otro valor (o sin setear) → Basic Auth con SN_AUTH, comportamiento actual.
    */
   private async getAuthHeader(): Promise<string> {
-    if (process.env.SN_AUTH_MODE === 'oauth2') {
+    if (this.configService.get<string>('servicenow.auth_mode') === 'oauth2') {
       const { token } = await this.tokenService.getAccessToken();
       return `Bearer ${token}`;
     }
-    return `Basic ${process.env.SN_AUTH}`;
+    return `Basic ${this.configService.get<string>('servicenow.auth')}`;
   }
 
   /**
@@ -98,11 +106,11 @@ export class ServiceNowClientService {
         kind: 'client',
         attributes: {
           'snow.type': type,
-          'snow.baseUrl': process.env.BASE_URL_SERVICENOW ?? '',
+          'snow.baseUrl': this.getBaseUrl(),
         },
       },
       async () => {
-        const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+        const baseUrl = this.getBaseUrl();
         const endpoint = `${baseUrl}${RequestTypeUtils.getEndpoint(type)}`;
         const correlationId = uuidv4();
 
@@ -164,7 +172,7 @@ export class ServiceNowClientService {
     sysId: string,
     body: Record<string, any>,
   ): Promise<void> {
-    const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+    const baseUrl = this.getBaseUrl();
     const endpoint = `${baseUrl}${RequestTypeUtils.getEndpoint(type)}/${sysId}`;
 
     this.logger.debug(`[${type}] PATCH ${endpoint}`);
@@ -208,7 +216,7 @@ export class ServiceNowClientService {
   private async _getCompanies(): Promise<
     Array<{ sys_id: string; name: string }>
   > {
-    const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+    const baseUrl = this.getBaseUrl();
     const endpoint = `${baseUrl}/sn-companies`;
 
     try {
@@ -244,7 +252,7 @@ export class ServiceNowClientService {
   }
 
   private async _getGroups(): Promise<Array<{ sys_id: string; name: string }>> {
-    const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+    const baseUrl = this.getBaseUrl();
     const endpoint = `${baseUrl}/sn-groups`;
 
     try {
@@ -283,7 +291,7 @@ export class ServiceNowClientService {
   private async _getGroupBySysId(
     sysId: string,
   ): Promise<{ sys_id: string; name: string } | null> {
-    const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+    const baseUrl = this.getBaseUrl();
     const endpoint = `${baseUrl}/sn-groups/${sysId}`;
 
     try {
@@ -323,7 +331,7 @@ export class ServiceNowClientService {
   private async _getCompanyBySysId(
     sysId: string,
   ): Promise<{ sys_id: string; name: string } | null> {
-    const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+    const baseUrl = this.getBaseUrl();
     const endpoint = `${baseUrl}/sn-companies/${sysId}`;
 
     try {
@@ -355,7 +363,7 @@ export class ServiceNowClientService {
     type: RequestType,
     sysId: string,
   ): Promise<{ state: string; closed: boolean } | null> {
-    const baseUrl = process.env.BASE_URL_SERVICENOW ?? '';
+    const baseUrl = this.getBaseUrl();
     const endpoint = `${baseUrl}${RequestTypeUtils.getEndpoint(type)}/${sysId}`;
 
     try {
