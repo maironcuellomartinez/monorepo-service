@@ -62,6 +62,6 @@ import { AuditInterceptor } from './abac/interceptors/audit.interceptor';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(CorrelationMiddleware).exclude('/health', '/api-docs', '/metrics').forRoutes('*')
+    consumer.apply(CorrelationMiddleware).exclude('/health', '/api-docs', '/metrics').forRoutes('{*path}')
   }
 }
