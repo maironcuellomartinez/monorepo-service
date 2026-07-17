@@ -100,7 +100,6 @@ export class SnowRequestProcessingService {
 
     this.logger.log(
       `Encolado → ${internalNumber} [tipo=${type} prioridad=${dto.priority} fingerprint=${fingerprint ? fingerprint.substring(0, 12) + '...' : 'none'}]`,
-      'SnowRequestProcessingService',
     );
 
     return { correlationId, internalNumber, deduplicated: false };

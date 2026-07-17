@@ -17,63 +17,71 @@ import { SnowRequestQueueService } from './snow-request-queue.service';
  */
 @Injectable()
 export class SnowRequestWorkerService implements OnModuleInit {
-    private readonly logger = new Logger(SnowRequestWorkerService.name);
-    private readonly POLL_INTERVAL_MS = 500;
-    private readonly BATCH_SIZE = 20;
+  private readonly logger = new Logger(SnowRequestWorkerService.name);
+  private readonly POLL_INTERVAL_MS = 500;
+  private readonly BATCH_SIZE = 20;
 
-    // Chequeo de expiración cada 30 segundos — no en cada poll para no sobrecargar la DB
-    private readonly EXPIRE_CHECK_INTERVAL_MS = 30_000;
-    private lastExpireCheck = 0;
+  // Chequeo de expiración cada 30 segundos — no en cada poll para no sobrecargar la DB
+  private readonly EXPIRE_CHECK_INTERVAL_MS = 30_000;
+  private lastExpireCheck = 0;
 
-    constructor(
-        private readonly snowRequestService: SnowRequestService,
-        private readonly queueService: SnowRequestQueueService,
-    ) { }
+  constructor(
+    private readonly snowRequestService: SnowRequestService,
+    private readonly queueService: SnowRequestQueueService,
+  ) {}
 
-    async onModuleInit(): Promise<void> {
-        await this.snowRequestService.recoverStuckProcessing();
-        this.logger.log('Recuperación de IN_PROGRESS atascados completada');
-        this.startWorker();
-    }
+  async onModuleInit(): Promise<void> {
+    await this.snowRequestService.recoverStuckProcessing();
+    this.logger.log('Recuperación de IN_PROGRESS atascados completada');
+    this.startWorker();
+  }
 
-    private startWorker(): void {
-        const poll = async () => {
-            try {
-                await this.checkExpiry();
+  private startWorker(): void {
+    const poll = async () => {
+      try {
+        await this.checkExpiry();
 
-                const entities = await this.snowRequestService.findPendingQueue(this.BATCH_SIZE);
+        const entities = await this.snowRequestService.findPendingQueue(
+          this.BATCH_SIZE,
+        );
 
-                if (entities.length > 0) {
-                    await this.snowRequestService.markAsProcessing(
-                        entities.map(e => e.correlationId),
-                    );
+        if (entities.length > 0) {
+          await this.snowRequestService.markAsProcessing(
+            entities.map((e) => e.correlationId),
+          );
 
-                    for (const entity of entities) {
-                        this.queueService.enqueue(entity);
-                    }
+          for (const entity of entities) {
+            this.queueService.enqueue(entity);
+          }
 
-                    setImmediate(poll);
-                } else {
-                    setTimeout(poll, this.POLL_INTERVAL_MS);
-                }
-            } catch (error) {
-                this.logger.warn(`Worker: error en poll — ${error?.message}. Reintentando en ${this.POLL_INTERVAL_MS}ms`, 'SnowRequestWorkerService');
-                setTimeout(poll, this.POLL_INTERVAL_MS);
-            }
-        };
-
-        poll();
-        this.logger.log(`Worker iniciado [batchSize=${this.BATCH_SIZE} interval=${this.POLL_INTERVAL_MS}ms]`, 'SnowRequestWorkerService');
-    }
-
-    private async checkExpiry(): Promise<void> {
-        const now = Date.now();
-        if (now - this.lastExpireCheck < this.EXPIRE_CHECK_INTERVAL_MS) return;
-
-        this.lastExpireCheck = now;
-        const expired = await this.snowRequestService.expireOverdue();
-        if (expired > 0) {
-            this.logger.log(`TTL vencido: ${expired} alerta(s) de monitoreo expiradas sin enviarse a ServiceNow`, 'SnowRequestWorkerService');
+          setImmediate(poll);
+        } else {
+          setTimeout(poll, this.POLL_INTERVAL_MS);
         }
+      } catch (error) {
+        this.logger.warn(
+          `Worker: error en poll — ${error?.message}. Reintentando en ${this.POLL_INTERVAL_MS}ms`,
+        );
+        setTimeout(poll, this.POLL_INTERVAL_MS);
+      }
+    };
+
+    poll();
+    this.logger.log(
+      `Worker iniciado [batchSize=${this.BATCH_SIZE} interval=${this.POLL_INTERVAL_MS}ms]`,
+    );
+  }
+
+  private async checkExpiry(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastExpireCheck < this.EXPIRE_CHECK_INTERVAL_MS) return;
+
+    this.lastExpireCheck = now;
+    const expired = await this.snowRequestService.expireOverdue();
+    if (expired > 0) {
+      this.logger.log(
+        `TTL vencido: ${expired} alerta(s) de monitoreo expiradas sin enviarse a ServiceNow`,
+      );
     }
+  }
 }
