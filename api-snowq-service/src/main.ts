@@ -20,8 +20,23 @@ function validateConfig(): void {
       'Clave pública Ed25519 para verificar tokens M2M (base64)',
     ABAC_M2M_TOKEN: 'Token M2M para autenticarse ante ABAC',
     BASE_URL_SERVICENOW: 'URL base de la instancia real de ServiceNow',
-    SN_AUTH: 'Credenciales Basic Auth para ServiceNow (base64)',
   };
+
+  // SN_AUTH_MODE=oauth2 → JWT Bearer firmado con certificado. Cualquier otro
+  // valor (default) → Basic Auth, comportamiento previo.
+  if (process.env.SN_AUTH_MODE === 'oauth2') {
+    Object.assign(required, {
+      SN_OAUTH_URL: 'URL del endpoint OAuth2 token de ServiceNow',
+      SN_OAUTH_UPN: 'UPN de la cuenta de servicio en ServiceNow',
+      SN_OAUTH_KID: 'Key ID (kid) del certificado registrado en ServiceNow',
+      SN_OAUTH_CLIENT_ID: 'Client ID de la aplicación OAuth2 en ServiceNow',
+      SN_OAUTH_ISS: 'Issuer (iss) de la JWT assertion',
+      SN_OAUTH_CERT_PATH:
+        'Ruta al certificado .pem usado para firmar la JWT assertion',
+    });
+  } else {
+    required.SN_AUTH = 'Credenciales Basic Auth para ServiceNow (base64)';
+  }
 
   const invalid = Object.entries(required).filter(
     ([key]) => !process.env[key] || process.env[key] === 'CHANGE_ME',

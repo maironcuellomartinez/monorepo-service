@@ -8,6 +8,7 @@ import {
 } from '../../common';
 import { firstValueFrom } from 'rxjs';
 import { ServiceNowErrorFactory } from './servicenow-error.factory';
+import { ServiceNowTokenService } from './servicenow-token.service';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -47,7 +48,21 @@ export class ServiceNowClientService {
   constructor(
     private readonly httpService: HttpService,
     private readonly errorFactory: ServiceNowErrorFactory,
+    private readonly tokenService: ServiceNowTokenService,
   ) {}
+
+  /**
+   * Header Authorization para las llamadas a ServiceNow.
+   * SN_AUTH_MODE=oauth2 → Bearer (JWT assertion firmada con SN_OAUTH_CERT_PATH).
+   * Cualquier otro valor (o sin setear) → Basic Auth con SN_AUTH, comportamiento actual.
+   */
+  private async getAuthHeader(): Promise<string> {
+    if (process.env.SN_AUTH_MODE === 'oauth2') {
+      const { token } = await this.tokenService.getAccessToken();
+      return `Bearer ${token}`;
+    }
+    return `Basic ${process.env.SN_AUTH}`;
+  }
 
   /**
    * Post to ServiceNow.
@@ -84,7 +99,7 @@ export class ServiceNowClientService {
           this.httpService.post(endpoint, payload, {
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Basic ${process.env.SN_AUTH}`,
+              Authorization: await this.getAuthHeader(),
               'X-Correlation-ID': correlationId,
             },
             timeout: 10000,
@@ -144,7 +159,7 @@ export class ServiceNowClientService {
         this.httpService.patch(endpoint, body, {
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Basic ${process.env.SN_AUTH}`,
+            Authorization: await this.getAuthHeader(),
           },
           timeout: 10000,
         }),
@@ -184,7 +199,7 @@ export class ServiceNowClientService {
     try {
       const response = await firstValueFrom(
         this.httpService.get(endpoint, {
-          headers: { Authorization: `Basic ${process.env.SN_AUTH}` },
+          headers: { Authorization: await this.getAuthHeader() },
           timeout: 10000,
         }),
       );
@@ -220,7 +235,7 @@ export class ServiceNowClientService {
     try {
       const response = await firstValueFrom(
         this.httpService.get(endpoint, {
-          headers: { Authorization: `Basic ${process.env.SN_AUTH}` },
+          headers: { Authorization: await this.getAuthHeader() },
           timeout: 10000,
         }),
       );
@@ -259,7 +274,7 @@ export class ServiceNowClientService {
     try {
       const response = await firstValueFrom(
         this.httpService.get(endpoint, {
-          headers: { Authorization: `Basic ${process.env.SN_AUTH}` },
+          headers: { Authorization: await this.getAuthHeader() },
           timeout: 10000,
         }),
       );
@@ -299,7 +314,7 @@ export class ServiceNowClientService {
     try {
       const response = await firstValueFrom(
         this.httpService.get(endpoint, {
-          headers: { Authorization: `Basic ${process.env.SN_AUTH}` },
+          headers: { Authorization: await this.getAuthHeader() },
           timeout: 10000,
         }),
       );
@@ -331,7 +346,7 @@ export class ServiceNowClientService {
     try {
       const response = await firstValueFrom(
         this.httpService.get(endpoint, {
-          headers: { Authorization: `Basic ${process.env.SN_AUTH}` },
+          headers: { Authorization: await this.getAuthHeader() },
           timeout: 10000,
         }),
       );
