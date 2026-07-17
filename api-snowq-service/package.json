@@ -19,7 +19,18 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:integration": "jest --config ./test/jest-integration.json"
+    "test:integration": "jest --config ./test/jest-integration.json",
+    "pm2:dev": "pm2 start ../monolito-event-corner_v3/ecosystem.config.js --env development --only api-snowq-service",
+    "pm2:staging": "pm2 start ../monolito-event-corner_v3/ecosystem.config.js --env staging --only api-snowq-service",
+    "pm2:prod": "pm2 start ../monolito-event-corner_v3/ecosystem.config.js --env production --only api-snowq-service",
+    "pm2:reload:dev": "npm run build && pm2 reload ../monolito-event-corner_v3/ecosystem.config.js --env development --only api-snowq-service",
+    "pm2:reload:staging": "npm run build && pm2 reload ../monolito-event-corner_v3/ecosystem.config.js --env staging --only api-snowq-service",
+    "pm2:reload:prod": "npm run build && pm2 reload ../monolito-event-corner_v3/ecosystem.config.js --env production --only api-snowq-service",
+    "pm2:stop": "pm2 stop api-snowq-service",
+    "pm2:delete": "pm2 delete api-snowq-service",
+    "pm2:save": "pm2 save",
+    "pm2:logs": "pm2 logs api-snowq-service",
+    "pm2:status": "pm2 status api-snowq-service"
   },
   "dependencies": {
     "@backendkit-labs/bulkhead": "^0.2.1",
@@ -77,6 +88,7 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^16.0.0",
     "jest": "^29.7.0",
+    "pm2": "^7.0.3",
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
