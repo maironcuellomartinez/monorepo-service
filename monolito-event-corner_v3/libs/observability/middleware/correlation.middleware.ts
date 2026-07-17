@@ -16,25 +16,27 @@ import { v4 as uuidv4 } from 'uuid';
  *   }
  * }
  * ```
- * 
+ *
  * export AppModule implements NestModule {
  *   configure(consumer: MiddlewareConsumer) {
- *     consumer.apply(CorrelationMiddleware).forRoutes('*');
+ *     consumer.apply(CorrelationMiddleware).forRoutes('{*path}');
  *   }
  * }
  */
 @Injectable()
 export class CorrelationMiddleware implements NestMiddleware {
-    constructor(
-        private readonly correlation: CorrelationIdService,
-    ) { }
+  constructor(private readonly correlation: CorrelationIdService) {}
 
-    use(req: Request, res: Response, next: NextFunction) {
-        const incoming = (req.headers['x-correlation-id'] as string) ?? uuidv4();
+  use(req: Request, res: Response, next: NextFunction) {
+    const incoming = (req.headers['x-correlation-id'] as string) ?? uuidv4();
 
-        void this.correlation.run(async () => {
-            res.setHeader('X-Correlation-Id', incoming);
-            next();
-        }, { correlationId: incoming });
-    }
+    void this.correlation.run(
+      // eslint-disable-next-line @typescript-eslint/require-await -- CorrelationIdService.run() exige un callback que retorne Promise
+      async () => {
+        res.setHeader('X-Correlation-Id', incoming);
+        next();
+      },
+      { correlationId: incoming },
+    );
+  }
 }

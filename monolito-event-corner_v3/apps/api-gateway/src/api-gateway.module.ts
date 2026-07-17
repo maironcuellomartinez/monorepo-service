@@ -25,43 +25,47 @@ import { ObservabilityModule, CorrelationMiddleware } from '@app/observability';
 import { HealthModule } from './health/health.module';
 
 @Module({
-    imports: [
-        ConfigModule.forRoot({
-            isGlobal: true,
-            envFilePath: [
-                path.resolve(process.cwd(), 'apps/api-gateway', `.env.${process.env.NODE_ENV ?? 'development'}`),
-                path.resolve(process.cwd(), 'apps/api-gateway', '.env'),
-                `apps/api-gateway/.env.${process.env.NODE_ENV ?? 'development'}`,
-                'apps/api-gateway/.env',
-            ],
-        }),
-        ObservabilityModule.forRoot({ serviceName: 'api-gateway' }),
-        HttpClientsModule,
-        HealthModule,
-        ClientModule,
-        OutboundGatewayModule,
-        AuthModule,
-    ],
-    controllers: [
-        AuthController,
-        AbacController,
-        IncidentsController,
-        CornersController,
-        AvailabilityController,
-        IssueTypesController,
-        TechniciansController,
-        RequestsController,
-        ExternalRecordsController,
-        DevicesController,
-        AdminUsersController,
-        AdminCompaniesController,
-        AdminIssueTypeTreesController,
-        AdminServiceNowGroupsController,
-        BatchDraftsController,
-    ],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [
+        path.resolve(
+          process.cwd(),
+          'apps/api-gateway',
+          `.env.${process.env.NODE_ENV ?? 'development'}`,
+        ),
+        path.resolve(process.cwd(), 'apps/api-gateway', '.env'),
+        `apps/api-gateway/.env.${process.env.NODE_ENV ?? 'development'}`,
+        'apps/api-gateway/.env',
+      ],
+    }),
+    ObservabilityModule.forRoot({ serviceName: 'api-gateway' }),
+    HttpClientsModule,
+    HealthModule,
+    ClientModule,
+    OutboundGatewayModule,
+    AuthModule,
+  ],
+  controllers: [
+    AuthController,
+    AbacController,
+    IncidentsController,
+    CornersController,
+    AvailabilityController,
+    IssueTypesController,
+    TechniciansController,
+    RequestsController,
+    ExternalRecordsController,
+    DevicesController,
+    AdminUsersController,
+    AdminCompaniesController,
+    AdminIssueTypeTreesController,
+    AdminServiceNowGroupsController,
+    BatchDraftsController,
+  ],
 })
 export class ApiGatewayModule implements NestModule {
-    configure(consumer: MiddlewareConsumer) {
-        consumer.apply(CorrelationMiddleware).forRoutes('*');
-    }
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationMiddleware).forRoutes('{*path}');
+  }
 }

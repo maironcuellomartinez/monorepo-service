@@ -6,7 +6,10 @@ import { ConfigModule } from '@nestjs/config';
 import * as path from 'path';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SharedModule } from '@app/shared/shared.module';
-import { ObservabilityModule, CorrelationMiddleware as CorrelationMiddleware } from '@app/observability';
+import {
+  ObservabilityModule,
+  CorrelationMiddleware as CorrelationMiddleware,
+} from '@app/observability';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
 import { CoreServicesModule } from './core/services/core-services.module';
 import { InternalApiModule } from './internal-api/internal-api.module';
@@ -44,74 +47,81 @@ import { DropCornerSlotsFKForResync1745088000000 } from './infrastructure/persis
 import { IncreaseOutboxMaxRetries1783641799581 } from './infrastructure/persistence/typeorm/migrations/1783641799581-IncreaseOutboxMaxRetries';
 
 @Module({
-    imports: [
-        TypeOrmModule.forRoot({
-            type: 'mysql',
-            host: process.env.DB_HOST ?? 'localhost',
-            port: parseInt(process.env.DB_PORT ?? '3306'),
-            username: process.env.DB_USERNAME ?? 'root',
-            password: process.env.DB_PASSWORD ?? 'root',
-            database: process.env.DB_DATABASE ?? 'event_corner',
-            entities: [
-                ServiceNowProfileEntity,
-                CompanyEntity,
-                IssueTypeEntity,
-                IssueTypeTreeEntity,
-                CornerEntity,
-                CornerScheduleEntity,
-                ScheduleAssignmentEntity,
-                TechnicianEntity,
-                CornerSlotEntity,
-                IncidentEntity,
-                IncidentSlotEntity,
-                IncidentTimelineEntity,
-                UserEntity,
-                DeviceEntity,
-                LockerEntity,
-                RequestEntity,
-                RequestActivityEntity,
-                OutboxEventEntity,
-                CompanyIssueConfigEntity,
-                ServiceNowGroupEntity,
-                BatchDraftEntity,
-                BatchDraftItemEntity,
-            ],
-            synchronize: process.env.NODE_ENV !== 'production',
-            dropSchema: false,
-            logging: false,
-            migrations: [DropCornerSlotsFKForResync1745088000000, IncreaseOutboxMaxRetries1783641799581],
-            migrationsRun: true,
-        }),
-        ConfigModule.forRoot({
-            isGlobal: true,
-            envFilePath: [
-                path.resolve(process.cwd(), 'apps/monolith', `.env.${process.env.NODE_ENV ?? 'development'}`),
-                path.resolve(process.cwd(), 'apps/monolith', '.env'),
-                `.env.${process.env.NODE_ENV ?? 'development'}`,
-                '.env',
-            ],
-        }),
-        ScheduleModule.forRoot(),
-        HttpModule,
-        ObservabilityModule.forRoot({ serviceName: 'monolith' }),
-        SharedModule,
-        InfrastructureModule,
-        CoreServicesModule,
-        EventHandlersModule,
-        InternalApiModule,
-        HealthModule,
-    ],
-    providers: [
-        DeviceSyncJob,
-        MonolithReconcilerJob,
-        SnowSyncJob,
-        SnowOrphanRecoveryJob,
-        SlotHoldCleanupJob,
-        SnCompanySyncJob,
-    ],
+  imports: [
+    TypeOrmModule.forRoot({
+      type: 'mysql',
+      host: process.env.DB_HOST ?? 'localhost',
+      port: parseInt(process.env.DB_PORT ?? '3306'),
+      username: process.env.DB_USERNAME ?? 'root',
+      password: process.env.DB_PASSWORD ?? 'root',
+      database: process.env.DB_DATABASE ?? 'event_corner',
+      entities: [
+        ServiceNowProfileEntity,
+        CompanyEntity,
+        IssueTypeEntity,
+        IssueTypeTreeEntity,
+        CornerEntity,
+        CornerScheduleEntity,
+        ScheduleAssignmentEntity,
+        TechnicianEntity,
+        CornerSlotEntity,
+        IncidentEntity,
+        IncidentSlotEntity,
+        IncidentTimelineEntity,
+        UserEntity,
+        DeviceEntity,
+        LockerEntity,
+        RequestEntity,
+        RequestActivityEntity,
+        OutboxEventEntity,
+        CompanyIssueConfigEntity,
+        ServiceNowGroupEntity,
+        BatchDraftEntity,
+        BatchDraftItemEntity,
+      ],
+      synchronize: process.env.NODE_ENV !== 'production',
+      dropSchema: false,
+      logging: false,
+      migrations: [
+        DropCornerSlotsFKForResync1745088000000,
+        IncreaseOutboxMaxRetries1783641799581,
+      ],
+      migrationsRun: true,
+    }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [
+        path.resolve(
+          process.cwd(),
+          'apps/monolith',
+          `.env.${process.env.NODE_ENV ?? 'development'}`,
+        ),
+        path.resolve(process.cwd(), 'apps/monolith', '.env'),
+        `.env.${process.env.NODE_ENV ?? 'development'}`,
+        '.env',
+      ],
+    }),
+    ScheduleModule.forRoot(),
+    HttpModule,
+    ObservabilityModule.forRoot({ serviceName: 'monolith' }),
+    SharedModule,
+    InfrastructureModule,
+    CoreServicesModule,
+    EventHandlersModule,
+    InternalApiModule,
+    HealthModule,
+  ],
+  providers: [
+    DeviceSyncJob,
+    MonolithReconcilerJob,
+    SnowSyncJob,
+    SnowOrphanRecoveryJob,
+    SlotHoldCleanupJob,
+    SnCompanySyncJob,
+  ],
 })
 export class MonolithModule implements NestModule {
-    configure(consumer: MiddlewareConsumer) {
-        consumer.apply(CorrelationMiddleware).forRoutes('*');
-    }
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationMiddleware).forRoutes('{*path}');
+  }
 }
