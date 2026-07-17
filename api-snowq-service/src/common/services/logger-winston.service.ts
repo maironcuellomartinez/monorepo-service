@@ -48,15 +48,8 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
           format: format.combine(
             format.colorize(),
             format.printf((info) => {
-              const {
-                timestamp,
-                level,
-                message,
-                context,
-                correlationId,
-                stack,
-                ...rest
-              } = info;
+              const { timestamp, level, message, context, correlationId } =
+                info;
 
               const cid =
                 correlationId ?? this.correlationService.getCorrelationId();
@@ -67,17 +60,12 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
                 { hour12: true },
               );
 
-              let line = `[Nest] ${process.pid}  - ${date}   ${level}${ctx}${cidPart} ${message}`;
-
-              if (Object.keys(rest).length > 0) {
-                line += ` ${JSON.stringify(rest)}`;
-              }
-
-              if (stack) {
-                line += `\n${stack}`;
-              }
-
-              return line;
+              // El stack/meta extra no se imprime en consola (una sola linea
+              // por log, igual que el formato de @app/observability que usan
+              // monolith/api-gateway/abac/integration-service/observability-service);
+              // igual viaja completo a observability-service via WinstonHttpTransport,
+              // que lee info.stack directo del objeto sin depender de este formateador.
+              return `[Nest] ${process.pid}  - ${date}   ${level}${ctx}${cidPart} ${message}`;
             }),
           ),
         }),
