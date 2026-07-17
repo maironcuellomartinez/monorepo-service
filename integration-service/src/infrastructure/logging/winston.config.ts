@@ -6,7 +6,12 @@ const DailyRotateFile =
   (DailyRotateFileModule as any).default ?? DailyRotateFileModule;
 
 export const winstonConfig: WinstonModuleOptions = {
-  levels: winston.config.syslog.levels,
+  // Niveles npm estandar (error/warn/info/http/verbose/debug/silly) -- coinciden
+  // con los metodos de LoggerService (log/error/warn/debug/verbose) y con el
+  // resto del ecosistema. Los niveles syslog usan "warning" en vez de "warn",
+  // lo que hacia que this.logger.warn() no existiera y tirara un TypeError no
+  // capturado apenas Nest bufferizaba y volcaba el primer log de nivel warn.
+  levels: winston.config.npm.levels,
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
