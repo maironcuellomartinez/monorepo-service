@@ -4,6 +4,10 @@
 **Path:** `workspace-santander/api-snowq-service`
 **Base de datos:** MySQL (`incidences_dbase`)
 
+> Resumen para el contexto de integración. Documentación completa (todos los endpoints, flujos,
+> bulkhead/circuit breaker, backoff por prioridad, esquema de tablas):
+> [`api-snowq-service/API_SNOWQ_SERVICE.md`](../../api-snowq-service/API_SNOWQ_SERVICE.md)
+
 ---
 
 ## Rol
@@ -50,13 +54,14 @@ POST /monitoring/cancel/:fingerprint       → cancela por fingerprint
 
 | Mecanismo | Configuración |
 |-----------|--------------|
-| Concurrency (PQueue) | 5 simultáneos hacia SN |
-| Retry | Max 3 intentos, backoff exponencial |
-| Circuit breaker | opossum, 50% error threshold, reset 30s |
-| Bulkhead | Protege contra storms de peticiones inbound |
-| Deduplicación | SHA-256 fingerprint por payload |
-| DLQ | Estado FAILED → endpoints /failed/* |
-| TTL | Expiración configurable por request |
+| Circuit breaker (`@backendkit-labs/circuit-breaker`) | 3 breakers nombrados — `sn:immediate` (50%, 3 llamadas mín., apertura 15s), `sn:monitoring` (60%, 5 llamadas mín., apertura 30s), `sn:queue` (50%, 5 llamadas mín., apertura 30s) |
+| Bulkhead saliente hacia SN | 8 concurrentes / cola 40 / timeout 15s (`BulkheadRegistry.getForServiceNow()`) |
+| Bulkhead inbound | Por ruta (middleware) + por cliente (interceptor) — ver doc completo |
+| Retry (worker async) | Backoff exponencial + jitter por prioridad, máx. reintentos 5 (LOW) a 20 (CRITICAL) |
+| Retry (modo inmediato) | Máx. 2 intentos, backoff fijo 500ms |
+| Deduplicación | fingerprint explícito (Nagios: host+service) o hash de `incidentId`/`requestId`/`externalId` |
+| DLQ | Estado FAILED → endpoints `/failed/*`, stats en `/dlq/stats` |
+| TTL | Expiración configurable por request (`expiresAt`, chequeo cada ~30s) |
 
 ---
 
@@ -92,10 +97,18 @@ QUEUED → IN_PROGRESS → DELIVERED
 
 ## Conexión a ServiceNow
 
-- **Auth:** OAuth2 Client Credentials (token propio, renovación automática via interceptor axios)
 - **URL base:** `BASE_URL_SERVICENOW` (env var)
 - **Timeout:** 10 segundos por request
-- El token OAuth2 se obtiene en `ServiceNowTokenService` y se inyecta en cada request via interceptor
+- **Auth saliente:** `SN_AUTH_MODE` decide el header `Authorization` en cada una de las 7 rutas
+  salientes (`ServiceNowClientService.getAuthHeader()`):
+  - `basic` (default, dev) → `Authorization: Basic ${SN_AUTH}` — legado
+  - `oauth2` (staging/prod, en producción **desde 2026-07-17**) → `Authorization: Bearer <token>`,
+    flujo **JWT Bearer grant** (RFC 7523, no Client Credentials): `ServiceNowTokenService` firma una
+    assertion `RS256` con el certificado de `SN_OAUTH_CERT_PATH` y la intercambia por un access
+    token contra `SN_OAUTH_URL`. El token se cachea en memoria (margen de 30s antes de expirar) y
+    los refresh concurrentes comparten la misma promesa en vuelo — no hay interceptor de axios, el
+    header se arma por request via `getAuthHeader()`.
+  - Detalle completo: [`API_SNOWQ_SERVICE.md`](../../api-snowq-service/API_SNOWQ_SERVICE.md#5-autenticación)
 
 ---
 
@@ -136,10 +149,34 @@ y acepta strings semánticos en PATCH (`state: 'resolved'` → mapea al código 
 
 ```env
 BASE_URL_SERVICENOW=http://servicenow-host
-SN_AUTH=base64(user:password)
 HOST_DATABASE=localhost
 PORT_DATABASE=3306
 USERNAME_DATABASE=root
 PASSWORD_DATABASE=root
 DATABASE_DATABASE=incidences_dbase
 ```
+
+### Auth hacia ServiceNow — según `SN_AUTH_MODE`
+
+```env
+# basic (default) — legado
+SN_AUTH_MODE=basic
+SN_AUTH=base64(user:password)
+```
+
+```env
+# oauth2 — JWT Bearer grant, obtención del token vía SN_OAUTH_URL
+SN_AUTH_MODE=oauth2
+SN_OAUTH_URL=https://<instancia-sn>/oauth_token.do      # endpoint token OAuth2 de ServiceNow
+SN_OAUTH_UPN=svc-account@empresa.com                     # UPN de la cuenta de servicio en SN (claim sub)
+SN_OAUTH_KID=<key-id-registrado-en-sn>                   # kid del certificado, header del JWT
+SN_OAUTH_CLIENT_ID=<client-id-app-oauth2-en-sn>          # claims aud + client_id
+SN_OAUTH_CLIENT_SECRET=<opcional-si-sn-lo-exige>
+SN_OAUTH_ISS=<issuer-de-la-assertion>
+SN_OAUTH_GRANT_TYPE=urn:ietf:params:oauth:grant-type:jwt-bearer   # default, no suele cambiar
+SN_OAUTH_CERT_PATH=/ruta/al/certificado.pem              # clave privada, firma la assertion RS256
+```
+
+`main.ts` (`validateConfig()`) exige todo el bloque `SN_OAUTH_*` (menos `SECRET` y `GRANT_TYPE`,
+opcionales) cuando `SN_AUTH_MODE=oauth2` en staging/producción — falla al arrancar si falta algo,
+en vez de fallar recién en el primer ticket.
