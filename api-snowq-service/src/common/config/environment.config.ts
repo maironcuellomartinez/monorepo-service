@@ -27,14 +27,3 @@ export const serviceNowConfig = registerAs('servicenow', () => ({
     'urn:ietf:params:oauth:grant-type:jwt-bearer',
   oauth_cert_path: process.env.SN_OAUTH_CERT_PATH,
 }));
-
-// REQUESTTYPE: configuration RequestType enum
-export const requestTypeConfig = registerAs('request_type_config', () => ({
-  incident: process.env.INCIDENT,
-  change_request: process.env.CHANGE_REQUEST,
-  service_catalog: process.env.SERVICE_CATALOG,
-  problem: process.env.PROBLEM,
-  knowledge_article: process.env.KNOWLEDGE_ARTICLE,
-  release_task: process.env.RELEASE_TASK,
-  configuration_item: process.env.CONFIGURATION_ITEM,
-}));
