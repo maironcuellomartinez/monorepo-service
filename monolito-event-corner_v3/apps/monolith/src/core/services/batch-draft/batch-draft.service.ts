@@ -6,6 +6,13 @@ import { ISlotRepository } from '../../ports/outgoing/repositories/slot-reposito
 import { SLOT_REPOSITORY } from '../../ports/outgoing/repositories/tokens';
 import { CACHE } from '../../ports/outgoing/infrastructure-tokens';
 import { ICache } from '../../ports/outgoing/cache/cache.port';
+import { IDeviceRepository } from '../../ports/outgoing/repositories/device-repository.port';
+import { IIncidentRepository } from '../../ports/outgoing/repositories/incident-repository.port';
+import {
+  DEVICE_REPOSITORY,
+  INCIDENT_REPOSITORY,
+} from '../../ports/outgoing/repositories/tokens';
+import { DeviceHasActiveIncidentError } from '../../domain/errors/incident.errors';
 import { INCIDENT_SERVICE } from '../../ports/incoming/service-tokens';
 import { IIncidentService } from '../../ports/incoming/incident/incident-service.port';
 import { TracingService } from '@app/observability';
@@ -29,6 +36,9 @@ export class BatchDraftService {
     private readonly repo: TypeOrmBatchDraftRepository,
     @Inject(SLOT_REPOSITORY) private readonly slotRepo: ISlotRepository,
     @Inject(CACHE) private readonly cache: ICache,
+    @Inject(DEVICE_REPOSITORY) private readonly deviceRepo: IDeviceRepository,
+    @Inject(INCIDENT_REPOSITORY)
+    private readonly incidentRepo: IIncidentRepository,
     @Inject(INCIDENT_SERVICE)
     private readonly incidentService: IIncidentService,
     private readonly tracing: TracingService,
@@ -43,6 +53,48 @@ export class BatchDraftService {
    * invalidarlo al cambiar items para que el calendario refleje el hold en el
    * próximo fetch, igual que hace IncidentService al crear/cancelar.
    */
+  /**
+   * Rechaza el dispositivo si ya figura en otro item del lote o si tiene una
+   * incidencia abierta (estado no terminal). El dispositivo puede no existir
+   * aún en el monolito (serial manual/virtual): en ese caso no hay nada que
+   * chequear — se resuelve al crear la incidencia.
+   */
+  private async assertDeviceFree(
+    serialNumber: string,
+    draftItems: BatchDraftItemData[],
+  ): Promise<Result<void>> {
+    const dupInDraft = draftItems.some(
+      (i) =>
+        i.deviceSerial === serialNumber &&
+        (i.status === 'pending' || i.status === 'error'),
+    );
+    if (dupInDraft) {
+      return Result.err(
+        new Error(
+          `El dispositivo ${serialNumber} ya tiene una incidencia en este lote.`,
+        ),
+      );
+    }
+
+    const deviceResult = await this.deviceRepo.findBySerial(serialNumber);
+    if (deviceResult.isFailure) return Result.err(deviceResult.unwrapError());
+    const device = deviceResult.unwrap();
+    if (!device) return Result.ok(undefined);
+
+    const activeResult = await this.incidentRepo.findActiveByDeviceId(
+      device.id.toString(),
+    );
+    if (activeResult.isFailure) return Result.err(activeResult.unwrapError());
+    const active = activeResult.unwrap();
+    if (active.length > 0) {
+      const ref =
+        active[0].servicenowNumber?.value ??
+        `${active[0].id.toString().slice(0, 8)}...`;
+      return Result.err(new DeviceHasActiveIncidentError(serialNumber, ref));
+    }
+    return Result.ok(undefined);
+  }
+
   private async invalidateAvailability(
     cornerId: string,
     startTime: Date,
@@ -87,6 +139,14 @@ export class BatchDraftService {
     if (startTime <= new Date()) {
       return Result.err(new Error('El horario seleccionado ya pasó'));
     }
+
+    // Un dispositivo no puede repetirse dentro del lote ni tener ya una
+    // incidencia abierta — se rechaza al agregar, no recién al enviar.
+    const deviceCheck = await this.assertDeviceFree(
+      cmd.deviceSerial,
+      draft.items ?? [],
+    );
+    if (deviceCheck.isFailure) return deviceCheck as Result<never>;
 
     // Holdear los slots de forma atómica
     const slotIds = cmd.slotIds.map((id) => SlotId(id as any));
@@ -171,6 +231,18 @@ export class BatchDraftService {
     const startTime = cmd.startTime ? new Date(cmd.startTime) : undefined;
     if (startTime && startTime <= new Date()) {
       return Result.err(new Error('El horario seleccionado ya pasó'));
+    }
+
+    if (cmd.deviceSerial && cmd.deviceSerial !== item.deviceSerial) {
+      const draftResult = await this.repo.findByUserId(userId);
+      const otherItems = (
+        draftResult.isFailure ? [] : (draftResult.unwrap()?.items ?? [])
+      ).filter((i) => i.id !== itemId);
+      const deviceCheck = await this.assertDeviceFree(
+        cmd.deviceSerial,
+        otherItems,
+      );
+      if (deviceCheck.isFailure) return deviceCheck;
     }
 
     // Si cambiaron los slots: liberar los viejos y holdear los nuevos

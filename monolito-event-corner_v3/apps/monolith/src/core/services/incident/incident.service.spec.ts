@@ -119,6 +119,7 @@ function buildMocks(opts?: {
 
   const incidentRepository = {
     findById: jest.fn().mockResolvedValue(Result.ok(incident)),
+    findActiveByDeviceId: jest.fn().mockResolvedValue(Result.ok([])),
     save: jest
       .fn()
       .mockResolvedValue(

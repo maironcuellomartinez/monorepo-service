@@ -12,7 +12,10 @@ import { IncidentSlotEntity } from '../entities/incident-slot.entity';
 import { IncidentTimelineEntity } from '../entities/incident-timeline.entity';
 import { Incident } from '../../../../core/domain/entities/incident.entity';
 import { DateRange } from '../../../../core/domain/value-objects/date-range.value';
-import { IncidentStatus } from '../../../../core/domain/enums/incident-status.enum';
+import {
+  IncidentStatus,
+  ACTIVE_STATUSES,
+} from '../../../../core/domain/enums/incident-status.enum';
 import { IncidentOrigin } from '../../../../core/domain/enums/incident-origin.enum';
 import { ServiceNowId } from '../../../../core/domain/value-objects/servicenow-id.value';
 import { ServiceNowNumber } from '../../../../core/domain/value-objects/servicenow-number.value';
@@ -433,6 +436,21 @@ export class TypeOrmIncidentRepository implements IIncidentRepository {
       );
 
       return Result.ok(domains);
+    } catch (error) {
+      return Result.err(error);
+    }
+  }
+
+  async findActiveByDeviceId(deviceId: string): Promise<Result<Incident[]>> {
+    try {
+      const entities = await this.incidentRepository.find({
+        where: {
+          device_id: deviceId,
+          status: In(ACTIVE_STATUSES),
+        },
+      });
+      const incidents = entities.map((e) => this.toDomain(e, []));
+      return Result.ok(incidents);
     } catch (error) {
       return Result.err(error);
     }

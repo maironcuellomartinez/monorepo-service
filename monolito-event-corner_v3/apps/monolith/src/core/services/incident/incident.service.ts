@@ -37,6 +37,7 @@ import { DateRange } from '../../domain/value-objects/date-range.value';
 import { IncidentOrigin } from '../../domain/enums/incident-origin.enum';
 import { IncidentStatus } from '../../domain/enums/incident-status.enum';
 import { IssueTypeNotAllowedForCompanyError } from '@app/shared/errors/domain-error';
+import { DeviceHasActiveIncidentError } from '../../domain/errors/incident.errors';
 
 const CTX = 'IncidentService';
 
@@ -237,6 +238,28 @@ export class IncidentService implements IIncidentService {
         new Error(
           `El dispositivo ${command.device.serialNumber} no está registrado en el inventario`,
         ),
+      );
+    }
+
+    // Un dispositivo no puede tener dos incidencias abiertas a la vez:
+    // rechazar si ya existe una en estado no terminal. Antes del booking
+    // para no entrar al camino de compensación de slots.
+    const activeForDeviceResult =
+      await this.incidentRepository.findActiveByDeviceId(device.id.toString());
+    if (activeForDeviceResult.isFailure)
+      return Result.err(activeForDeviceResult.unwrapError());
+    const activeForDevice = activeForDeviceResult.unwrap();
+    if (activeForDevice.length > 0) {
+      const existing = activeForDevice[0];
+      const ref =
+        existing.servicenowNumber?.value ??
+        `${existing.id.toString().slice(0, 8)}...`;
+      this.logger.warn(
+        `createIncident — device ${command.device.serialNumber} ya tiene incidencia activa ${existing.id}`,
+        CTX,
+      );
+      return Result.err(
+        new DeviceHasActiveIncidentError(command.device.serialNumber, ref),
       );
     }
 

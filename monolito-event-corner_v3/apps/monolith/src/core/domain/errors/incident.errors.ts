@@ -103,6 +103,16 @@ export class ServiceNowProfileNotFoundError extends DomainError {
   }
 }
 
+export class DeviceHasActiveIncidentError extends DomainError {
+  readonly code = 'DEVICE_ALREADY_HAS_ACTIVE_INCIDENT';
+
+  constructor(serialNumber: string, incidentRef?: string) {
+    super(
+      `El dispositivo ${serialNumber} ya tiene una incidencia activa${incidentRef ? ` (${incidentRef})` : ''}. Cerrala o cancelala antes de crear otra.`,
+    );
+  }
+}
+
 export class ServiceNowProfileAlreadyExistsError extends DomainError {
   readonly code = 'SERVICENOW_PROFILE_ALREADY_EXISTS';
 
