@@ -38,9 +38,10 @@ function ProtectedLayout() {
 // ── Permission Route ─────────────────────────────────────────────────────────
 // Redirige al dashboard si el usuario no tiene el permiso requerido.
 
-function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+function PermissionRoute({ permission, children }: { permission: string | string[]; children: React.ReactNode }) {
   const { can } = useAuth()
-  if (!can(permission)) {
+  const permissions = Array.isArray(permission) ? permission : [permission]
+  if (!permissions.some((p) => can(p))) {
     return <Navigate to="/dashboard" replace />
   }
   return <>{children}</>
@@ -136,13 +137,10 @@ function AppRoutes() {
         <Route path="/companies" element={
           <PermissionRoute permission="company:list"><CompaniesPage /></PermissionRoute>
         } />
+        {/* user:list o technician:list: UsersPage decide internamente qué tabs
+            mostrar según can('user:list') / can('technician:list') */}
         <Route path="/users" element={
-          <PermissionRoute permission="user:list"><UsersPage /></PermissionRoute>
-        } />
-        {/* technician:list: lo tienen admin y manager. UsersPage decide internamente
-            qué tabs mostrar según can('user:list') / can('technician:list') */}
-        <Route path="/technicians" element={
-          <PermissionRoute permission="technician:list"><UsersPage /></PermissionRoute>
+          <PermissionRoute permission={['user:list', 'technician:list']}><UsersPage /></PermissionRoute>
         } />
         <Route path="/devices" element={
           <PermissionRoute permission="user:list"><DevicesPage /></PermissionRoute>

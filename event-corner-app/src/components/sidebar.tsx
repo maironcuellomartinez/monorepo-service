@@ -8,7 +8,6 @@ import {
   Calendar,
   Tag,
   Users,
-  UserCheck,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -21,7 +20,7 @@ import { useAuth } from '@/context/auth'
 import { Button } from '@/components/ui/button'
 
 /**
- * permission:  permiso ABAC requerido para ver el item.
+ * permission:  permiso(s) ABAC requerido(s) para ver el item (OR si es array).
  * staffOnly:   true → oculto para empleados/clientes (solo técnicos, admins, managers).
  *              Los empleados gestionan sus incidencias desde el Dashboard.
  *
@@ -31,18 +30,17 @@ import { Button } from '@/components/ui/button'
  *  - Disponibilidad         → solo técnicos/admins/managers (staffOnly)
  *  - Corners                → admin y manager (schedule:create) — el CRUD de Corner
  *                             en sí queda gateado adentro de CornersPage (admin-only)
- *  - Técnicos               → admin y manager (technician:list)
- *  - Usuarios               → solo admin (user:list) — manager solo tiene user:read
+ *  - Usuarios               → admin (user:list) y manager (technician:list) — UsersPage
+ *                             decide internamente qué tabs mostrar (Usuarios/Técnicos)
  *  - Tipos de Incidencia    → solo admin (issue-type:create)
  */
-const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; permission?: string; staffOnly?: boolean }[] = [
+const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; permission?: string | string[]; staffOnly?: boolean }[] = [
   { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/incidents',    icon: AlertCircle,     label: 'Incidencias',         permission: 'incident:list',         staffOnly: true },
   { to: '/incidents/batch', icon: PackagePlus, label: 'Lote Incidencias',    permission: 'incident:list',         staffOnly: true },
   { to: '/requests',     icon: ClipboardList,   label: 'Requests',            permission: 'request:list',          staffOnly: true },
   { to: '/corners',      icon: MapPin,          label: 'Corners',             permission: 'schedule:create' },
-  { to: '/technicians',  icon: UserCheck,       label: 'Técnicos',            permission: 'technician:list' },
-  { to: '/users',        icon: Users,           label: 'Usuarios',            permission: 'user:list' },
+  { to: '/users',        icon: Users,           label: 'Usuarios',            permission: ['user:list', 'technician:list'] },
   { to: '/availability', icon: Calendar,        label: 'Disponibilidad',      permission: 'availability:read',     staffOnly: true },
   { to: '/issue-types',  icon: Tag,             label: 'Tipos de Citas',      permission: 'issue-type:create' },
   { to: '/companies',    icon: Building2,       label: 'Compañías',           permission: 'company:list' },
@@ -91,9 +89,10 @@ export function Sidebar() {
 
       {/* Nav items */}
       <nav className="flex-1 py-2 overflow-y-auto">
-        {NAV_ITEMS.filter(({ permission, staffOnly }) =>
-          (!permission || can(permission)) && (!staffOnly || !isEmployee)
-        ).map(({ to, icon: Icon, label }) => (
+        {NAV_ITEMS.filter(({ permission, staffOnly }) => {
+          const hasPermission = !permission || (Array.isArray(permission) ? permission.some(can) : can(permission))
+          return hasPermission && (!staffOnly || !isEmployee)
+        }).map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
