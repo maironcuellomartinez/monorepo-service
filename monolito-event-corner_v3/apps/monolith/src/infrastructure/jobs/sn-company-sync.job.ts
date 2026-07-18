@@ -6,6 +6,7 @@ import { IServiceNowProfileService } from '../../core/ports/incoming/servicenow/
 import { SERVICENOW_PROFILE_SERVICE } from '../../core/ports/incoming/service-tokens';
 import { IServiceNowClient } from '../../core/ports/outgoing/servicenow/servicenow-client.port';
 import { SERVICENOW_CLIENT } from '../../core/ports/outgoing/infrastructure-tokens';
+import { ServiceNowProfileAlreadyExistsError } from '../../core/domain/errors/incident.errors';
 
 const DEFAULT_CRON = '0 2 * * *'; // 2 AM todos los días
 
@@ -111,8 +112,19 @@ export class SnCompanySyncJob {
         snowCompanyName: snCompany.name,
       });
       if (profileResult.isFailure) {
+        const error = profileResult.unwrapError();
+        // Otro proceso (sync manual o esta misma corrida en otra instancia)
+        // ya creó el perfil entre el snapshot inicial y este insert — no es
+        // un error real, es la constraint de BD atajando la carrera.
+        if (error instanceof ServiceNowProfileAlreadyExistsError) {
+          this.logger.debug(
+            `SnCompanySyncJob: perfil para "${snCompany.name}" (sys_id=${snCompany.sys_id}) ya existía (creado concurrentemente)`,
+          );
+          skipped++;
+          continue;
+        }
         this.logger.warn(
-          `SnCompanySyncJob: error creando perfil para "${snCompany.name}" — ${profileResult.unwrapError().message}`,
+          `SnCompanySyncJob: error creando perfil para "${snCompany.name}" — ${error.message}`,
         );
         errors++;
         continue;
