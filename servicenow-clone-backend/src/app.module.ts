@@ -3,6 +3,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DynamicModule } from './dynamic-tables/dynamic.module';
 import { ServicenowSimulatorModule } from './servicenow-simulator/servicenow-simulator.module';
+import { SnCompaniesModule } from './sn-companies/sn-companies.module';
+import { SnCategoriesModule } from './sn-categories/sn-categories.module';
+import { SnGroupsModule } from './sn-groups/sn-groups.module';
 
 @Module({
   imports: [
@@ -25,6 +28,9 @@ import { ServicenowSimulatorModule } from './servicenow-simulator/servicenow-sim
     }),
     DynamicModule,
     ServicenowSimulatorModule,
+    SnCompaniesModule,
+    SnCategoriesModule,
+    SnGroupsModule,
   ],
 })
-export class AppModule { }
+export class AppModule {}

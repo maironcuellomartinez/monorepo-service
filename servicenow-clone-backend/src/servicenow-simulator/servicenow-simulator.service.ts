@@ -3,6 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { SnowTicketEntity } from './snow-ticket.entity';
+import { SnBaseService, SnowRecord } from '../common/sn-base.service';
+import { SnIncidentsService } from '../sn-incidents/sn-incidents.service';
+import { SnRequestsService } from '../sn-requests/sn-requests.service';
+import { SnTasksService } from '../sn-tasks/sn-tasks.service';
+import { SnChangesService } from '../sn-changes/sn-changes.service';
+import { SnProblemsService } from '../sn-problems/sn-problems.service';
 
 // ─── Prefijos de número por tabla ────────────────────────────────────────────
 
@@ -128,28 +134,36 @@ const SN_STATE_LABELS: Record<string, Record<string, string>> = {
   },
 };
 
-// ─── Tipos de respuesta ───────────────────────────────────────────────────────
-
-export interface SnowRecord {
-  sys_id: string;
-  number: string;
-  sys_class_name: string;
-  sys_created_on: string;
-  sys_updated_on: string;
-  state: string;
-  [key: string]: unknown;
-}
-
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
 export class ServicenowSimulatorService {
   private readonly logger = new Logger('SN-Clone-Service');
 
+  private readonly dedicatedServices: Map<string, SnBaseService<any>>;
+
   constructor(
     @InjectRepository(SnowTicketEntity)
     private readonly repo: Repository<SnowTicketEntity>,
-  ) { }
+    private readonly incidents: SnIncidentsService,
+    private readonly requests: SnRequestsService,
+    private readonly tasks: SnTasksService,
+    private readonly changes: SnChangesService,
+    private readonly problems: SnProblemsService,
+  ) {
+    this.dedicatedServices = new Map<string, SnBaseService<any>>([
+      ['incident', incidents],
+      ['sc_request', requests],
+      ['sc_req_item', requests],
+      ['sc_task', tasks],
+      ['change_request', changes],
+      ['problem', problems],
+    ]);
+  }
+
+  private dedicated(tableName: string): SnBaseService<any> | null {
+    return this.dedicatedServices.get(tableName) ?? null;
+  }
 
   // ─── Helpers privados ──────────────────────────────────────────────────────
 
@@ -171,10 +185,13 @@ export class ServicenowSimulatorService {
    *   '2'                        → '2'  (pass-through)
    *   'open'     + incident      → '1'
    */
-  private mapIncomingState(tableName: string, incomingState: unknown): string | null {
+  private mapIncomingState(
+    tableName: string,
+    incomingState: unknown,
+  ): string | null {
     if (incomingState === undefined || incomingState === null) return null;
 
-    const s = String(incomingState).trim();
+    const s = String(incomingState as string | number).trim();
 
     // Ya es un código numérico SN — pass-through
     if (/^-?\d+$/.test(s)) return s;
@@ -183,8 +200,13 @@ export class ServicenowSimulatorService {
 
     if (lower === 'resolved') return SN_RESOLVED_STATE[tableName] ?? '6';
     if (lower === 'closed') return SN_CLOSED_STATE[tableName] ?? '7';
-    if (lower === 'open' || lower === 'new') return SN_INITIAL_STATE[tableName] ?? '1';
-    if (lower === 'in_progress' || lower === 'in progress' || lower === 'work in progress')
+    if (lower === 'open' || lower === 'new')
+      return SN_INITIAL_STATE[tableName] ?? '1';
+    if (
+      lower === 'in_progress' ||
+      lower === 'in progress' ||
+      lower === 'work in progress'
+    )
       return '2';
     if (lower === 'on_hold' || lower === 'on hold') return '3';
     if (lower === 'canceled' || lower === 'cancelled') return '8';
@@ -237,7 +259,9 @@ export class ServicenowSimulatorService {
       sys_updated_on: this.toSnowDate(entity.updated_at),
 
       // Cierre — siempre presentes para evitar undefined en el cliente
-      resolved_at: entity.resolved_at ? this.toSnowDate(entity.resolved_at) : '',
+      resolved_at: entity.resolved_at
+        ? this.toSnowDate(entity.resolved_at)
+        : '',
       close_code: (payload.close_code as string) ?? '',
       close_notes: (payload.close_notes as string) ?? '',
     };
@@ -254,7 +278,14 @@ export class ServicenowSimulatorService {
    * El estado inicial se determina por tipo de tabla (SN_INITIAL_STATE):
    *   incident → '1' (New), change_request → '-5' (New), etc.
    */
-  async create(tableName: string, body: Record<string, unknown>): Promise<SnowRecord> {
+  async create(
+    tableName: string,
+    body: Record<string, unknown>,
+  ): Promise<SnowRecord> {
+    const svc = this.dedicated(tableName);
+    if (svc) return svc.create(body);
+
+    // Fallback: sn_tickets para tipos sin tabla dedicada (kb_article, release_task, cmdb_ci, etc.)
     return this.repo.manager.transaction(async (em) => {
       const prefix = this.getPrefix(tableName);
 
@@ -294,11 +325,14 @@ export class ServicenowSimulatorService {
    * @description Ordena los tickets por fecha de creación descendente.
    */
   async findAll(tableName: string): Promise<SnowRecord[]> {
+    const svc = this.dedicated(tableName);
+    if (svc) return svc.findAll();
+
     const entities = await this.repo.find({
       where: { table_name: tableName },
       order: { created_at: 'DESC' },
     });
-    return entities.map(e => this.toSnowRecord(e));
+    return entities.map((e) => this.toSnowRecord(e));
   }
 
   /**
@@ -308,10 +342,17 @@ export class ServicenowSimulatorService {
    * @returns Ticket.
    */
   async findOne(tableName: string, sys_id: string): Promise<SnowRecord> {
-    const entity = await this.repo.findOne({ where: { sys_id, table_name: tableName } });
+    const svc = this.dedicated(tableName);
+    if (svc) return svc.findOne(sys_id);
+
+    const entity = await this.repo.findOne({
+      where: { sys_id, table_name: tableName },
+    });
     if (!entity) {
       this.logger.warn(`[NOT_FOUND] table=${tableName} sys_id=${sys_id}`);
-      throw new NotFoundException(`Record ${sys_id} not found in table ${tableName}`);
+      throw new NotFoundException(
+        `Record ${sys_id} not found in table ${tableName}`,
+      );
     }
     return this.toSnowRecord(entity);
   }
@@ -328,11 +369,22 @@ export class ServicenowSimulatorService {
    * Si el nuevo estado es un estado de cierre para esa tabla y aún no tiene
    * resolved_at, se registra la fecha de resolución.
    */
-  async update(tableName: string, sys_id: string, body: Record<string, unknown>): Promise<SnowRecord> {
-    const entity = await this.repo.findOne({ where: { sys_id, table_name: tableName } });
+  async update(
+    tableName: string,
+    sys_id: string,
+    body: Record<string, unknown>,
+  ): Promise<SnowRecord> {
+    const svc = this.dedicated(tableName);
+    if (svc) return svc.update(sys_id, body);
+
+    const entity = await this.repo.findOne({
+      where: { sys_id, table_name: tableName },
+    });
     if (!entity) {
       this.logger.warn(`[NOT_FOUND] table=${tableName} sys_id=${sys_id}`);
-      throw new NotFoundException(`Record ${sys_id} not found in table ${tableName}`);
+      throw new NotFoundException(
+        `Record ${sys_id} not found in table ${tableName}`,
+      );
     }
 
     // Merge payload (incluye close_code, close_notes, work_notes, etc.)
