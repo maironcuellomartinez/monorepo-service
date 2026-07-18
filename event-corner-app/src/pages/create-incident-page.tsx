@@ -25,7 +25,7 @@ const DURATIONS = [30, 60, 90, 120]
 
 const STEPS = [
   { n: 1, label: 'Corner' },
-  { n: 2, label: 'Cliente' },
+  { n: 2, label: 'Usuario' },
   { n: 3, label: 'Dispositivo' },
   { n: 4, label: 'Tipo' },
   { n: 5, label: 'Horario' },
@@ -338,7 +338,7 @@ export function CreateIncidentPage() {
           {step === 2 && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Paso 2: Selecciona el cliente</CardTitle>
+                <CardTitle className="text-base">Paso 2: Selecciona el usuario</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="relative">
@@ -347,7 +347,10 @@ export function CreateIncidentPage() {
                     className="pl-9"
                     placeholder="Buscar por nombre o email..."
                     value={userSearch}
-                    onChange={(e) => setUserSearch(e.target.value)}
+                    onChange={(e) => {
+                      setUserSearch(e.target.value)
+                      setSelectedUser(null)
+                    }}
                   />
                 </div>
 
@@ -497,9 +500,15 @@ export function CreateIncidentPage() {
                           )}
                         </div>
                       ) : (
-                        <p className="text-sm text-muted-foreground text-center py-6">
-                          Sin dispositivos. Escribí el número de serie para ingresarlo manualmente.
-                        </p>
+                        <div className="flex flex-col items-center gap-1.5 text-center py-6 px-3">
+                          <AlertCircle className="h-5 w-5 text-amber-600" />
+                          <p className="text-sm font-medium text-amber-600">
+                            Este usuario no tiene dispositivos registrados en el inventario
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Escribí un número de serie arriba para ingresarlo manualmente
+                          </p>
+                        </div>
                       )}
                     </div>
                   </>
@@ -671,7 +680,7 @@ export function CreateIncidentPage() {
                     <span className="font-medium">{corner?.name ?? selectedCornerId}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Cliente:</span>
+                    <span className="text-muted-foreground">Usuario:</span>
                     <span className="font-medium">{selectedUser?.fullName ?? selectedUser?.email ?? '—'}</span>
                   </div>
                   <div className="flex justify-between">
