@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, AlertCircle, Search, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, AlertCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { incidentsApi, issueTypesApi, cornersApi, Corner, IssueType, Incident, IncidentStatus, IncidentFilters } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 
 const STATUS_CONFIG: Record<IncidentStatus, { label: string; className: string }> = {
   CREATED:                     { label: 'Creada',               className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
@@ -70,6 +71,16 @@ export function IncidentsPage() {
   const [dateTo, setDateTo] = useState('')
   const [availableOnly, setAvailableOnly] = useState(true)
 
+  // Búsqueda en vivo: los campos de texto se aplican con debounce para no
+  // disparar una petición por tecla.
+  const debouncedEmail = useDebouncedValue(customerEmail)
+  const debouncedSnNumber = useDebouncedValue(servicenowNumber)
+  const debouncedSerial = useDebouncedValue(deviceSerial)
+
+  // Descarta respuestas fuera de orden (la de un filtro viejo podría llegar
+  // después que la del filtro actual y pisar los resultados correctos).
+  const requestId = useRef(0)
+
   useEffect(() => {
     Promise.all([cornersApi.list(), issueTypesApi.list()])
       .then(([c, t]) => { setCorners(c); setIssueTypes(t) })
@@ -77,18 +88,30 @@ export function IncidentsPage() {
       .finally(() => setLoadingMeta(false))
   }, [])
 
+  // Cambiar cualquier filtro vuelve a página 1 — si no, un filtro nuevo puede
+  // pedir una página que ya no existe y mostrar "sin resultados" con datos.
+  useEffect(() => {
+    setPage(1)
+  }, [cornerId, status, issueTypeId, debouncedEmail, debouncedSnNumber, debouncedSerial, dateFrom, dateTo, availableOnly])
+
+  // Al cambiar de corner se vacía la tabla para mostrar el skeleton inicial
+  useEffect(() => {
+    setIncidents([])
+    setTotal(0)
+  }, [cornerId])
+
   const buildParams = useCallback((): IncidentFilters => {
     const p: IncidentFilters = { page, limit: PAGE_SIZE, availableOnly }
     if (cornerId) p.cornerId = cornerId
     if (status) p.status = status
     if (issueTypeId) p.issueTypeId = issueTypeId
-    if (customerEmail.trim()) p.customerEmail = customerEmail.trim()
-    if (servicenowNumber.trim()) p.servicenowNumber = servicenowNumber.trim()
-    if (deviceSerial.trim()) p.deviceSerial = deviceSerial.trim()
+    if (debouncedEmail.trim()) p.customerEmail = debouncedEmail.trim()
+    if (debouncedSnNumber.trim()) p.servicenowNumber = debouncedSnNumber.trim()
+    if (debouncedSerial.trim()) p.deviceSerial = debouncedSerial.trim()
     if (dateFrom) p.dateFrom = dateFrom
     if (dateTo) p.dateTo = dateTo
     return p
-  }, [page, cornerId, status, issueTypeId, customerEmail, servicenowNumber, deviceSerial, dateFrom, dateTo, availableOnly])
+  }, [page, cornerId, status, issueTypeId, debouncedEmail, debouncedSnNumber, debouncedSerial, dateFrom, dateTo, availableOnly])
 
   const loadIncidents = useCallback(async () => {
     if (!cornerId) {
@@ -96,29 +119,28 @@ export function IncidentsPage() {
       setTotal(0)
       return
     }
+    const id = ++requestId.current
     setLoading(true)
     setError('')
     try {
       const result = await incidentsApi.listFiltered(buildParams())
+      if (id !== requestId.current) return
       setIncidents(result.data)
       setTotal(result.total)
     } catch (err: unknown) {
+      if (id !== requestId.current) return
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
       setError(msg || 'Error al cargar incidencias')
       setIncidents([])
       setTotal(0)
     } finally {
-      setLoading(false)
+      if (id === requestId.current) setLoading(false)
     }
   }, [buildParams, cornerId])
 
   useEffect(() => {
     loadIncidents()
   }, [loadIncidents])
-
-  const applyFilters = () => {
-    setPage(1)
-  }
 
   const clearFilters = () => {
     setStatus('')
@@ -270,22 +292,18 @@ export function IncidentsPage() {
               </Label>
             </div>
 
-            <div className="flex gap-2 pb-0.5">
-              <Button size="sm" onClick={applyFilters} disabled={!cornerId}>
-                <Search className="h-4 w-4" />
-                Buscar
-              </Button>
-              {hasFilters && (
+            {hasFilters && (
+              <div className="flex gap-2 pb-0.5">
                 <Button size="sm" variant="outline" onClick={clearFilters}>
                   <X className="h-4 w-4" />
                   Limpiar
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
 
-            {cornerId && !loading && (
+            {cornerId && (
               <span className="text-sm text-muted-foreground pb-0.5 ml-auto">
-                {total} incidencia(s)
+                {loading ? 'Buscando…' : `${total} incidencia(s)`}
               </span>
             )}
           </div>
@@ -297,7 +315,7 @@ export function IncidentsPage() {
             <AlertCircle className="h-10 w-10 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">Selecciona un corner para ver las incidencias</p>
           </div>
-        ) : loading ? (
+        ) : loading && incidents.length === 0 ? (
           <div className="space-y-2">
             {[1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="h-12 bg-muted animate-pulse rounded" />
@@ -316,7 +334,8 @@ export function IncidentsPage() {
           </div>
         ) : (
           <>
-            <div className="border rounded-lg overflow-hidden">
+            {/* Durante un refresco se mantienen las filas visibles, apenas atenuadas */}
+            <div className={cn('border rounded-lg overflow-hidden transition-opacity', loading && 'opacity-60')}>
               <Table>
                 <TableHeader>
                   <TableRow>
