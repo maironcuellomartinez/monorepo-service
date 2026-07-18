@@ -131,6 +131,14 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
   const [error, setError] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
+  // Ventana real a reservar: el calendario muestra slots de 15 min, pero la cita
+  // debe durar issueType.workMinutes — al elegir el tipo se re-consulta la
+  // disponibilidad con esa duración y se reservan los slots consecutivos
+  // necesarios a partir del horario clickeado.
+  const [bookingWindow, setBookingWindow] = useState<AvailabilitySlot | null>(null)
+  const [loadingWindow, setLoadingWindow] = useState(false)
+  const [windowError, setWindowError] = useState('')
+
   // Reset state + load issue types when modal opens
   useEffect(() => {
     if (!open) return
@@ -143,9 +151,11 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
     resetUserSearch()
     setDeviceSearch('')
     setError('')
+    setBookingWindow(null)
+    setWindowError('')
 
     setLoadingIssueTypes(true)
-    issueTypesApi.list()
+    issueTypesApi.list({ category: 'ISSUE' })
       .then((data) => setIssueTypes(data.filter((it) => it.isActive !== false)))
       .catch(() => setError('Error al cargar tipos de incidencia'))
       .finally(() => setLoadingIssueTypes(false))
@@ -153,6 +163,36 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
     setTimeout(() => searchRef.current?.focus(), 100)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  // Al elegir el tipo, verificar que desde el horario clickeado haya
+  // workMinutes de disponibilidad consecutiva y obtener sus slotIds.
+  useEffect(() => {
+    if (!open || !selectedIssueTypeId || !corner) {
+      setBookingWindow(null)
+      setWindowError('')
+      return
+    }
+    const issueType = issueTypes.find((it) => it.id === selectedIssueTypeId)
+    const duration = issueType?.workMinutes ?? 60
+    setLoadingWindow(true)
+    setWindowError('')
+    setBookingWindow(null)
+    availabilityApi
+      .getSlots(corner.id, slot.startTime.slice(0, 10), duration)
+      .then((windows) => {
+        const w = windows.find((x) => x.startTime === slot.startTime)
+        if (w?.available) {
+          setBookingWindow(w)
+        } else {
+          setWindowError(
+            `Este tipo de incidencia requiere ${duration} min y no hay disponibilidad consecutiva a partir de este horario. Elegí otro slot del calendario.`,
+          )
+        }
+      })
+      .catch(() => setWindowError('No se pudo verificar la disponibilidad para la duración del tipo elegido'))
+      .finally(() => setLoadingWindow(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selectedIssueTypeId])
 
   // Load devices when a customer is selected — sync from Minerva first, then read local DB
   const loadDevices = async (userId: string) => {
@@ -197,11 +237,19 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
 
   const handleSubmit = async () => {
     if (!selectedUser || !selectedIssueTypeId) {
-      setError('Cliente y tipo de incidencia son obligatorios')
+      setError('Usuario y tipo de incidencia son obligatorios')
+      return
+    }
+    if (!selectedUser.companyId) {
+      setError('Este usuario no tiene empresa asignada y no puede crear incidencias.')
       return
     }
     if (!serial) {
       setError('El número de serie del dispositivo es obligatorio')
+      return
+    }
+    if (!bookingWindow) {
+      setError('No hay disponibilidad para la duración del tipo elegido en este horario')
       return
     }
     setSubmitting(true)
@@ -211,9 +259,9 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
         cornerId: corner!.id,
         issueTypeId: selectedIssueTypeId,
         customerId: selectedUser.id,
-        slotIds: slot.slotIds,
-        startTime: slot.startTime,
-        endTime: slot.endTime,
+        slotIds: bookingWindow.slotIds,
+        startTime: bookingWindow.startTime,
+        endTime: bookingWindow.endTime,
         origin: 'event-corner-app',
         notes: notes.trim() || undefined,
         device: { serialNumber: serial },
@@ -244,7 +292,10 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <Clock className="h-4 w-4 shrink-0" />
-              {formatDate(slot.startTime)} → {formatDate(slot.endTime)}
+              {formatDate((bookingWindow ?? slot).startTime)} → {formatDate((bookingWindow ?? slot).endTime)}
+              {bookingWindow && bookingWindow.endTime !== slot.endTime && (
+                <span className="text-xs">(duración según tipo de incidencia)</span>
+              )}
             </div>
             {slot.technicians && (
               <div className="flex items-center gap-2 text-muted-foreground">
@@ -263,7 +314,7 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
 
           {/* Customer */}
           <div className="space-y-2 shrink-0">
-            <Label>Cliente <span className="text-destructive">*</span></Label>
+            <Label>Usuario <span className="text-destructive">*</span></Label>
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -271,7 +322,10 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
                 className="pl-9"
                 placeholder="Buscar por nombre o email..."
                 value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
+                onChange={(e) => {
+                  setUserSearch(e.target.value)
+                  setSelectedUser(null)
+                }}
               />
             </div>
             {loadingUsers ? (
@@ -302,6 +356,11 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
                   </div>
                 ))}
               </div>
+            )}
+            {selectedUser && !selectedUser.companyId && (
+              <p className="text-xs font-medium text-destructive">
+                Este usuario no tiene empresa asignada y no puede crear incidencias.
+              </p>
             )}
           </div>
 
@@ -408,6 +467,12 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
                 </SelectContent>
               </Select>
             )}
+            {loadingWindow && (
+              <p className="text-xs text-muted-foreground">Verificando disponibilidad para la duración del tipo...</p>
+            )}
+            {windowError && (
+              <p className="text-xs font-medium text-destructive">{windowError}</p>
+            )}
           </div>
 
           {/* Notes */}
@@ -431,7 +496,10 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
           <Button
             className="flex-1"
             onClick={handleSubmit}
-            disabled={submitting || !selectedUser || !selectedIssueTypeId || !serial}
+            disabled={
+              submitting || !selectedUser || !selectedUser.companyId ||
+              !selectedIssueTypeId || !serial || loadingWindow || !bookingWindow
+            }
           >
             {submitting ? 'Creando...' : 'Crear incidencia'}
           </Button>
