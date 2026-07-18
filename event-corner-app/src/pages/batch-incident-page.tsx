@@ -28,8 +28,6 @@ import { formatDate, cn } from '@/lib/utils'
 
 type WizardStep = 1 | 2 | 3 | 4 | 5 | 6
 
-const DURATIONS = [30, 60, 90, 120]
-
 const STEPS = [
   { n: 1 as const, label: 'Corner' },
   { n: 2 as const, label: 'Cliente' },
@@ -89,7 +87,6 @@ function IncidentWizardDialog({
   const [manualSerial, setManualSerial] = useState('')
   const [selectedIssueTypeId, setSelectedIssueTypeId] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
-  const [duration, setDuration] = useState(60)
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
   const [description, setDescription] = useState('')
   const [notes, setNotes] = useState('')
@@ -145,7 +142,6 @@ function IncidentWizardDialog({
       setManualSerial('')
       setSelectedIssueTypeId('')
       setDate(new Date().toISOString().slice(0, 10))
-      setDuration(60)
       setSelectedSlot(null)
       setDescription('')
       setNotes('')
@@ -165,6 +161,9 @@ function IncidentWizardDialog({
       setLoadingDevices(false)
     }
   }
+
+  // La duración de la cita la define el tipo de incidencia elegido en el paso 4
+  const duration = issueTypes.find((it) => it.id === selectedIssueTypeId)?.workMinutes ?? 60
 
   const checkAvailability = async () => {
     if (!selectedCornerId || !date) return
@@ -393,7 +392,14 @@ function IncidentWizardDialog({
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Tipo de incidencia</Label>
-              <Select value={selectedIssueTypeId} onValueChange={setSelectedIssueTypeId}>
+              <Select
+                value={selectedIssueTypeId}
+                onValueChange={(v) => {
+                  // Cambiar el tipo cambia la duración: el horario elegido deja de valer
+                  if (v !== selectedIssueTypeId) { setSelectedSlot(null); setSlots([]) }
+                  setSelectedIssueTypeId(v)
+                }}
+              >
                 <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
                 <SelectContent>
                   {issueTypes.filter((it) => it.isActive !== false).map((it) => (
@@ -440,11 +446,10 @@ function IncidentWizardDialog({
                 <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} min={new Date().toISOString().slice(0, 10)} />
               </div>
               <div className="space-y-2">
-                <Label>Duración (min)</Label>
-                <Select value={String(duration)} onValueChange={(v) => setDuration(Number(v))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{DURATIONS.map((d) => <SelectItem key={d} value={String(d)}>{d} min</SelectItem>)}</SelectContent>
-                </Select>
+                <Label>Duración</Label>
+                <div className="flex items-center h-10 px-3 rounded-md border bg-muted/50 text-sm">
+                  {duration} min <span className="text-xs text-muted-foreground ml-1.5">(según tipo)</span>
+                </div>
               </div>
             </div>
             <Button variant="outline" className="w-full" onClick={checkAvailability} disabled={loadingSlots}>
@@ -583,7 +588,10 @@ export function BatchIncidentPage() {
   const navigate = useNavigate()
   const { user, can } = useAuth()
   const canCreateIncident = can('incident:create')
-  const canUpdateIncident = can('incident:update')
+  // Editar/quitar items del PROPIO borrador es parte de componer incidencias a
+  // crear — no existe incident:update en el catálogo ABAC y gatear con él
+  // dejaba la columna Acciones vacía para todos.
+  const canEditDraft = canCreateIncident
 
   const [corners, setCorners] = useState<Corner[]>([])
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
@@ -613,7 +621,7 @@ export function BatchIncidentPage() {
   }
 
   const openEdit = (item: UIBatchItem) => {
-    if (!canUpdateIncident) return
+    if (!canEditDraft) return
     setEditingItem(item)
     setDialogOpen(true)
   }
@@ -629,7 +637,7 @@ export function BatchIncidentPage() {
   }
 
   const handleRemove = async (item: UIBatchItem) => {
-    if (!canUpdateIncident) return
+    if (!canEditDraft) return
     try {
       await removeItem(item.id)
     } catch {
@@ -824,7 +832,7 @@ export function BatchIncidentPage() {
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            {canUpdateIncident && (
+                            {canEditDraft && (
                               <>
                                 <Button
                                   variant="ghost" size="icon"

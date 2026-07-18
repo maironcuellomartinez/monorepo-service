@@ -21,8 +21,6 @@ import { useAuth } from '@/context/auth'
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6
 
-const DURATIONS = [30, 60, 90, 120]
-
 const STEPS = [
   { n: 1, label: 'Corner' },
   { n: 2, label: 'Usuario' },
@@ -72,7 +70,6 @@ export function CreateIncidentPage() {
   const [manualSerial, setManualSerial] = useState(presetDeviceSerial && !presetCustomerId ? presetDeviceSerial : '')
   const [selectedIssueTypeId, setSelectedIssueTypeId] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
-  const [duration, setDuration] = useState(60)
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
   const [description, setDescription] = useState('')
   const [notes, setNotes] = useState('')
@@ -121,6 +118,9 @@ export function CreateIncidentPage() {
       setLoadingDevices(false)
     }
   }
+
+  // La duración de la cita la define el tipo de incidencia elegido en el paso 4
+  const duration = issueTypes.find((it) => it.id === selectedIssueTypeId)?.workMinutes ?? 60
 
   const checkAvailability = async () => {
     if (!selectedCornerId || !date) return
@@ -539,7 +539,14 @@ export function CreateIncidentPage() {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label>Tipo de incidencia</Label>
-                  <Select value={selectedIssueTypeId} onValueChange={setSelectedIssueTypeId}>
+                  <Select
+                    value={selectedIssueTypeId}
+                    onValueChange={(v) => {
+                      // Cambiar el tipo cambia la duración: el horario elegido deja de valer
+                      if (v !== selectedIssueTypeId) { setSelectedSlot(null); setSlots([]) }
+                      setSelectedIssueTypeId(v)
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar tipo..." />
                     </SelectTrigger>
@@ -606,15 +613,10 @@ export function CreateIncidentPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Duración (min)</Label>
-                    <Select value={String(duration)} onValueChange={(v) => setDuration(Number(v))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {DURATIONS.map((d) => (
-                          <SelectItem key={d} value={String(d)}>{d} min</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>Duración</Label>
+                    <div className="flex items-center h-10 px-3 rounded-md border bg-muted/50 text-sm">
+                      {duration} min <span className="text-xs text-muted-foreground ml-1.5">(según tipo)</span>
+                    </div>
                   </div>
                 </div>
 
