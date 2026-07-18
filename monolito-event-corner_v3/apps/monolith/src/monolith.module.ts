@@ -45,6 +45,9 @@ import { BatchDraftEntity } from './infrastructure/persistence/typeorm/entities/
 import { BatchDraftItemEntity } from './infrastructure/persistence/typeorm/entities/batch-draft-item.entity';
 import { DropCornerSlotsFKForResync1745088000000 } from './infrastructure/persistence/typeorm/migrations/1745088000000-DropCornerSlotsFKForResync';
 import { IncreaseOutboxMaxRetries1783641799581 } from './infrastructure/persistence/typeorm/migrations/1783641799581-IncreaseOutboxMaxRetries';
+import { AddUniqueSnowCompanySysIdToServiceNowProfiles1784324876162 } from './infrastructure/persistence/typeorm/migrations/1784324876162-AddUniqueSnowCompanySysIdToServiceNowProfiles';
+import { WidenSnowqCorrelationIdColumns1784384307249 } from './infrastructure/persistence/typeorm/migrations/1784384307249-WidenSnowqCorrelationIdColumns';
+import { AddUniqueWindowToCornerSlots1784389154861 } from './infrastructure/persistence/typeorm/migrations/1784389154861-AddUniqueWindowToCornerSlots';
 
 @Module({
   imports: [
@@ -85,6 +88,9 @@ import { IncreaseOutboxMaxRetries1783641799581 } from './infrastructure/persiste
       migrations: [
         DropCornerSlotsFKForResync1745088000000,
         IncreaseOutboxMaxRetries1783641799581,
+        AddUniqueSnowCompanySysIdToServiceNowProfiles1784324876162,
+        WidenSnowqCorrelationIdColumns1784384307249,
+        AddUniqueWindowToCornerSlots1784389154861,
       ],
       migrationsRun: true,
     }),
