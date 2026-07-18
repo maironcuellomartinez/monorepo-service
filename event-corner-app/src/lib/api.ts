@@ -479,6 +479,10 @@ export const companiesApi = {
         { profiles },
       )
       .then((r) => r.data),
+  syncFromSn: () =>
+    apiClient
+      .post<{ synced: number; skipped: number; errors: number }>('/api/admin/companies/sync-from-sn')
+      .then((r) => r.data),
 }
 
 // ─── Technicians ──────────────────────────────────────────────────────────────

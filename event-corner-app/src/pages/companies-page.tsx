@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   Plus, Building2, AlertCircle, Pencil, Trash2, Search, X, ShieldCheck,
-  Upload, Server, CheckCircle2, XCircle,
+  Upload, Server, CheckCircle2, XCircle, RefreshCw,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
@@ -119,6 +119,25 @@ export function CompaniesPage() {
   const [savingSn, setSavingSn] = useState(false)
   const [snFormError, setSnFormError] = useState('')
   const [deleteSnId, setDeleteSnId] = useState<string | null>(null)
+
+  // ── Sync desde SN ─────────────────────────────────────────────────────────
+  const [syncingFromSn, setSyncingFromSn] = useState(false)
+  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; errors: number } | null>(null)
+
+  const handleSyncFromSn = async () => {
+    setSyncingFromSn(true)
+    setSyncResult(null)
+    try {
+      const result = await companiesApi.syncFromSn()
+      setSyncResult(result)
+      await load()
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setError(msg || 'Error al sincronizar desde ServiceNow')
+    } finally {
+      setSyncingFromSn(false)
+    }
+  }
 
   // ── Company CSV import state ───────────────────────────────────────────────
   const [showCompanyCsvDialog, setShowCompanyCsvDialog] = useState(false)
@@ -433,10 +452,6 @@ export function CompaniesPage() {
                   </button>
                 )}
               </div>
-              <Button variant="outline" size="sm" className="h-8" onClick={openCompanyCsvDialog}>
-                <Upload className="h-3.5 w-3.5" />
-                Importar CSV
-              </Button>
               <Button size="sm" className="h-8" onClick={openCreateCompany}>
                 <Plus className="h-3.5 w-3.5" />
                 Nueva
@@ -559,6 +574,17 @@ export function CompaniesPage() {
                   </button>
                 )}
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={handleSyncFromSn}
+                disabled={syncingFromSn}
+                title="Importar desde ServiceNow las compañías que aún no están registradas"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${syncingFromSn ? 'animate-spin' : ''}`} />
+                {syncingFromSn ? 'Sincronizando...' : 'Sincronizar desde SN'}
+              </Button>
               <Button variant="outline" size="sm" className="h-8" onClick={openCsvDialog}>
                 <Upload className="h-3.5 w-3.5" />
                 Importar CSV
@@ -569,6 +595,27 @@ export function CompaniesPage() {
               </Button>
             </div>
           </div>
+
+          {/* Sync result banner */}
+          {syncResult && (
+            <div className={`flex items-center justify-between px-4 py-2 text-xs border-b ${syncResult.errors > 0 ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400'}`}>
+              <div className="flex items-center gap-3">
+                {syncResult.errors > 0
+                  ? <XCircle className="h-3.5 w-3.5 shrink-0" />
+                  : <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                }
+                <span>
+                  Sincronización completada —{' '}
+                  <strong>{syncResult.synced}</strong> importadas,{' '}
+                  <strong>{syncResult.skipped}</strong> ya existían
+                  {syncResult.errors > 0 && <>, <strong>{syncResult.errors}</strong> con errores</>}
+                </span>
+              </div>
+              <button onClick={() => setSyncResult(null)} className="hover:opacity-70">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Content */}
           {loading ? (
