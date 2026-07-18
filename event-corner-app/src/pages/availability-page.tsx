@@ -70,8 +70,10 @@ interface SlotEvent {
   resource: AvailabilitySlot
 }
 
-// Visible time boundaries (06:00 → 23:59)
-const MIN_TIME = setSeconds(setMinutes(setHours(new Date(2000, 0, 1), 6), 0), 0)
+// Límite inferior visual por defecto (06:00). Si hay slots más tempranos en
+// hora local (ej. corner en otro timezone), la ventana se expande para
+// mostrarlos — nunca se ocultan slots reales, ocupados o no.
+const DEFAULT_MIN_HOUR = 6
 const MAX_TIME = setSeconds(setMinutes(setHours(new Date(2000, 0, 1), 23), 59), 59)
 
 // ─── Custom event card ───────────────────────────────────────────────────────
@@ -660,12 +662,18 @@ export function AvailabilityPage() {
     return () => controller.abort()
   }, [selectedCornerId, calendarDate, view, getDateRange])
 
-  // ── Filter out past slots and slots before MIN_TIME (06:00) ─────────────
+  // ── Filter out past slots ────────────────────────────────────────────────
+  // No se filtra por hora: ocultar slots (ej. antes de las 6 AM locales cuando
+  // el corner opera en otro timezone) hacía invisibles franjas ya reservadas.
   const now = new Date()
-  const visibleSlots = slots.filter((s) => {
-    const start = new Date(s.startTime)
-    return new Date(s.endTime) > now && start.getHours() >= 6
-  })
+  const visibleSlots = slots.filter((s) => new Date(s.endTime) > now)
+
+  // Ventana visual: arranca a las 06:00 o antes si hay slots más tempranos
+  const minHour = visibleSlots.reduce(
+    (min, s) => Math.min(min, new Date(s.startTime).getHours()),
+    DEFAULT_MIN_HOUR,
+  )
+  const minTime = setSeconds(setMinutes(setHours(new Date(2000, 0, 1), minHour), 0), 0)
 
   // ── Map to calendar events ───────────────────────────────────────────────
   const events: SlotEvent[] = visibleSlots.map((slot) => ({
@@ -790,7 +798,7 @@ export function AvailabilityPage() {
                 onNavigate={setCalendarDate}
                 views={[Views.DAY, Views.WEEK, Views.MONTH]}
                 defaultView={Views.WEEK}
-                min={MIN_TIME}
+                min={minTime}
                 max={MAX_TIME}
                 step={15}
                 timeslots={1}
