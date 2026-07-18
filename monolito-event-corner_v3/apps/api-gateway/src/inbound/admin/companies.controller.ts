@@ -9,6 +9,7 @@ import {
   Param,
   HttpCode,
   HttpStatus,
+  HttpException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -179,11 +180,18 @@ export class AdminCompaniesController {
           snowCompanyName: snCompany.name,
         });
         created.push(profile);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        // 409 CONFLICT = el monolito ya tiene un perfil con este sys_id
+        // (constraint única) — lo creó el cron SnCompanySyncJob u otra corrida
+        // de este mismo sync en simultáneo. No es un error, es la carrera resuelta.
+        if (err instanceof HttpException && err.getStatus() === 409) {
+          skipped.push({ sys_id: snCompany.sys_id, name: snCompany.name });
+          continue;
+        }
         errorDetails.push({
           sys_id: snCompany.sys_id,
           name: snCompany.name,
-          message: err?.message ?? 'Unknown error',
+          message: err instanceof Error ? err.message : 'Unknown error',
         });
       }
     }
