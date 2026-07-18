@@ -29,7 +29,6 @@
     "incremental": true,
     "skipLibCheck": true,
     "strict": false,
-    "moduleResolution": "node10",
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
