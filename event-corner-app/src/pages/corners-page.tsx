@@ -176,8 +176,11 @@ export function CornersPage() {
 
   const loadCornerTechs = async (cornerId: string) => {
     try {
-      const data = await techniciansApi.list(cornerId)
-      setCornerTechs((prev) => ({ ...prev, [cornerId]: data }))
+      // list(cornerId) usa findByCorner, que excluye deshabilitados (ese filtro
+      // lo necesita el cálculo de disponibilidad). Acá hay que verlos igual:
+      // esta lista tiene el botón Habilitar/Desactivar por técnico.
+      const data = await techniciansApi.list()
+      setCornerTechs((prev) => ({ ...prev, [cornerId]: data.filter((t) => t.cornerId === cornerId) }))
     } catch {
       setCornerTechs((prev) => ({ ...prev, [cornerId]: [] }))
     }
