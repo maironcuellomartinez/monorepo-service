@@ -288,6 +288,18 @@ export class TypeOrmSlotRepository implements ISlotRepository {
 
   async deleteUnusedBySchedule(scheduleId: string): Promise<Result<number>> {
     try {
+      // Las incidencias canceladas conservan filas en incident_slots que apuntan
+      // a slots ya liberados (AVAILABLE/EXPIRED); la FK impediria borrarlos al
+      // regenerar el horario. Solo incidencias canceladas pueden referenciar
+      // slots no-BOOKED (activas y cerradas los mantienen BOOKED), y una
+      // cancelada no necesita el vinculo: su scheduledRange queda en la
+      // propia incidencia.
+      await this.repo.query(
+        `DELETE isl FROM incident_slots isl
+         INNER JOIN corner_slots cs ON cs.slot_id = isl.slot_id
+         WHERE cs.schedule_id = ? AND cs.status != ?`,
+        [scheduleId, SlotStatus.BOOKED],
+      );
       const result = await this.repo
         .createQueryBuilder()
         .delete()
