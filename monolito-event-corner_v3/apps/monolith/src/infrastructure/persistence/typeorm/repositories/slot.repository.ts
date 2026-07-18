@@ -380,6 +380,46 @@ export class TypeOrmSlotRepository implements ISlotRepository {
     }
   }
 
+  async renewHoldsAtomic(
+    slotIds: SlotId[],
+    userId: string,
+    ttlMinutes: number,
+  ): Promise<Result<number>> {
+    try {
+      const ids = slotIds.map((id) => id.toString());
+      const now = new Date();
+      const heldUntil = new Date(now.getTime() + ttlMinutes * 60_000);
+      // A diferencia de holdManyAtomic, incluye los holds PROPIOS todavia
+      // vigentes: si no, la renovacion periodica nunca extiende held_until y
+      // los slots del lote expiran a los TTL minutos aunque el usuario siga
+      // activo. Tambien re-reclama slots vueltos a AVAILABLE o con hold ajeno
+      // vencido.
+      const result = await this.repo
+        .createQueryBuilder()
+        .update()
+        .set({
+          status: SlotStatus.HELD,
+          held_by_user_id: userId,
+          held_until: heldUntil,
+          updated_at: now,
+        })
+        .where(
+          'slot_id IN (:...ids) AND (status = :available OR (status = :held AND (held_by_user_id = :userId OR held_until < :now)))',
+          {
+            ids,
+            available: SlotStatus.AVAILABLE,
+            held: SlotStatus.HELD,
+            userId,
+            now,
+          },
+        )
+        .execute();
+      return Result.ok(result.affected ?? 0);
+    } catch (error) {
+      return Result.err(error);
+    }
+  }
+
   async releaseHoldsAtomic(
     slotIds: SlotId[],
     userId: string,

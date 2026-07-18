@@ -81,6 +81,10 @@ function IncidentWizardDialog({
   const [step, setStep] = useState<WizardStep>(1)
   const [selectedCornerId, setSelectedCornerId] = useState('')
   const [selectedUser, setSelectedUser] = useState<MonolithUser | null>(null)
+  // En edición el usuario precargado viene del draft sin companyId (el item no
+  // lo guarda), pero ya fue validado al agregarse al lote — no hay que volver
+  // a exigir empresa salvo que se elija otro usuario.
+  const [customerFromDraft, setCustomerFromDraft] = useState(false)
   const [selectedDevice, setSelectedDevice] = useState<DeviceSummary | null>(null)
   const [manualSerial, setManualSerial] = useState('')
   const [selectedIssueTypeId, setSelectedIssueTypeId] = useState('')
@@ -132,9 +136,11 @@ function IncidentWizardDialog({
         externalId: null,
         isActive: true,
       } as MonolithUser)
+      setCustomerFromDraft(true)
     } else {
       setSelectedCornerId('')
       setSelectedUser(null)
+      setCustomerFromDraft(false)
       setSelectedDevice(null)
       setManualSerial('')
       setSelectedIssueTypeId('')
@@ -293,7 +299,7 @@ function IncidentWizardDialog({
                   </p>
                 )}
                 {filteredUsers.map((u) => (
-                  <div key={u.id} onClick={() => setSelectedUser(u)}
+                  <div key={u.id} onClick={() => { setSelectedUser(u); setCustomerFromDraft(false) }}
                     className={cn('flex items-center gap-3 p-3 cursor-pointer transition-colors',
                       selectedUser?.id === u.id ? 'bg-primary/10' : 'hover:bg-muted/50')}>
                     <User className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -306,14 +312,14 @@ function IncidentWizardDialog({
                 ))}
               </div>
             )}
-            {selectedUser && !selectedUser.companyId && (
+            {selectedUser && !selectedUser.companyId && !customerFromDraft && (
               <Alert variant="destructive">
                 <AlertDescription>Este usuario no tiene empresa asignada.</AlertDescription>
               </Alert>
             )}
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => goToStep(1)}><ArrowLeft className="h-4 w-4" /> Atrás</Button>
-              <Button className="flex-1" disabled={!selectedUser || !selectedUser.companyId}
+              <Button className="flex-1" disabled={!selectedUser || (!selectedUser.companyId && !customerFromDraft)}
                 onClick={() => { goToStep(3); if (selectedUser) loadDevices(selectedUser.id) }}>
                 Continuar <ArrowRight className="h-4 w-4" />
               </Button>
