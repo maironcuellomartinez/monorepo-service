@@ -185,6 +185,8 @@ export interface AvailabilitySlot {
   available: boolean
   slotIds: string[]
   heldByCurrentUser?: boolean
+  /** true si el bloqueo es solo por holds vigentes (lote en preparación), no por reservas */
+  held?: boolean
   technicians: {
     total: number
     available: number

@@ -4,6 +4,8 @@ import { Result } from '@app/result';
 import { SlotId } from '@app/shared/types/branded-ids';
 import { ISlotRepository } from '../../ports/outgoing/repositories/slot-repository.port';
 import { SLOT_REPOSITORY } from '../../ports/outgoing/repositories/tokens';
+import { CACHE } from '../../ports/outgoing/infrastructure-tokens';
+import { ICache } from '../../ports/outgoing/cache/cache.port';
 import { INCIDENT_SERVICE } from '../../ports/incoming/service-tokens';
 import { IIncidentService } from '../../ports/incoming/incident/incident-service.port';
 import { TracingService } from '@app/observability';
@@ -26,6 +28,7 @@ export class BatchDraftService {
   constructor(
     private readonly repo: TypeOrmBatchDraftRepository,
     @Inject(SLOT_REPOSITORY) private readonly slotRepo: ISlotRepository,
+    @Inject(CACHE) private readonly cache: ICache,
     @Inject(INCIDENT_SERVICE)
     private readonly incidentService: IIncidentService,
     private readonly tracing: TracingService,
@@ -33,6 +36,19 @@ export class BatchDraftService {
 
   async getMyDraft(userId: string): Promise<Result<BatchDraftData | null>> {
     return this.repo.findByUserId(userId);
+  }
+
+  /**
+   * El caché de disponibilidad (TTL 30s) no se entera de los holds del lote:
+   * invalidarlo al cambiar items para que el calendario refleje el hold en el
+   * próximo fetch, igual que hace IncidentService al crear/cancelar.
+   */
+  private async invalidateAvailability(
+    cornerId: string,
+    startTime: Date,
+  ): Promise<void> {
+    const dateStr = startTime.toISOString().split('T')[0];
+    await this.cache.deletePattern(`availability:${cornerId}:${dateStr}:*`);
   }
 
   async addItem(
@@ -115,6 +131,8 @@ export class BatchDraftService {
     if (itemResult.isFailure) {
       // Rollback holds si no se pudo guardar el item
       await this.slotRepo.releaseHoldsAtomic(slotIds, userId);
+    } else {
+      await this.invalidateAvailability(cmd.cornerId, startTime);
     }
     return itemResult;
   }
@@ -179,13 +197,23 @@ export class BatchDraftService {
       }
     }
 
-    return this.repo.updateItem(itemId, {
+    const updateResult = await this.repo.updateItem(itemId, {
       ...cmd,
       startTime: startTime,
       endTime: cmd.endTime ? new Date(cmd.endTime) : undefined,
       status: 'pending',
       lastError: null,
     });
+    if (!updateResult.isFailure) {
+      await this.invalidateAvailability(item.cornerId, item.startTime);
+      if (startTime) {
+        await this.invalidateAvailability(
+          cmd.cornerId ?? item.cornerId,
+          startTime,
+        );
+      }
+    }
+    return updateResult;
   }
 
   async removeItem(userId: string, itemId: string): Promise<Result<void>> {
@@ -214,6 +242,7 @@ export class BatchDraftService {
     const slotIds = item.slotIds.map((id) => SlotId(id as any));
     await this.slotRepo.releaseHoldsAtomic(slotIds, userId);
     await this.repo.removeItem(itemId);
+    await this.invalidateAvailability(item.cornerId, item.startTime);
 
     // Si el draft quedó vacío, eliminarlo
     const remaining = await this.repo.countItems(item.draftId);
@@ -332,6 +361,9 @@ export class BatchDraftService {
     );
     if (allSlotIds.length > 0) {
       await this.slotRepo.releaseHoldsAtomic(allSlotIds, userId);
+    }
+    for (const i of draft.items) {
+      await this.invalidateAvailability(i.cornerId, i.startTime);
     }
 
     return this.repo.deleteDraft(userId);

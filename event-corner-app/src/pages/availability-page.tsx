@@ -80,26 +80,13 @@ const MAX_TIME = setSeconds(setMinutes(setHours(new Date(2000, 0, 1), 23), 59), 
 
 function SlotEventCard({ event }: { event: SlotEvent }) {
   const slot = event.resource
-  if (!slot.available) {
-    return (
-      <div className="flex items-center gap-1 text-xs px-1 truncate">
-        <XCircle className="h-3 w-3 shrink-0" />
-        <span>Ocupado</span>
-        {slot.technicians && (
-          <span className="ml-auto opacity-75">
-            {slot.technicians.available}/{slot.technicians.total}
-          </span>
-        )}
-      </div>
-    )
-  }
+  // El color del evento comunica el estado (ver leyenda); la tarjeta solo
+  // muestra cuántos técnicos hay disponibles para atender el slot.
   return (
     <div className="flex items-center gap-1 text-xs px-1 truncate">
-      <CheckCircle2 className="h-3 w-3 shrink-0" />
-      <span>Disponible</span>
       {slot.technicians && (
-        <span className="ml-auto flex items-center gap-0.5">
-          <Users className="h-3 w-3" />
+        <span className="flex items-center gap-0.5">
+          <Users className="h-3 w-3 shrink-0" />
           {slot.technicians.available}/{slot.technicians.total}
         </span>
       )}
@@ -677,7 +664,7 @@ export function AvailabilityPage() {
 
   // ── Map to calendar events ───────────────────────────────────────────────
   const events: SlotEvent[] = visibleSlots.map((slot) => ({
-    title: slot.available ? 'Disponible' : 'Ocupado',
+    title: slot.available ? 'Disponible' : slot.held ? 'Retenido' : 'Ocupado',
     start: new Date(slot.startTime),
     end: new Date(slot.endTime),
     resource: slot,
@@ -685,16 +672,19 @@ export function AvailabilityPage() {
 
   // ── Event styling ────────────────────────────────────────────────────────
   const eventPropGetter = useCallback((event: SlotEvent) => {
-    const available = event.resource.available
+    const { available, held } = event.resource
+    // verde: disponible · amarillo: retenido en un lote (hold, puede liberarse) · gris: reservado
+    const bg = available ? '#16a34a' : held ? '#f59e0b' : '#9ca3af'
+    const border = available ? '#15803d' : held ? '#d97706' : '#6b7280'
     return {
       style: {
-        backgroundColor: available ? '#16a34a' : '#9ca3af',
-        borderColor: available ? '#15803d' : '#6b7280',
+        backgroundColor: bg,
+        borderColor: border,
         color: 'white',
         borderRadius: '6px',
         border: '1px solid',
         cursor: available ? 'pointer' : 'default',
-        opacity: available ? 1 : 0.65,
+        opacity: available ? 1 : held ? 0.9 : 0.65,
       },
     }
   }, [])
@@ -711,7 +701,8 @@ export function AvailabilityPage() {
   // ── Derived ──────────────────────────────────────────────────────────────
   const corner = corners.find((c) => c.id === selectedCornerId)
   const availableCount = visibleSlots.filter((s) => s.available).length
-  const occupiedCount = visibleSlots.filter((s) => !s.available).length
+  const heldCount = visibleSlots.filter((s) => !s.available && s.held).length
+  const occupiedCount = visibleSlots.filter((s) => !s.available && !s.held).length
 
   return (
     <div className="flex flex-col h-full">
@@ -760,14 +751,23 @@ export function AvailabilityPage() {
                 <span className="text-sm text-muted-foreground animate-pulse">Cargando...</span>
               ) : (
                 <>
+                  {/* Paleta de estados — leyenda fija del calendario */}
                   <Badge className="bg-green-600 hover:bg-green-700 text-white gap-1.5 py-1 px-3">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     {availableCount} disponibles
                   </Badge>
-                  <Badge variant="secondary" className="gap-1.5 py-1 px-3">
+                  <Badge className="bg-amber-500 hover:bg-amber-600 text-white gap-1.5 py-1 px-3">
+                    <Clock className="h-3.5 w-3.5" />
+                    {heldCount} retenidos en lote
+                  </Badge>
+                  <Badge className="bg-gray-400 hover:bg-gray-500 text-white gap-1.5 py-1 px-3">
                     <XCircle className="h-3.5 w-3.5" />
                     {occupiedCount} ocupados
                   </Badge>
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Users className="h-3 w-3" />
+                    N/M = técnicos disponibles
+                  </span>
                 </>
               )}
 
