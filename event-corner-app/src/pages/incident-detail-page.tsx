@@ -93,7 +93,7 @@ export function IncidentDetailPage() {
   }
 
   const statusIdx = STATUS_ORDER.indexOf(incident.status)
-  const canTake = !incident.technicianId && user?.technicianId
+  const canTake = !incident.currentTechnicianId && user?.technicianId
 
   return (
     <div className="flex flex-col h-full">

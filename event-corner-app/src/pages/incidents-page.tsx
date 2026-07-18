@@ -8,8 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
 import { incidentsApi, issueTypesApi, cornersApi, Corner, IssueType, Incident, IncidentStatus, IncidentFilters } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
+import { useAuth } from '@/context/auth'
 
 const STATUS_CONFIG: Record<IncidentStatus, { label: string; className: string }> = {
   CREATED:                     { label: 'Creada',               className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
@@ -47,6 +49,7 @@ const PAGE_SIZE = 20
 
 export function IncidentsPage() {
   const navigate = useNavigate()
+  const { can } = useAuth()
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [total, setTotal] = useState(0)
   const [corners, setCorners] = useState<Corner[]>([])
@@ -65,6 +68,7 @@ export function IncidentsPage() {
   const [deviceSerial, setDeviceSerial] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [availableOnly, setAvailableOnly] = useState(true)
 
   useEffect(() => {
     Promise.all([cornersApi.list(), issueTypesApi.list()])
@@ -74,7 +78,7 @@ export function IncidentsPage() {
   }, [])
 
   const buildParams = useCallback((): IncidentFilters => {
-    const p: IncidentFilters = { page, limit: PAGE_SIZE, availableOnly: true }
+    const p: IncidentFilters = { page, limit: PAGE_SIZE, availableOnly }
     if (cornerId) p.cornerId = cornerId
     if (status) p.status = status
     if (issueTypeId) p.issueTypeId = issueTypeId
@@ -84,7 +88,7 @@ export function IncidentsPage() {
     if (dateFrom) p.dateFrom = dateFrom
     if (dateTo) p.dateTo = dateTo
     return p
-  }, [page, cornerId, status, issueTypeId, customerEmail, servicenowNumber, deviceSerial, dateFrom, dateTo])
+  }, [page, cornerId, status, issueTypeId, customerEmail, servicenowNumber, deviceSerial, dateFrom, dateTo, availableOnly])
 
   const loadIncidents = useCallback(async () => {
     if (!cornerId) {
@@ -133,10 +137,12 @@ export function IncidentsPage() {
   return (
     <div className="flex flex-col h-full">
       <Header title="Incidencias" onRefresh={loadIncidents} loading={loading}>
-        <Button onClick={() => navigate('/incidents/new')}>
-          <Plus className="h-4 w-4" />
-          Nueva Incidencia
-        </Button>
+        {can('incident:create') && (
+          <Button onClick={() => navigate('/incidents/new')}>
+            <Plus className="h-4 w-4" />
+            Nueva Incidencia
+          </Button>
+        )}
       </Header>
 
       <div className="flex-1 p-6 space-y-4 overflow-auto">
@@ -251,6 +257,19 @@ export function IncidentsPage() {
               />
             </div>
 
+            <div className="flex items-center gap-2 pb-1.5">
+              <input
+                type="checkbox"
+                id="availableOnly"
+                checked={availableOnly}
+                onChange={(e) => setAvailableOnly(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              <Label htmlFor="availableOnly" className="text-sm font-normal cursor-pointer">
+                Solo disponibles
+              </Label>
+            </div>
+
             <div className="flex gap-2 pb-0.5">
               <Button size="sm" onClick={applyFilters} disabled={!cornerId}>
                 <Search className="h-4 w-4" />
@@ -303,6 +322,7 @@ export function IncidentsPage() {
                   <TableRow>
                     <TableHead>ID</TableHead>
                     <TableHead>Estado</TableHead>
+                    <TableHead>Técnico</TableHead>
                     <TableHead>Dispositivo</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Fecha</TableHead>
@@ -322,6 +342,13 @@ export function IncidentsPage() {
                       </TableCell>
                       <TableCell>
                         <IncidentStatusBadge status={incident.status} />
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {incident.technician ? (
+                          <Badge variant="outline">{incident.technician.name}</Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Disponible</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm font-mono">
                         {incident.device?.serialNumber ?? '—'}

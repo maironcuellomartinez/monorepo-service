@@ -234,8 +234,8 @@ export interface Incident {
   corner?: Corner
   issueTypeId: string
   issueType?: IssueType
-  technicianId?: string
-  technician?: Technician
+  currentTechnicianId?: string
+  technician?: { id: string; name: string }
   deviceId?: string
   device?: { serialNumber: string; model: string | null; brand: string | null }
   lockerId?: string

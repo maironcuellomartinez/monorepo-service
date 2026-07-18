@@ -1819,7 +1819,7 @@ function ManagerDashboard() {
 
   const activeIncidents = incidents.filter((i) => ACTIVE_STATUSES.has(i.status))
   const activeRequests = requests.filter((r) => ACTIVE_REQUEST_STATUSES.has(r.status))
-  const unassignedIncidents = activeIncidents.filter((i) => !i.technicianId)
+  const unassignedIncidents = activeIncidents.filter((i) => !i.currentTechnicianId)
 
   const incidentQueue = [...activeIncidents].sort((a, b) => {
     if (!a.scheduledRange && !b.scheduledRange) return 0
@@ -1970,7 +1970,7 @@ function ManagerDashboard() {
                           <Clock className="h-3 w-3" />
                           {inc.scheduledRange ? formatDate(inc.scheduledRange.start) : formatDate(inc.createdAt)}
                         </span>
-                        {!inc.technicianId && (
+                        {!inc.currentTechnicianId && (
                           <span className="text-amber-600 dark:text-amber-400 shrink-0">· sin asignar</span>
                         )}
                       </div>
