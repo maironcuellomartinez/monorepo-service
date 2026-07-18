@@ -57,3 +57,6 @@ Desktop.ini
 
 # ---- Respaldo git generado ----
 _workspace-git-backup-*/
+
+# ---- Servicio retirado del ecosistema (solo artefactos de build y .env) ----
+api-middleware-service/
