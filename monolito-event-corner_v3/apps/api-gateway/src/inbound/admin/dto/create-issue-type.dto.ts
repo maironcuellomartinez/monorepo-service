@@ -1,71 +1,108 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+} from 'class-validator';
 
 export class CreateIssueTypeDto {
-    @IsString() @IsNotEmpty()
-    name: string;
+  @IsString()
+  @IsNotEmpty()
+  name: string;
 
-    @IsString() @IsNotEmpty()
-    category: string;
+  /** Árbol al que pertenece el tipo — sin él, el monolito cae en el primer árbol disponible */
+  @IsOptional()
+  @IsString()
+  treeId?: string;
 
-    @IsOptional() @IsString()
-    deviceType?: string;
+  @IsString()
+  @IsNotEmpty()
+  category: string;
 
-    @IsOptional() @IsString()
-    servicenowCategory?: string;
+  @IsOptional()
+  @IsString()
+  deviceType?: string;
 
-    @IsOptional() @IsString()
-    servicenowCloseCategory?: string;
+  @IsOptional()
+  @IsString()
+  servicenowCategory?: string;
 
-    @IsOptional() @IsNumber()
-    workMinutes?: number;
+  @IsOptional()
+  @IsString()
+  servicenowCloseCategory?: string;
 
-    @IsOptional() @IsNumber()
-    spareMinutes?: number;
+  @IsOptional()
+  @IsNumber()
+  workMinutes?: number;
 
-    @IsOptional() @IsNumber()
-    closeMinutes?: number;
+  @IsOptional()
+  @IsNumber()
+  spareMinutes?: number;
 
-    @IsOptional() @IsBoolean()
-    notUserVisible?: boolean;
+  @IsOptional()
+  @IsNumber()
+  closeMinutes?: number;
 
-    @IsOptional() @IsNumber()
-    position?: number;
+  @IsOptional()
+  @IsBoolean()
+  notUserVisible?: boolean;
 
-    @IsOptional() @IsBoolean()
-    npsDisabled?: boolean;
+  @IsOptional()
+  @IsNumber()
+  position?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  npsDisabled?: boolean;
 }
 
 export class UpdateIssueTypeDto {
-    @IsOptional() @IsString()
-    name?: string;
+  @IsOptional()
+  @IsString()
+  name?: string;
 
-    @IsOptional() @IsString()
-    category?: string;
+  @IsOptional()
+  @IsString()
+  treeId?: string;
 
-    @IsOptional() @IsString()
-    deviceType?: string;
+  @IsOptional()
+  @IsString()
+  category?: string;
 
-    @IsOptional() @IsString()
-    servicenowCategory?: string;
+  @IsOptional()
+  @IsString()
+  deviceType?: string;
 
-    @IsOptional() @IsString()
-    servicenowCloseCategory?: string;
+  @IsOptional()
+  @IsString()
+  servicenowCategory?: string;
 
-    @IsOptional() @IsNumber()
-    workMinutes?: number;
+  @IsOptional()
+  @IsString()
+  servicenowCloseCategory?: string;
 
-    @IsOptional() @IsNumber()
-    spareMinutes?: number;
+  @IsOptional()
+  @IsNumber()
+  workMinutes?: number;
 
-    @IsOptional() @IsNumber()
-    closeMinutes?: number;
+  @IsOptional()
+  @IsNumber()
+  spareMinutes?: number;
 
-    @IsOptional() @IsBoolean()
-    notUserVisible?: boolean;
+  @IsOptional()
+  @IsNumber()
+  closeMinutes?: number;
 
-    @IsOptional() @IsNumber()
-    position?: number;
+  @IsOptional()
+  @IsBoolean()
+  notUserVisible?: boolean;
 
-    @IsOptional() @IsBoolean()
-    npsDisabled?: boolean;
+  @IsOptional()
+  @IsNumber()
+  position?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  npsDisabled?: boolean;
 }
