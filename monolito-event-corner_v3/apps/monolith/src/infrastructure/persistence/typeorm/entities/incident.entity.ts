@@ -44,7 +44,8 @@ export class IncidentEntity {
   @Column({ type: 'int' })
   priority: number;
 
-  @Column({ type: 'varchar', length: 20 })
+  /** Canal de origen (ej. 'event-corner-app-batch' = 22 chars) */
+  @Column({ type: 'varchar', length: 30 })
   origin_channel: string;
 
   @Column({ type: 'timestamp' })

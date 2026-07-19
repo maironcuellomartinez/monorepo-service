@@ -48,6 +48,7 @@ import { IncreaseOutboxMaxRetries1783641799581 } from './infrastructure/persiste
 import { AddUniqueSnowCompanySysIdToServiceNowProfiles1784324876162 } from './infrastructure/persistence/typeorm/migrations/1784324876162-AddUniqueSnowCompanySysIdToServiceNowProfiles';
 import { WidenSnowqCorrelationIdColumns1784384307249 } from './infrastructure/persistence/typeorm/migrations/1784384307249-WidenSnowqCorrelationIdColumns';
 import { AddUniqueWindowToCornerSlots1784389154861 } from './infrastructure/persistence/typeorm/migrations/1784389154861-AddUniqueWindowToCornerSlots';
+import { WidenIncidentOriginChannel1784481206018 } from './infrastructure/persistence/typeorm/migrations/1784481206018-WidenIncidentOriginChannel';
 
 @Module({
   imports: [
@@ -91,6 +92,7 @@ import { AddUniqueWindowToCornerSlots1784389154861 } from './infrastructure/pers
         AddUniqueSnowCompanySysIdToServiceNowProfiles1784324876162,
         WidenSnowqCorrelationIdColumns1784384307249,
         AddUniqueWindowToCornerSlots1784389154861,
+        WidenIncidentOriginChannel1784481206018,
       ],
       migrationsRun: true,
     }),
