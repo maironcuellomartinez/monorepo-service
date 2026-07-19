@@ -737,7 +737,12 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
   }
 
   const handleChangeStatus = async () => {
-    if (!newStatus || !technicianId) return
+    if (!newStatus) return
+    if (!technicianId) {
+      // Antes: return silencioso — el boton parecia no hacer nada
+      setStatusError('Tu usuario no tiene perfil de técnico: no puede cambiar el estado de incidencias.')
+      return
+    }
     setLoadingStatus(true)
     setStatusError('')
     try {
