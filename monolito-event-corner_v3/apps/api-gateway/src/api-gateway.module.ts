@@ -20,6 +20,7 @@ import { AdminUsersController } from './inbound/admin/users.controller';
 import { AdminCompaniesController } from './inbound/admin/companies.controller';
 import { AdminIssueTypeTreesController } from './inbound/admin/issue-type-trees.controller';
 import { AdminServiceNowGroupsController } from './inbound/admin/servicenow-groups.controller';
+import { AdminServiceNowLocationsController } from './inbound/admin/servicenow-locations.controller';
 import { BatchDraftsController } from './inbound/batch-drafts/batch-drafts.controller';
 import { ObservabilityModule, CorrelationMiddleware } from '@app/observability';
 import { HealthModule } from './health/health.module';
@@ -61,6 +62,7 @@ import { HealthModule } from './health/health.module';
     AdminCompaniesController,
     AdminIssueTypeTreesController,
     AdminServiceNowGroupsController,
+    AdminServiceNowLocationsController,
     BatchDraftsController,
   ],
 })

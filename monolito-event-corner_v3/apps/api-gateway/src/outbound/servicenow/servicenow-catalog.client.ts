@@ -49,6 +49,23 @@ export class ServiceNowCatalogClient {
     }
   }
 
+  async getLocations(): Promise<Array<{ sys_id: string; name: string }>> {
+    try {
+      const { data } = await firstValueFrom(
+        this.http.get('/snow-requests/immediate/locations', {
+          headers: this.headers,
+          timeout: 3000,
+        }),
+      );
+      return data;
+    } catch (err: any) {
+      this.logger.error(`getLocations: ${err?.message}`);
+      throw new BadGatewayException(
+        'No se pudo obtener el catálogo de ubicaciones de ServiceNow',
+      );
+    }
+  }
+
   async getGroups(): Promise<Array<{ sys_id: string; name: string }>> {
     try {
       const { data } = await firstValueFrom(

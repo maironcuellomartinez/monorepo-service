@@ -240,6 +240,44 @@ export class ServiceNowClientService {
   }
 
   /**
+   * Lista el catálogo de ubicaciones (cmn_location) de ServiceNow — para el
+   * picker de Location del corner en api-gateway.
+   */
+  async getLocations(): Promise<Array<{ sys_id: string; name: string }>> {
+    return TracingClient.getInstance().run(
+      'snowq.client.servicenow.getLocations',
+      { kind: 'client' },
+      () => this._getLocations(),
+    );
+  }
+
+  private async _getLocations(): Promise<
+    Array<{ sys_id: string; name: string }>
+  > {
+    const baseUrl = this.getBaseUrl();
+    const endpoint = `${baseUrl}/sn-locations`;
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(endpoint, {
+          headers: { Authorization: await this.getAuthHeader() },
+          timeout: 10000,
+        }),
+      );
+      return response.data;
+    } catch (error: any) {
+      this.logger.error(
+        `getLocations: Error consultando ServiceNow: ${error.message}`,
+      );
+      throw this.errorFactory.create(
+        error.response?.status || 500,
+        `error getting locations from ServiceNow: ${error.message}`,
+        error.message,
+      );
+    }
+  }
+
+  /**
    * Lista el catálogo de grupos de asignación de ServiceNow (usado por api-gateway
    * para el picker de corners/CompanyIssueConfig).
    */

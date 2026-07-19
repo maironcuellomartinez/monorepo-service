@@ -49,6 +49,30 @@ const COMPANIES = [
   },
 ];
 
+const LOCATIONS = [
+  {
+    sys_id: 'location001buenosaires0000000001',
+    name: 'Corner Buenos Aires',
+    city: 'Buenos Aires',
+    country: 'Argentina',
+    description: 'Corner presencial CABA — codigo ARG-BA-001',
+  },
+  {
+    sys_id: 'location002madrid000000000000001',
+    name: 'Corner Madrid',
+    city: 'Madrid',
+    country: 'España',
+    description: 'Corner presencial Madrid — codigo ESP-MD-001',
+  },
+  {
+    sys_id: 'location003barranquilla000000001',
+    name: 'Corner Barranquilla',
+    city: 'Barranquilla',
+    country: 'Colombia',
+    description: 'Corner presencial Barranquilla — codigo COL-BQ-001',
+  },
+];
+
 const GROUPS = [
   {
     sys_id: 'group001itsupportgeneral00000001',
@@ -148,6 +172,26 @@ async function upsertSnCompanies(ds: DataSource) {
   }
 }
 
+async function upsertSnLocations(ds: DataSource) {
+  console.log('📍 Poblando tabla sn_locations...');
+  for (const l of LOCATIONS) {
+    const exists: unknown[] = await ds.query(
+      'SELECT 1 FROM sn_locations WHERE sys_id = ?',
+      [l.sys_id],
+    );
+    if (exists.length > 0) {
+      console.log(`   ↩ ${l.name}  (ya existe, omitiendo)`);
+      continue;
+    }
+    await ds.query(
+      `INSERT INTO sn_locations (sys_id, name, city, country, description, is_active, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 1, NOW(), NOW())`,
+      [l.sys_id, l.name, l.city, l.country, l.description],
+    );
+    console.log(`   ✓ ${l.name}  sys_id=${l.sys_id}`);
+  }
+}
+
 async function main() {
   console.log(
     '🚀 Iniciando seed de datos de referencia en servicenow_clone...\n',
@@ -190,6 +234,7 @@ async function main() {
       // Siempre sincronizar las tablas dedicadas (idempotente)
       await upsertSnGroups(ds);
       await upsertSnCompanies(ds);
+      await upsertSnLocations(ds);
       printSummary();
       return; // finally se ejecuta igual y cierra la conexión
     }
@@ -249,6 +294,7 @@ async function main() {
     // Poblar la tabla dedicada sn_companies (idempotente, fuera de la transacción de tickets)
     await upsertSnGroups(ds);
     await upsertSnCompanies(ds);
+    await upsertSnLocations(ds);
 
     printSummary();
   } catch (err) {

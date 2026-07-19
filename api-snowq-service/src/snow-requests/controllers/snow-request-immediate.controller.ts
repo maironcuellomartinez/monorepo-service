@@ -215,6 +215,19 @@ export class SnowRequestImmediateController {
   }
 
   // =============================================
+  // LOCATIONS CATALOG
+  // =============================================
+
+  @Get('locations')
+  getLocations() {
+    return TracingClient.getInstance().run(
+      'snowq.controller.immediate.getLocations',
+      { kind: 'server' },
+      () => this.processingService.getLocations(),
+    );
+  }
+
+  // =============================================
   // GROUPS CATALOG
   // =============================================
 

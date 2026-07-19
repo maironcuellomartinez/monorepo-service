@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { cornersApi, techniciansApi, snowGroupsApi, companiesApi, Corner, CornerSchedule, TechnicianProfile, ServiceNowGroup, SnProfile } from '@/lib/api'
+import { cornersApi, techniciansApi, snowGroupsApi, snowLocationsApi, Corner, CornerSchedule, TechnicianProfile, ServiceNowGroup, SnLocation } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth'
 
@@ -137,10 +137,10 @@ export function CornersPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [snowGroups, setSnowGroups] = useState<ServiceNowGroup[]>([])
-  const [snProfiles, setSnProfiles] = useState<SnProfile[]>([])
+  const [snLocations, setSnLocations] = useState<SnLocation[]>([])
   const [snLocationSearch, setSnLocationSearch] = useState('')
   const [snGroupSearch, setSnGroupSearch] = useState('')
-  const [selectedSnProfileId, setSelectedSnProfileId] = useState('')
+  const [selectedSnLocationId, setSelectedSnLocationId] = useState('')
   const [selectedSnGroupId, setSelectedSnGroupId] = useState('')
 
   // ── Load ──────────────────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ export function CornersPage() {
     load()
     // Catálogo vivo de SN: el catálogo local del monolito puede estar vacío
     snowGroupsApi.listSnCatalog().then(setSnowGroups).catch(() => setSnowGroups([]))
-    companiesApi.listSnProfiles().then(setSnProfiles).catch(() => setSnProfiles([]))
+    snowLocationsApi.listSnCatalog().then(setSnLocations).catch(() => setSnLocations([]))
   }, [])
 
   const loadSchedules = async (cornerId: string) => {
@@ -246,7 +246,7 @@ export function CornersPage() {
     setFormError('')
     setSnLocationSearch('')
     setSnGroupSearch('')
-    setSelectedSnProfileId('')
+    setSelectedSnLocationId('')
     setSelectedSnGroupId('')
     setShowDialog(true)
   }
@@ -268,7 +268,7 @@ export function CornersPage() {
       servicenowLocation: snLoc,
       snowAssignmentGroup: snGroup,
     })
-    setSelectedSnProfileId(snProfiles.find((p) => p.snowCompanySysId === snLoc)?.id ?? '')
+    setSelectedSnLocationId(snLocations.find((l) => l.sys_id === snLoc)?.sys_id ?? '')
     setSelectedSnGroupId(snGroup)
     setFormError('')
     setSnLocationSearch('')
@@ -580,9 +580,9 @@ export function CornersPage() {
                                     <dt className="text-muted-foreground text-xs shrink-0">SN Location</dt>
                                     <dd className="text-sm">
                                       {(() => {
-                                        const profile = snProfiles.find((p) => p.snowCompanySysId === String(corner.servicenowLocation))
-                                        return profile
-                                          ? <span>{profile.name}</span>
+                                        const loc = snLocations.find((l) => l.sys_id === String(corner.servicenowLocation))
+                                        return loc
+                                          ? <span>{loc.name}</span>
                                           : <code className="font-mono text-xs">{corner.servicenowLocation}</code>
                                       })()}
                                     </dd>
@@ -841,35 +841,35 @@ export function CornersPage() {
                     />
                   </div>
                   <div className="max-h-36 overflow-y-auto border rounded-md divide-y">
-                    {snProfiles.filter((p) => {
+                    {snLocations.filter((l) => {
                       const q = snLocationSearch.toLowerCase()
-                      return !q || p.name.toLowerCase().includes(q) || p.snowCompanyName?.toLowerCase().includes(q)
+                      return !q || l.name.toLowerCase().includes(q) || l.city?.toLowerCase().includes(q) || l.country?.toLowerCase().includes(q)
                     }).length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-4">Sin resultados</p>
-                    ) : snProfiles
-                        .filter((p) => {
+                    ) : snLocations
+                        .filter((l) => {
                           const q = snLocationSearch.toLowerCase()
-                          return !q || p.name.toLowerCase().includes(q) || p.snowCompanyName?.toLowerCase().includes(q)
+                          return !q || l.name.toLowerCase().includes(q) || l.city?.toLowerCase().includes(q) || l.country?.toLowerCase().includes(q)
                         })
-                        .map((p) => (
+                        .map((l) => (
                           <div
-                            key={p.id}
+                            key={l.sys_id}
                             onClick={() => {
-                              setSelectedSnProfileId(p.id)
-                              setForm((f) => ({ ...f, servicenowLocation: p.snowCompanySysId }))
+                              setSelectedSnLocationId(l.sys_id)
+                              setForm((f) => ({ ...f, servicenowLocation: l.sys_id }))
                             }}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors text-sm',
-                              selectedSnProfileId === p.id ? 'bg-primary/10' : 'hover:bg-muted/50',
+                              selectedSnLocationId === l.sys_id ? 'bg-primary/10' : 'hover:bg-muted/50',
                             )}
                           >
                             <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{p.name}</p>
-                              {p.snowCompanyName && p.snowCompanyName !== p.name && (
-                                <p className="text-xs text-muted-foreground truncate">{p.snowCompanyName}</p>
+                              <p className="font-medium truncate">{l.name}</p>
+                              {(l.city || l.country) && (
+                                <p className="text-xs text-muted-foreground truncate">{[l.city, l.country].filter(Boolean).join(' · ')}</p>
                               )}
                             </div>
-                            {selectedSnProfileId === p.id && (
+                            {selectedSnLocationId === l.sys_id && (
                               <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
                             )}
                           </div>

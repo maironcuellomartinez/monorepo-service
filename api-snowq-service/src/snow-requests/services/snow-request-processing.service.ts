@@ -263,6 +263,10 @@ export class SnowRequestProcessingService {
   }
 
   /** Lista el catálogo de grupos de asignación de ServiceNow (usado por api-gateway). */
+  async getLocations(): Promise<Array<{ sys_id: string; name: string }>> {
+    return this.snClient.getLocations();
+  }
+
   async getGroups(): Promise<Array<{ sys_id: string; name: string }>> {
     return this.snClient.getGroups();
   }

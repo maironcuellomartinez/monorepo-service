@@ -6,6 +6,7 @@ import { ServicenowSimulatorModule } from './servicenow-simulator/servicenow-sim
 import { SnCompaniesModule } from './sn-companies/sn-companies.module';
 import { SnCategoriesModule } from './sn-categories/sn-categories.module';
 import { SnGroupsModule } from './sn-groups/sn-groups.module';
+import { SnLocationsModule } from './sn-locations/sn-locations.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { SnGroupsModule } from './sn-groups/sn-groups.module';
     SnCompaniesModule,
     SnCategoriesModule,
     SnGroupsModule,
+    SnLocationsModule,
   ],
 })
 export class AppModule {}

@@ -636,6 +636,21 @@ export const snowGroupsApi = {
       ),
 }
 
+export interface SnLocation {
+  sys_id: string
+  name: string
+  city?: string | null
+  country?: string | null
+}
+
+export const snowLocationsApi = {
+  /** Catálogo vivo de ubicaciones de SN (cmn_location) — para el picker del corner */
+  listSnCatalog: () =>
+    apiClient
+      .get<SnLocation[]>('/api/admin/servicenow-locations/sn-catalog')
+      .then((r) => r.data),
+}
+
 // ─── Batch Drafts ─────────────────────────────────────────────────────────────
 
 export interface BatchDraftItem {
