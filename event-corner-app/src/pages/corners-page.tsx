@@ -160,7 +160,8 @@ export function CornersPage() {
 
   useEffect(() => {
     load()
-    snowGroupsApi.list().then(setSnowGroups).catch(() => setSnowGroups([]))
+    // Catálogo vivo de SN: el catálogo local del monolito puede estar vacío
+    snowGroupsApi.listSnCatalog().then(setSnowGroups).catch(() => setSnowGroups([]))
     companiesApi.listSnProfiles().then(setSnProfiles).catch(() => setSnProfiles([]))
   }, [])
 

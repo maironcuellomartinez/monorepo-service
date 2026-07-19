@@ -622,8 +622,18 @@ export interface ServiceNowGroup {
 }
 
 export const snowGroupsApi = {
+  /** Catálogo local del monolito (grupos ya registrados) */
   list: () =>
     apiClient.get<ServiceNowGroup[]>('/api/admin/servicenow-groups').then((r) => r.data),
+  /** Catálogo vivo de ServiceNow — fuente de verdad para los pickers */
+  listSnCatalog: () =>
+    apiClient
+      .get<Array<{ sys_id: string; name: string }>>('/api/admin/servicenow-groups/sn-catalog')
+      .then((r) =>
+        r.data.map(
+          (g): ServiceNowGroup => ({ groupId: g.sys_id, groupName: g.name, isActive: true }),
+        ),
+      ),
 }
 
 // ─── Batch Drafts ─────────────────────────────────────────────────────────────
