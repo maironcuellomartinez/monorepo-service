@@ -1,0 +1,328 @@
+{
+  "info": {
+    "name": "api-snowq-service",
+    "description": "Colección de endpoints de api-snowq-service (Queue + circuit breaker para ServiceNow). Puerto por defecto 3090.\n\n- La mayoría de rutas están protegidas por M2mJwtGuard (Bearer JWT M2M EdDSA firmado por ABAC). Configurá {{m2m_token}}.\n- health/live y health/ready son públicas.\n- POST /monitoring/alerts NO usa M2mJwtGuard (lo llama Thruk/Nagios).\n\nVariables: {{base_url}} (default http://localhost:3090) y {{m2m_token}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3090", "type": "string" },
+    { "key": "m2m_token", "value": "", "type": "string" },
+    { "key": "sysId", "value": "REPLACE_WITH_SN_SYS_ID", "type": "string" },
+    { "key": "correlationId", "value": "REPLACE_WITH_CORRELATION_ID", "type": "string" },
+    { "key": "fingerprint", "value": "REPLACE_WITH_FINGERPRINT", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Live (público)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/health/live", "host": ["{{base_url}}"], "path": ["health", "live"] }
+          }
+        },
+        {
+          "name": "Ready (público)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/health/ready", "host": ["{{base_url}}"], "path": ["health", "ready"] }
+          }
+        },
+        {
+          "name": "Status (M2M)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/health/status", "host": ["{{base_url}}"], "path": ["health", "status"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Monitoring (Thruk/Nagios)",
+      "item": [
+        {
+          "name": "Alert (sin auth — lo llama Thruk)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notificationType\": \"PROBLEM\",\n  \"host\": \"corner-host-01\",\n  \"service\": \"CPU Load\",\n  \"state\": \"CRITICAL\",\n  \"stateType\": \"HARD\",\n  \"checkAttempt\": 3,\n  \"maxCheckAttempts\": 3,\n  \"output\": \"CRITICAL - load average: 12.4\",\n  \"ttlSeconds\": 300\n}"
+            },
+            "url": { "raw": "{{base_url}}/monitoring/alerts", "host": ["{{base_url}}"], "path": ["monitoring", "alerts"] }
+          }
+        },
+        {
+          "name": "Cancel by fingerprint",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{base_url}}/monitoring/cancel/{{fingerprint}}", "host": ["{{base_url}}"], "path": ["monitoring", "cancel", "{{fingerprint}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Resilience (M2M)",
+      "item": [
+        {
+          "name": "Circuit breaker status",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/resilience/circuit-breaker/status", "host": ["{{base_url}}"], "path": ["resilience", "circuit-breaker", "status"] } }
+        },
+        {
+          "name": "Bulkhead status",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/resilience/bulkhead/status", "host": ["{{base_url}}"], "path": ["resilience", "bulkhead", "status"] } }
+        },
+        {
+          "name": "Circuit breaker reset",
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/resilience/circuit-breaker/reset", "host": ["{{base_url}}"], "path": ["resilience", "circuit-breaker", "reset"] } }
+        }
+      ]
+    },
+    {
+      "name": "Immediate (sync) — snow-requests/immediate",
+      "item": [
+        {
+          "name": "Create incident",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"high\",\n  \"impact\": 2,\n  \"urgency\": 2,\n  \"priority\": 2,\n  \"source\": \"event-corner\",\n  \"payload\": {\n    \"short_description\": \"Incidencia de prueba\",\n    \"assignment_group\": \"SOPORTE_GENERAL\"\n  }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/immediate/incidents", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "incidents"] }
+          }
+        },
+        {
+          "name": "Get incident state",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/immediate/incidents/{{sysId}}", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "incidents", "{{sysId}}"] } }
+        },
+        {
+          "name": "Close incident",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"close_code\": \"Solved (Permanently)\",\n  \"close_notes\": \"Cerrado desde Event Corner\"\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/immediate/incidents/{{sysId}}/close", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "incidents", "{{sysId}}", "close"] }
+          }
+        },
+        {
+          "name": "Create change-request",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"medium\",\n  \"impact\": 2,\n  \"urgency\": 2,\n  \"priority\": 2,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"Change de prueba\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/immediate/change-requests", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "change-requests"] }
+          }
+        },
+        {
+          "name": "Create problem",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"high\",\n  \"impact\": 3,\n  \"urgency\": 3,\n  \"priority\": 1,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"Problem de prueba\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/immediate/problems", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "problems"] }
+          }
+        },
+        {
+          "name": "Create service-catalog",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"low\",\n  \"impact\": 3,\n  \"urgency\": 3,\n  \"priority\": 3,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"Solicitud de catálogo\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/immediate/service-catalog", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "service-catalog"] }
+          }
+        },
+        {
+          "name": "Create knowledge-article",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"low\",\n  \"impact\": 3,\n  \"urgency\": 3,\n  \"priority\": 3,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"KB de prueba\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/immediate/knowledge-articles", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "knowledge-articles"] }
+          }
+        },
+        {
+          "name": "Create release-task",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"medium\",\n  \"impact\": 2,\n  \"urgency\": 2,\n  \"priority\": 2,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"Release task de prueba\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/immediate/release-tasks", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "release-tasks"] }
+          }
+        },
+        {
+          "name": "Create configuration-item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"low\",\n  \"impact\": 3,\n  \"urgency\": 3,\n  \"priority\": 3,\n  \"source\": \"event-corner\",\n  \"payload\": { \"name\": \"CI de prueba\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/immediate/configuration-items", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "configuration-items"] }
+          }
+        },
+        {
+          "name": "List companies",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/immediate/companies", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "companies"] } }
+        },
+        {
+          "name": "Get company by sysId",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/immediate/companies/{{sysId}}", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "companies", "{{sysId}}"] } }
+        },
+        {
+          "name": "List locations (cmn_location)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/immediate/locations", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "locations"] } }
+        },
+        {
+          "name": "List groups",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/immediate/groups", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "groups"] } }
+        },
+        {
+          "name": "Get group by sysId",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/immediate/groups/{{sysId}}", "host": ["{{base_url}}"], "path": ["snow-requests", "immediate", "groups", "{{sysId}}"] } }
+        },
+        {
+          "name": "Update generic {table}/{sysId}",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"state\": \"in_progress\",\n  \"work_notes\": \"Actualización genérica\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/snow-requests/immediate/incident/{{sysId}}",
+              "host": ["{{base_url}}"],
+              "path": ["snow-requests", "immediate", "incident", "{{sysId}}"],
+              "variable": [{ "key": "table", "value": "incident", "description": "incident | change_request | problem | sc_req_item | kb_article | release_task | cmdb_ci" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Queue (async) — snow-requests",
+      "item": [
+        {
+          "name": "Enqueue incident",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"high\",\n  \"impact\": 2,\n  \"urgency\": 2,\n  \"priority\": 2,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"Incidencia encolada\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/incidents", "host": ["{{base_url}}"], "path": ["snow-requests", "incidents"] }
+          }
+        },
+        {
+          "name": "Enqueue change-request",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"medium\",\n  \"impact\": 2,\n  \"urgency\": 2,\n  \"priority\": 2,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"Change encolado\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/change-requests", "host": ["{{base_url}}"], "path": ["snow-requests", "change-requests"] }
+          }
+        },
+        {
+          "name": "Enqueue problem",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"high\",\n  \"impact\": 3,\n  \"urgency\": 3,\n  \"priority\": 1,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"Problem encolado\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/problems", "host": ["{{base_url}}"], "path": ["snow-requests", "problems"] }
+          }
+        },
+        {
+          "name": "Enqueue service-catalog",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"low\",\n  \"impact\": 3,\n  \"urgency\": 3,\n  \"priority\": 3,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"Catálogo encolado\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/service-catalog", "host": ["{{base_url}}"], "path": ["snow-requests", "service-catalog"] }
+          }
+        },
+        {
+          "name": "Enqueue knowledge-article",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"low\",\n  \"impact\": 3,\n  \"urgency\": 3,\n  \"priority\": 3,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"KB encolado\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/knowledge-articles", "host": ["{{base_url}}"], "path": ["snow-requests", "knowledge-articles"] }
+          }
+        },
+        {
+          "name": "Enqueue release-task",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"medium\",\n  \"impact\": 2,\n  \"urgency\": 2,\n  \"priority\": 2,\n  \"source\": \"event-corner\",\n  \"payload\": { \"short_description\": \"Release task encolada\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/release-tasks", "host": ["{{base_url}}"], "path": ["snow-requests", "release-tasks"] }
+          }
+        },
+        {
+          "name": "Enqueue configuration-item",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"severity\": \"low\",\n  \"impact\": 3,\n  \"urgency\": 3,\n  \"priority\": 3,\n  \"source\": \"event-corner\",\n  \"payload\": { \"name\": \"CI encolado\" }\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/configuration-items", "host": ["{{base_url}}"], "path": ["snow-requests", "configuration-items"] }
+          }
+        },
+        {
+          "name": "List all requests",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/all", "host": ["{{base_url}}"], "path": ["snow-requests", "all"] } }
+        },
+        {
+          "name": "List delivered",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/delivered", "host": ["{{base_url}}"], "path": ["snow-requests", "delivered"] } }
+        },
+        {
+          "name": "List failed (DLQ)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/failed", "host": ["{{base_url}}"], "path": ["snow-requests", "failed"] } }
+        },
+        {
+          "name": "Retry all failed",
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/snow-requests/failed/retry-all", "host": ["{{base_url}}"], "path": ["snow-requests", "failed", "retry-all"] } }
+        },
+        {
+          "name": "Retry filtered (DLQ)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"type\": \"incident\",\n  \"source\": \"event-corner\",\n  \"since\": \"2026-07-01T00:00:00.000Z\",\n  \"until\": \"2026-07-31T23:59:59.000Z\"\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/failed/retry", "host": ["{{base_url}}"], "path": ["snow-requests", "failed", "retry"] }
+          }
+        },
+        {
+          "name": "Retry one by correlationId",
+          "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/snow-requests/failed/{{correlationId}}/retry", "host": ["{{base_url}}"], "path": ["snow-requests", "failed", "{{correlationId}}", "retry"] } }
+        },
+        {
+          "name": "Discard filtered (DLQ)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"type\": \"incident\",\n  \"source\": \"event-corner\"\n}" },
+            "url": { "raw": "{{base_url}}/snow-requests/failed", "host": ["{{base_url}}"], "path": ["snow-requests", "failed"] }
+          }
+        },
+        {
+          "name": "Discard one by correlationId",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/snow-requests/failed/{{correlationId}}", "host": ["{{base_url}}"], "path": ["snow-requests", "failed", "{{correlationId}}"] } }
+        },
+        {
+          "name": "DLQ stats",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/dlq/stats", "host": ["{{base_url}}"], "path": ["snow-requests", "dlq", "stats"] } }
+        },
+        {
+          "name": "Get request status by correlationId",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/snow-requests/{{correlationId}}", "host": ["{{base_url}}"], "path": ["snow-requests", "{{correlationId}}"] } }
+        }
+      ]
+    }
+  ]
+}
