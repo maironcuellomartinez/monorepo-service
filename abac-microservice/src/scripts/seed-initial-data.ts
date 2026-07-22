@@ -364,12 +364,30 @@ class SeedInitialData {
                     }
                 }
 
+                // El seed borra y recrea roles con UUIDs nuevos, por lo que
+                // cleanExistingData borra TODAS las user_roles de la app. Los
+                // usuarios sincronizados por Entra (tenantId != 'event-corner')
+                // sobreviven al borrado de usuarios pero perderían su rol, que el
+                // seed no vuelve a asignar. Snapshot antes del wipe → restore por
+                // nombre de rol después de recrearlos, para que re-ejecutar el
+                // seed sea seguro en entornos con usuarios ya existentes.
+                let preservedUserRoles: { userId: string; roleName: string }[] = [];
                 if (hasData) {
+                    preservedUserRoles = await this.snapshotUserRoles(queryRunner);
                     await this.cleanExistingData(queryRunner);
                 }
 
                 const adminInfo = await this.promptAdminInfo();
                 const seeded = await this.runSeed(queryRunner, adminInfo);
+
+                if (preservedUserRoles.length > 0) {
+                    const restored = await this.restoreUserRoles(
+                        queryRunner, seeded, preservedUserRoles,
+                    );
+                    console.log(
+                        `♻️  Asignaciones de rol externas preservadas: ${restored}/${preservedUserRoles.length}`,
+                    );
+                }
 
                 await queryRunner.commitTransaction();
 
@@ -402,6 +420,61 @@ class SeedInitialData {
             `SELECT COUNT(*) as count FROM applications WHERE name = 'Event Corner'`,
         );
         return parseInt(result[0].count) > 0;
+    }
+
+    /**
+     * Captura las asignaciones (userId, nombre de rol) de la app Event Corner
+     * ANTES del wipe, para poder restaurarlas después de recrear los roles.
+     * Se guarda el NOMBRE del rol (no el id) porque los roles se recrean con
+     * UUIDs nuevos; la restauración remapea por nombre.
+     */
+    private async snapshotUserRoles(
+        queryRunner: any,
+    ): Promise<{ userId: string; roleName: string }[]> {
+        return await queryRunner.query(
+            `SELECT ur.userId AS userId, ro.name AS roleName
+               FROM user_roles ur
+               JOIN roles ro ON ro.id = ur.roleId
+              WHERE ur.applicationId IN (SELECT id FROM applications WHERE name = 'Event Corner')`,
+        );
+    }
+
+    /**
+     * Restaura las asignaciones capturadas por snapshotUserRoles, remapeando el
+     * nombre de rol al nuevo id. Salta:
+     *  - roles que ya no existen (p.ej. renombrados/eliminados en el seed),
+     *  - usuarios que ya no existen (los borrados por tenantId='event-corner'),
+     *  - asignaciones ya presentes (el super-admin recién creado ya tiene la suya).
+     * Devuelve cuántas asignaciones se restauraron.
+     */
+    private async restoreUserRoles(
+        queryRunner: any,
+        seeded: SeededIds,
+        preserved: { userId: string; roleName: string }[],
+    ): Promise<number> {
+        const now = new Date();
+        let restored = 0;
+        for (const { userId, roleName } of preserved) {
+            const roleId = seeded.roles[roleName];
+            if (!roleId) continue; // el rol ya no existe en el seed nuevo
+            const userRows = await queryRunner.query(
+                `SELECT id FROM users WHERE id = ?`, [userId],
+            );
+            if (userRows.length === 0) continue; // usuario borrado por el wipe
+            const existing = await queryRunner.query(
+                `SELECT id FROM user_roles WHERE userId = ? AND roleId = ? AND applicationId = ?`,
+                [userId, roleId, seeded.appId],
+            );
+            if (existing.length > 0) continue; // ya asignado (super-admin)
+            await queryRunner.query(
+                `INSERT INTO user_roles
+                   (id, userId, roleId, applicationId, isActive, createdAt, updatedAt)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [crypto.randomUUID(), userId, roleId, seeded.appId, 1, now, now],
+            );
+            restored++;
+        }
+        return restored;
     }
 
     private async cleanExistingData(queryRunner: any): Promise<void> {
