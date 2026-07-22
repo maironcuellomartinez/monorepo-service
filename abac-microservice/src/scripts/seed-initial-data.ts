@@ -145,6 +145,14 @@ const ALL_PERMISSIONS: [string, string, string, string, number][] = [
     // ── Report ────────────────────────────────────────────────────────────────
     ['report', 'view',             'Ver reportes',                              'report', 10],
     ['report', 'export',           'Exportar reportes',                         'report', 20],
+
+    // ── Dashboard ─────────────────────────────────────────────────────────────
+    // Permisos-marcador para que event-corner-app (dashboard-page.tsx) detecte el
+    // rol de forma explícita (isAdmin/isManager/isTechnician) sin inferirlo de
+    // permisos de negocio. Cada uno se asigna solo a su rol correspondiente.
+    ['dashboard-admin',      'read', 'Marcador de dashboard de admin',      'dashboard', 5],
+    ['dashboard-manager',    'read', 'Marcador de dashboard de manager',    'dashboard', 5],
+    ['dashboard-technician', 'read', 'Marcador de dashboard de técnico',    'dashboard', 5],
 ];
 
 // Permisos que tiene cada rol (subconjunto de ALL_PERMISSIONS identificado por "resource:action")
@@ -182,6 +190,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         'availability:read', 'availability:read-technicians',
         // Reports
         'report:view', 'report:export',
+        // Dashboard — marcador de rol para event-corner-app
+        'dashboard-admin:read',
     ],
 
     'manager': [
@@ -211,6 +221,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         'availability:read', 'availability:read-technicians',
         // Reports
         'report:view',
+        // Dashboard — marcador de rol para event-corner-app
+        'dashboard-manager:read',
     ],
 
     'technician': [
@@ -232,6 +244,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         // Devices
         'device:read', 'device:sync',
         'availability:read', 'availability:read-technicians',
+        // Dashboard — marcador de rol para event-corner-app
+        'dashboard-technician:read',
     ],
 
     'employee': [
