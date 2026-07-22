@@ -1,0 +1,248 @@
+{
+  "info": {
+    "name": "api-gateway (event-corner)",
+    "description": "Endpoints del api-gateway del ecosistema Event Corner. Puerto: dev :4000, staging/prod :3000. Swagger en /docs.\n\nAUTH: guard global JwtGuard (verifica token de usuario Entra ID Y token M2M EdDSA localmente) + RolesGuard + AbacGuard. Casi todo requiere Bearer {{token}}.\n- Rutas @Public: /health/live, /health/ready, /api/auth/dev/login.\n- Endpoints de usuario (/api/*): usan token de usuario. En dev, obtenelo con POST /api/auth/dev/login y pegalo en {{token}}.\n- Endpoints /outbound/* e /internal-api/*: los llama el monolith/otros servicios con token M2M EdDSA. Para probarlos manualmente pegá un {{m2m_token}} en {{token}}.\n\nVariables: {{base_url}} (default http://localhost:4000), {{token}}, {{m2m_token}}, e ids de ejemplo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:4000", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "m2m_token", "value": "", "type": "string" },
+    { "key": "id", "value": "REPLACE_WITH_UUID", "type": "string" },
+    { "key": "cornerId", "value": "REPLACE_WITH_CORNER_ID", "type": "string" },
+    { "key": "userId", "value": "REPLACE_WITH_USER_ID", "type": "string" },
+    { "key": "technicianId", "value": "REPLACE_WITH_TECH_ID", "type": "string" },
+    { "key": "deviceId", "value": "REPLACE_WITH_DEVICE_ID", "type": "string" },
+    { "key": "scheduleId", "value": "REPLACE_WITH_SCHEDULE_ID", "type": "string" },
+    { "key": "sysId", "value": "REPLACE_WITH_SN_SYS_ID", "type": "string" },
+    { "key": "correlationId", "value": "REPLACE_WITH_CORRELATION_ID", "type": "string" },
+    { "key": "serialNumber", "value": "REPLACE_WITH_SERIAL", "type": "string" },
+    { "key": "number", "value": "INC0001234", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        { "name": "Live (público)", "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/health/live", "host": ["{{base_url}}"], "path": ["health", "live"] } } },
+        { "name": "Ready (público)", "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/health/ready", "host": ["{{base_url}}"], "path": ["health", "ready"] } } }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Dev login (público, DEV ONLY)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"empleado1@eventcorner.com\",\n  \"oid\": \"dev-user-001\",\n  \"name\": \"Juan Pérez\"\n}" },
+            "url": { "raw": "{{base_url}}/api/auth/dev/login", "host": ["{{base_url}}"], "path": ["api", "auth", "dev", "login"] },
+            "description": "Genera token dev:<base64> y lo valida contra ABAC. Copiá accessToken de la respuesta a {{token}}."
+          }
+        },
+        { "name": "Me", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/auth/me", "host": ["{{base_url}}"], "path": ["api", "auth", "me"] } } }
+      ]
+    },
+    {
+      "name": "ABAC",
+      "item": [
+        {
+          "name": "Batch evaluate",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"evaluations\": [\n    { \"resource\": \"incident\", \"action\": \"create\" },\n    { \"resource\": \"corner\", \"action\": \"list\" }\n  ]\n}" },
+            "url": { "raw": "{{base_url}}/api/abac/batch-evaluate", "host": ["{{base_url}}"], "path": ["api", "abac", "batch-evaluate"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Incidents",
+      "item": [
+        { "name": "List users (picker)", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/incidents/users", "host": ["{{base_url}}"], "path": ["api", "incidents", "users"] } } },
+        { "name": "Search users", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/incidents/users/search?q=empleado", "host": ["{{base_url}}"], "path": ["api", "incidents", "users", "search"], "query": [{ "key": "q", "value": "empleado" }] } } },
+        { "name": "List incidents", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/incidents?page=1&limit=20", "host": ["{{base_url}}"], "path": ["api", "incidents"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "20" }, { "key": "email", "value": "", "disabled": true }, { "key": "serial", "value": "", "disabled": true }, { "key": "snNumber", "value": "", "disabled": true }] } } },
+        { "name": "Mine", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/incidents/mine", "host": ["{{base_url}}"], "path": ["api", "incidents", "mine"] } } },
+        { "name": "Available", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/incidents/available", "host": ["{{base_url}}"], "path": ["api", "incidents", "available"] } } },
+        { "name": "By technician", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/incidents/technician/{{technicianId}}", "host": ["{{base_url}}"], "path": ["api", "incidents", "technician", "{{technicianId}}"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/incidents/{{id}}", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}"] } } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{userId}}\",\n  \"cornerId\": \"{{cornerId}}\",\n  \"issueTypeId\": \"REPLACE_WITH_ISSUE_TYPE_ID\",\n  \"deviceSerial\": \"{{serialNumber}}\",\n  \"scheduledRange\": { \"start\": \"2026-07-25T10:00:00.000Z\", \"end\": \"2026-07-25T10:30:00.000Z\" },\n  \"slotIds\": [\"REPLACE_WITH_SLOT_ID\"],\n  \"description\": \"Incidencia de prueba\"\n}" }, "url": { "raw": "{{base_url}}/api/incidents", "host": ["{{base_url}}"], "path": ["api", "incidents"] } } },
+        { "name": "Deliver", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/incidents/{{id}}/deliver", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}", "deliver"] } } },
+        { "name": "Take", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/incidents/{{id}}/take", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}", "take"] } } },
+        { "name": "Release", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/incidents/{{id}}/release", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}", "release"] } } },
+        { "name": "Change status", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}" }, "url": { "raw": "{{base_url}}/api/incidents/{{id}}/status", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}", "status"] } } },
+        { "name": "Cancel", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Cancelada por el cliente\"\n}" }, "url": { "raw": "{{base_url}}/api/incidents/{{id}}/cancel", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}", "cancel"] } } },
+        { "name": "Validate", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/incidents/{{id}}/validate", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}", "validate"] } } },
+        { "name": "Reopen", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Reapertura por recurrencia\"\n}" }, "url": { "raw": "{{base_url}}/api/incidents/{{id}}/reopen", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}", "reopen"] } } },
+        { "name": "Timeline", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/incidents/{{id}}/timeline", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}", "timeline"] } } },
+        { "name": "Add note", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"note\": \"Nota de seguimiento\"\n}" }, "url": { "raw": "{{base_url}}/api/incidents/{{id}}/notes", "host": ["{{base_url}}"], "path": ["api", "incidents", "{{id}}", "notes"] } } }
+      ]
+    },
+    {
+      "name": "Requests",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/requests", "host": ["{{base_url}}"], "path": ["api", "requests"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/requests/{{id}}", "host": ["{{base_url}}"], "path": ["api", "requests", "{{id}}"] } } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"companyId\": \"REPLACE_WITH_COMPANY_ID\",\n  \"userId\": \"{{userId}}\",\n  \"cornerId\": \"{{cornerId}}\",\n  \"issueTypeId\": \"REPLACE_WITH_ISSUE_TYPE_ID\",\n  \"description\": \"Request de prueba\"\n}" }, "url": { "raw": "{{base_url}}/api/requests", "host": ["{{base_url}}"], "path": ["api", "requests"] } } },
+        { "name": "Change status", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}" }, "url": { "raw": "{{base_url}}/api/requests/{{id}}/status", "host": ["{{base_url}}"], "path": ["api", "requests", "{{id}}", "status"] } } }
+      ]
+    },
+    {
+      "name": "Availability",
+      "item": [
+        { "name": "By corner", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/availability/{{cornerId}}?date=2026-07-25", "host": ["{{base_url}}"], "path": ["api", "availability", "{{cornerId}}"], "query": [{ "key": "date", "value": "2026-07-25" }] } } },
+        { "name": "Technicians by corner", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/availability/{{cornerId}}/technicians?date=2026-07-25", "host": ["{{base_url}}"], "path": ["api", "availability", "{{cornerId}}", "technicians"], "query": [{ "key": "date", "value": "2026-07-25" }] } } }
+      ]
+    },
+    {
+      "name": "Batch Drafts",
+      "item": [
+        { "name": "Get draft", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/batch-drafts", "host": ["{{base_url}}"], "path": ["api", "batch-drafts"] } } },
+        { "name": "Add item", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"localId\": \"item-1\",\n  \"cornerId\": \"{{cornerId}}\",\n  \"issueTypeId\": \"REPLACE_WITH_ISSUE_TYPE_ID\",\n  \"deviceSerial\": \"{{serialNumber}}\",\n  \"startTime\": \"2026-07-25T10:00:00.000Z\",\n  \"slotIds\": [\"REPLACE_WITH_SLOT_ID\"]\n}" }, "url": { "raw": "{{base_url}}/api/batch-drafts/items", "host": ["{{base_url}}"], "path": ["api", "batch-drafts", "items"] } } },
+        { "name": "Edit item", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"startTime\": \"2026-07-25T11:00:00.000Z\",\n  \"slotIds\": [\"REPLACE_WITH_SLOT_ID\"]\n}" }, "url": { "raw": "{{base_url}}/api/batch-drafts/items/{{id}}", "host": ["{{base_url}}"], "path": ["api", "batch-drafts", "items", "{{id}}"] } } },
+        { "name": "Remove item", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/batch-drafts/items/{{id}}", "host": ["{{base_url}}"], "path": ["api", "batch-drafts", "items", "{{id}}"] } } },
+        { "name": "Submit", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/batch-drafts/submit", "host": ["{{base_url}}"], "path": ["api", "batch-drafts", "submit"] } } },
+        { "name": "Discard draft", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/batch-drafts", "host": ["{{base_url}}"], "path": ["api", "batch-drafts"] } } },
+        { "name": "Renew holds", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/batch-drafts/renew", "host": ["{{base_url}}"], "path": ["api", "batch-drafts", "renew"] } } }
+      ]
+    },
+    {
+      "name": "Corners",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/corners", "host": ["{{base_url}}"], "path": ["api", "corners"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/corners/{{id}}", "host": ["{{base_url}}"], "path": ["api", "corners", "{{id}}"] } } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Corner de prueba\",\n  \"snow_assignment_group\": \"SOPORTE_GENERAL\",\n  \"servicenow_location\": \"REPLACE_WITH_LOCATION_SYS_ID\"\n}" }, "url": { "raw": "{{base_url}}/api/corners", "host": ["{{base_url}}"], "path": ["api", "corners"] } } },
+        { "name": "Update", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Corner actualizado\"\n}" }, "url": { "raw": "{{base_url}}/api/corners/{{id}}", "host": ["{{base_url}}"], "path": ["api", "corners", "{{id}}"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/corners/{{id}}", "host": ["{{base_url}}"], "path": ["api", "corners", "{{id}}"] } } },
+        { "name": "Create schedule", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"dayOfWeek\": 1,\n  \"startTime\": \"09:00\",\n  \"endTime\": \"18:00\",\n  \"slotDurationMinutes\": 30\n}" }, "url": { "raw": "{{base_url}}/api/corners/{{id}}/schedules", "host": ["{{base_url}}"], "path": ["api", "corners", "{{id}}", "schedules"] } } },
+        { "name": "List schedules", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/corners/{{id}}/schedules", "host": ["{{base_url}}"], "path": ["api", "corners", "{{id}}", "schedules"] } } },
+        { "name": "Update schedule", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"startTime\": \"10:00\",\n  \"endTime\": \"17:00\"\n}" }, "url": { "raw": "{{base_url}}/api/corners/{{id}}/schedules/{{scheduleId}}", "host": ["{{base_url}}"], "path": ["api", "corners", "{{id}}", "schedules", "{{scheduleId}}"] } } },
+        { "name": "Delete schedule", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/corners/{{id}}/schedules/{{scheduleId}}", "host": ["{{base_url}}"], "path": ["api", "corners", "{{id}}", "schedules", "{{scheduleId}}"] } } },
+        { "name": "Assign technicians to schedule", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"technicianIds\": [\"{{technicianId}}\"]\n}" }, "url": { "raw": "{{base_url}}/api/corners/{{id}}/schedules/{{scheduleId}}/technicians", "host": ["{{base_url}}"], "path": ["api", "corners", "{{id}}", "schedules", "{{scheduleId}}", "technicians"] } } }
+      ]
+    },
+    {
+      "name": "Devices",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/devices", "host": ["{{base_url}}"], "path": ["api", "devices"] } } },
+        { "name": "Sync user devices", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/devices/sync-user/{{userId}}", "host": ["{{base_url}}"], "path": ["api", "devices", "sync-user", "{{userId}}"] } } },
+        { "name": "Create virtual", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"serialNumber\": \"{{serialNumber}}\",\n  \"model\": \"Modelo X\",\n  \"brand\": \"Marca Y\",\n  \"userId\": \"{{userId}}\"\n}" }, "url": { "raw": "{{base_url}}/api/devices/virtual", "host": ["{{base_url}}"], "path": ["api", "devices", "virtual"] } } },
+        { "name": "Update virtual", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"model\": \"Modelo actualizado\"\n}" }, "url": { "raw": "{{base_url}}/api/devices/virtual/{{deviceId}}", "host": ["{{base_url}}"], "path": ["api", "devices", "virtual", "{{deviceId}}"] } } },
+        { "name": "Disable device", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/devices/{{deviceId}}/disable", "host": ["{{base_url}}"], "path": ["api", "devices", "{{deviceId}}", "disable"] } } },
+        { "name": "Enable device", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/devices/{{deviceId}}/enable", "host": ["{{base_url}}"], "path": ["api", "devices", "{{deviceId}}", "enable"] } } },
+        { "name": "Delete virtual", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/devices/virtual/{{deviceId}}", "host": ["{{base_url}}"], "path": ["api", "devices", "virtual", "{{deviceId}}"] } } }
+      ]
+    },
+    {
+      "name": "Admin — Companies",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/companies", "host": ["{{base_url}}"], "path": ["api", "admin", "companies"] } } },
+        { "name": "SN catalog", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/companies/sn-catalog", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "sn-catalog"] } } },
+        { "name": "Sync from SN", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/api/admin/companies/sync-from-sn", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "sync-from-sn"] } } },
+        { "name": "Trees", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/companies/trees", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "trees"] } } },
+        { "name": "SN profiles — list", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/companies/sn-profiles", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "sn-profiles"] } } },
+        { "name": "SN profiles — create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"companyId\": \"REPLACE_WITH_COMPANY_ID\",\n  \"snow_company_sys_id\": \"REPLACE_WITH_SN_SYS_ID\",\n  \"name\": \"Perfil SN\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/companies/sn-profiles", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "sn-profiles"] } } },
+        { "name": "SN profiles — bulk", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"profiles\": [\n    { \"companyId\": \"REPLACE_WITH_COMPANY_ID\", \"snow_company_sys_id\": \"REPLACE_WITH_SN_SYS_ID\", \"name\": \"Perfil SN\" }\n  ]\n}" }, "url": { "raw": "{{base_url}}/api/admin/companies/sn-profiles/bulk", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "sn-profiles", "bulk"] } } },
+        { "name": "SN profiles — update", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Perfil SN actualizado\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/companies/sn-profiles/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "sn-profiles", "{{id}}"] } } },
+        { "name": "SN profiles — delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/admin/companies/sn-profiles/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "sn-profiles", "{{id}}"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/companies/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "{{id}}"] } } },
+        { "name": "Bulk create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"companies\": [\n    { \"name\": \"Empresa A\", \"treeId\": \"REPLACE_WITH_TREE_ID\" }\n  ]\n}" }, "url": { "raw": "{{base_url}}/api/admin/companies/bulk", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "bulk"] } } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Empresa nueva\",\n  \"treeId\": \"REPLACE_WITH_TREE_ID\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/companies", "host": ["{{base_url}}"], "path": ["api", "admin", "companies"] } } },
+        { "name": "Update", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Empresa actualizada\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/companies/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "{{id}}"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/admin/companies/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "companies", "{{id}}"] } } }
+      ]
+    },
+    {
+      "name": "Admin — Issue Type Trees",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/trees", "host": ["{{base_url}}"], "path": ["api", "admin", "trees"] } } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Árbol de tipos\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/trees", "host": ["{{base_url}}"], "path": ["api", "admin", "trees"] } } },
+        { "name": "Update", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Árbol actualizado\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/trees/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "trees", "{{id}}"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/admin/trees/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "trees", "{{id}}"] } } }
+      ]
+    },
+    {
+      "name": "Admin — Issue Types",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/issue-types", "host": ["{{base_url}}"], "path": ["api", "admin", "issue-types"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/issue-types/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "issue-types", "{{id}}"] } } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Tipo de incidencia\",\n  \"treeId\": \"REPLACE_WITH_TREE_ID\",\n  \"servicenow_category\": \"hardware\",\n  \"work_minutes\": 30,\n  \"device_type\": \"laptop\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/issue-types", "host": ["{{base_url}}"], "path": ["api", "admin", "issue-types"] } } },
+        { "name": "Update", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"work_minutes\": 45\n}" }, "url": { "raw": "{{base_url}}/api/admin/issue-types/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "issue-types", "{{id}}"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/admin/issue-types/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "issue-types", "{{id}}"] } } }
+      ]
+    },
+    {
+      "name": "Admin — ServiceNow Groups",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/servicenow-groups", "host": ["{{base_url}}"], "path": ["api", "admin", "servicenow-groups"] } } },
+        { "name": "SN catalog", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/servicenow-groups/sn-catalog", "host": ["{{base_url}}"], "path": ["api", "admin", "servicenow-groups", "sn-catalog"] } } },
+        { "name": "SN catalog by sys_id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/servicenow-groups/sn-catalog/{{sysId}}", "host": ["{{base_url}}"], "path": ["api", "admin", "servicenow-groups", "sn-catalog", "{{sysId}}"] } } }
+      ]
+    },
+    {
+      "name": "Admin — ServiceNow Locations",
+      "item": [
+        { "name": "SN catalog", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/servicenow-locations/sn-catalog", "host": ["{{base_url}}"], "path": ["api", "admin", "servicenow-locations", "sn-catalog"] } } }
+      ]
+    },
+    {
+      "name": "Admin — Technicians",
+      "item": [
+        { "name": "List users", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/technicians/users", "host": ["{{base_url}}"], "path": ["api", "admin", "technicians", "users"] } } },
+        { "name": "Lookup user", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/technicians/lookup-user?email=empleado1@eventcorner.com", "host": ["{{base_url}}"], "path": ["api", "admin", "technicians", "lookup-user"], "query": [{ "key": "email", "value": "empleado1@eventcorner.com" }] } } },
+        { "name": "List technicians", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/technicians", "host": ["{{base_url}}"], "path": ["api", "admin", "technicians"] } } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"cornerId\": \"{{cornerId}}\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/technicians", "host": ["{{base_url}}"], "path": ["api", "admin", "technicians"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/technicians/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "technicians", "{{id}}"] } } },
+        { "name": "Set corner", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"cornerId\": \"{{cornerId}}\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/technicians/{{id}}/corner", "host": ["{{base_url}}"], "path": ["api", "admin", "technicians", "{{id}}", "corner"] } } },
+        { "name": "Remove (soft-delete)", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/admin/technicians/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "technicians", "{{id}}"] } } },
+        { "name": "Disable", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/admin/technicians/{{id}}/disable", "host": ["{{base_url}}"], "path": ["api", "admin", "technicians", "{{id}}", "disable"] } } },
+        { "name": "Enable", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/admin/technicians/{{id}}/enable", "host": ["{{base_url}}"], "path": ["api", "admin", "technicians", "{{id}}", "enable"] } } }
+      ]
+    },
+    {
+      "name": "Admin — Users",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/users", "host": ["{{base_url}}"], "path": ["api", "admin", "users"] } } },
+        { "name": "Search", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/api/admin/users/search?q=empleado", "host": ["{{base_url}}"], "path": ["api", "admin", "users", "search"], "query": [{ "key": "q", "value": "empleado" }] } } },
+        { "name": "Update", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Nombre\",\n  \"lastName\": \"Apellido\"\n}" }, "url": { "raw": "{{base_url}}/api/admin/users/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "users", "{{id}}"] } } },
+        { "name": "Deactivate", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/admin/users/{{id}}/deactivate", "host": ["{{base_url}}"], "path": ["api", "admin", "users", "{{id}}", "deactivate"] } } },
+        { "name": "Activate", "request": { "method": "PATCH", "header": [], "url": { "raw": "{{base_url}}/api/admin/users/{{id}}/activate", "host": ["{{base_url}}"], "path": ["api", "admin", "users", "{{id}}", "activate"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/api/admin/users/{{id}}", "host": ["{{base_url}}"], "path": ["api", "admin", "users", "{{id}}"] } } }
+      ]
+    },
+    {
+      "name": "Internal-API (M2M — usar {{m2m_token}})",
+      "item": [
+        { "name": "Incident by number", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/internal-api/incidents/by-number/{{number}}", "host": ["{{base_url}}"], "path": ["internal-api", "incidents", "by-number", "{{number}}"] } } },
+        { "name": "Request by number", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/internal-api/requests/by-number/{{number}}", "host": ["{{base_url}}"], "path": ["internal-api", "requests", "by-number", "{{number}}"] } } },
+        { "name": "Incidents", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/internal-api/incidents", "host": ["{{base_url}}"], "path": ["internal-api", "incidents"] } } },
+        { "name": "Requests", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/internal-api/requests", "host": ["{{base_url}}"], "path": ["internal-api", "requests"] } } }
+      ]
+    },
+    {
+      "name": "Outbound — ServiceNow (M2M — usar {{m2m_token}})",
+      "item": [
+        { "name": "Create incident (immediate)", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"short_description\": \"Incidencia desde monolith\",\n  \"assignment_group\": \"SOPORTE_GENERAL\",\n  \"category\": \"hardware\",\n  \"caller_id\": \"empleado1@eventcorner.com\",\n  \"correlation_id\": \"{{serialNumber}}\"\n}" }, "url": { "raw": "{{base_url}}/outbound/servicenow/incidents", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "incidents"] } } },
+        { "name": "Create request (immediate)", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"short_description\": \"Request desde monolith\",\n  \"assignment_group\": \"SOPORTE_GENERAL\"\n}" }, "url": { "raw": "{{base_url}}/outbound/servicenow/requests", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "requests"] } } },
+        { "name": "Enqueue incident (async)", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"short_description\": \"Incidencia async\",\n  \"assignment_group\": \"SOPORTE_GENERAL\"\n}" }, "url": { "raw": "{{base_url}}/outbound/servicenow/incidents/enqueue", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "incidents", "enqueue"] } } },
+        { "name": "Enqueue request (async)", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"short_description\": \"Request async\"\n}" }, "url": { "raw": "{{base_url}}/outbound/servicenow/requests/enqueue", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "requests", "enqueue"] } } },
+        { "name": "List companies", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/outbound/servicenow/companies", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "companies"] } } },
+        { "name": "Reconcile by correlationId", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/outbound/servicenow/reconcile/{{correlationId}}", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "reconcile", "{{correlationId}}"] } } },
+        { "name": "Retry reconcile", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "POST", "header": [], "url": { "raw": "{{base_url}}/outbound/servicenow/reconcile/{{correlationId}}/retry", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "reconcile", "{{correlationId}}", "retry"] } } },
+        { "name": "Update generic {table}/{sysId}", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"state\": \"in_progress\",\n  \"work_notes\": \"Actualización\"\n}" }, "url": { "raw": "{{base_url}}/outbound/servicenow/incident/{{sysId}}", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "incident", "{{sysId}}"] } } },
+        { "name": "Get incident state", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/outbound/servicenow/incidents/{{sysId}}/state", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "incidents", "{{sysId}}", "state"] } } },
+        { "name": "Close incident", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"close_code\": \"Solved (Permanently)\",\n  \"close_notes\": \"Cerrado desde monolith\"\n}" }, "url": { "raw": "{{base_url}}/outbound/servicenow/incidents/{{sysId}}/close", "host": ["{{base_url}}"], "path": ["outbound", "servicenow", "incidents", "{{sysId}}", "close"] } } }
+      ]
+    },
+    {
+      "name": "Outbound — Inventory (M2M — usar {{m2m_token}})",
+      "item": [
+        { "name": "Device by serial", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/outbound/inventory/devices/{{serialNumber}}", "host": ["{{base_url}}"], "path": ["outbound", "inventory", "devices", "{{serialNumber}}"] } } },
+        { "name": "Devices by user", "request": { "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{m2m_token}}", "type": "string" }] }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/outbound/inventory/users/{{userId}}", "host": ["{{base_url}}"], "path": ["outbound", "inventory", "users", "{{userId}}"] } } }
+      ]
+    }
+  ]
+}
