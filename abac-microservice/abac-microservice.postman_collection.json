@@ -1,0 +1,143 @@
+{
+  "info": {
+    "name": "abac-microservice",
+    "description": "Endpoints del abac-microservice (motor ABAC + multi-auth). Puerto :3005. Swagger en /api-docs.\n\nTRES modelos de auth conviven:\n1. ApiKeyGuard → header 'x-api-key: {{api_key}}' (a veces + 'api-secret'). Usado en /abac/* y varios /auth/validate-*.\n2. JwtAuthGuard + RolesGuard → Bearer {{admin_token}} (JWT admin de POST /auth/admin/login). Usado en /applications, /audit, /permissions, /policies, /roles, /users.\n3. Públicas → /auth/admin/login, /auth/service-token, /auth/oauth/token, /auth/dev/simulate-entra, /auth/.well-known/jwks.json, /user-policies.\n\nFlujo típico: POST /auth/admin/login → copiar token a {{admin_token}}. Para M2M: POST /auth/service-token (apiKey+apiSecret) o /auth/oauth/token (client_credentials).\n\nVariables: {{base_url}} (http://localhost:3005), {{admin_token}}, {{api_key}}, {{api_secret}}, {{applicationId}}, ids de ejemplo.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3005", "type": "string" },
+    { "key": "admin_token", "value": "", "type": "string" },
+    { "key": "api_key", "value": "", "type": "string" },
+    { "key": "api_secret", "value": "", "type": "string" },
+    { "key": "applicationId", "value": "REPLACE_WITH_APP_ID", "type": "string" },
+    { "key": "userId", "value": "REPLACE_WITH_USER_ID", "type": "string" },
+    { "key": "roleId", "value": "REPLACE_WITH_ROLE_ID", "type": "string" },
+    { "key": "permissionId", "value": "REPLACE_WITH_PERMISSION_ID", "type": "string" },
+    { "key": "policyId", "value": "REPLACE_WITH_POLICY_ID", "type": "string" },
+    { "key": "ruleId", "value": "REPLACE_WITH_RULE_ID", "type": "string" },
+    { "key": "id", "value": "REPLACE_WITH_ID", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth (públicas + ApiKey)",
+      "item": [
+        { "name": "Admin login (público)", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@eventcorner.com\",\n  \"password\": \"REPLACE_WITH_PASSWORD\",\n  \"applicationId\": \"{{applicationId}}\"\n}" }, "url": { "raw": "{{base_url}}/auth/admin/login", "host": ["{{base_url}}"], "path": ["auth", "admin", "login"] }, "description": "Devuelve JWT admin. Copiá 'token' a {{admin_token}}." } },
+        { "name": "Service token (M2M, público)", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"apiKey\": \"{{api_key}}\",\n  \"apiSecret\": \"{{api_secret}}\"\n}" }, "url": { "raw": "{{base_url}}/auth/service-token", "host": ["{{base_url}}"], "path": ["auth", "service-token"] }, "description": "Intercambia apiKey+apiSecret por JWT (1h)." } },
+        { "name": "OAuth token (client_credentials, público)", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"grant_type\": \"client_credentials\",\n  \"client_id\": \"ak_...\",\n  \"client_secret\": \"sec_...\",\n  \"scope\": \"incident:create corner:list\"\n}" }, "url": { "raw": "{{base_url}}/auth/oauth/token", "host": ["{{base_url}}"], "path": ["auth", "oauth", "token"] } } },
+        { "name": "Validate api-key (ApiKey)", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "x-api-key", "value": "{{api_key}}" }], "url": { "raw": "{{base_url}}/auth/validate-api-key", "host": ["{{base_url}}"], "path": ["auth", "validate-api-key"] } } },
+        { "name": "Validate token (ApiKey)", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "x-api-key", "value": "{{api_key}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"token\": \"REPLACE_WITH_JWT_TO_VALIDATE\"\n}" }, "url": { "raw": "{{base_url}}/auth/validate-token", "host": ["{{base_url}}"], "path": ["auth", "validate-token"] } } },
+        { "name": "Validate Entra (ApiKey)", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "x-api-key", "value": "{{api_key}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"token\": \"REPLACE_WITH_ENTRA_JWT\",\n  \"applicationId\": \"{{applicationId}}\"\n}" }, "url": { "raw": "{{base_url}}/auth/validate-entra", "host": ["{{base_url}}"], "path": ["auth", "validate-entra"] } } },
+        { "name": "Dev simulate Entra (público)", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"empleado1@eventcorner.com\",\n  \"applicationId\": \"{{applicationId}}\"\n}" }, "url": { "raw": "{{base_url}}/auth/dev/simulate-entra", "host": ["{{base_url}}"], "path": ["auth", "dev", "simulate-entra"] } } },
+        { "name": "Admin keypair (Bearer admin)", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/auth/admin/keypair", "host": ["{{base_url}}"], "path": ["auth", "admin", "keypair"] } } },
+        { "name": "JWKS (.well-known, público)", "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/auth/.well-known/jwks.json", "host": ["{{base_url}}"], "path": ["auth", ".well-known", "jwks.json"] } } }
+      ]
+    },
+    {
+      "name": "ABAC (ApiKey — x-api-key)",
+      "item": [
+        { "name": "Can access", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "x-api-key", "value": "{{api_key}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"applicationId\": \"{{applicationId}}\",\n  \"resource\": \"incident\",\n  \"action\": \"create\",\n  \"context\": {}\n}" }, "url": { "raw": "{{base_url}}/abac/can-access", "host": ["{{base_url}}"], "path": ["abac", "can-access"] } } },
+        { "name": "User roles", "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [{ "key": "x-api-key", "value": "{{api_key}}" }], "url": { "raw": "{{base_url}}/abac/user-roles?userId={{userId}}&applicationId={{applicationId}}", "host": ["{{base_url}}"], "path": ["abac", "user-roles"], "query": [{ "key": "userId", "value": "{{userId}}" }, { "key": "applicationId", "value": "{{applicationId}}" }] } } },
+        { "name": "Batch evaluate", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "x-api-key", "value": "{{api_key}}" }, { "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"applicationId\": \"{{applicationId}}\",\n  \"evaluations\": [\n    { \"resource\": \"incident\", \"action\": \"create\" },\n    { \"resource\": \"corner\", \"action\": \"list\" }\n  ]\n}" }, "url": { "raw": "{{base_url}}/abac/batch-evaluate", "host": ["{{base_url}}"], "path": ["abac", "batch-evaluate"] } } }
+      ]
+    },
+    {
+      "name": "Applications (Bearer admin)",
+      "item": [
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Mi aplicación\",\n  \"type\": \"internal\",\n  \"ownerUserId\": \"{{userId}}\"\n}" }, "url": { "raw": "{{base_url}}/applications", "host": ["{{base_url}}"], "path": ["applications"] } } },
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/applications", "host": ["{{base_url}}"], "path": ["applications"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/applications/{{applicationId}}", "host": ["{{base_url}}"], "path": ["applications", "{{applicationId}}"] } } },
+        { "name": "Update", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Nombre actualizado\"\n}" }, "url": { "raw": "{{base_url}}/applications/{{applicationId}}", "host": ["{{base_url}}"], "path": ["applications", "{{applicationId}}"] } } },
+        { "name": "Reactivate", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/applications/{{applicationId}}/reactivate", "host": ["{{base_url}}"], "path": ["applications", "{{applicationId}}", "reactivate"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/applications/{{applicationId}}", "host": ["{{base_url}}"], "path": ["applications", "{{applicationId}}"] } } },
+        { "name": "Delete permanent", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/applications/{{applicationId}}/permanent", "host": ["{{base_url}}"], "path": ["applications", "{{applicationId}}", "permanent"] } } },
+        { "name": "Regenerate api-key", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/applications/{{applicationId}}/regenerate-api-key", "host": ["{{base_url}}"], "path": ["applications", "{{applicationId}}", "regenerate-api-key"] } } },
+        { "name": "Validate api-key", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"apiKey\": \"{{api_key}}\"\n}" }, "url": { "raw": "{{base_url}}/applications/validate-api-key", "host": ["{{base_url}}"], "path": ["applications", "validate-api-key"] } } },
+        { "name": "Create M2M service", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"monolith\",\n  \"tokenDurationDays\": 365\n}" }, "url": { "raw": "{{base_url}}/applications/m2m-service", "host": ["{{base_url}}"], "path": ["applications", "m2m-service"] } } },
+        { "name": "Issue token", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"tokenDurationDays\": 365\n}" }, "url": { "raw": "{{base_url}}/applications/{{applicationId}}/issue-token", "host": ["{{base_url}}"], "path": ["applications", "{{applicationId}}", "issue-token"] } } },
+        { "name": "Create OAuth client", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"OAuth client externo\",\n  \"ownerUserId\": \"{{userId}}\",\n  \"scopes\": [\"incident:create\", \"corner:list\"]\n}" }, "url": { "raw": "{{base_url}}/applications/oauth", "host": ["{{base_url}}"], "path": ["applications", "oauth"] } } },
+        { "name": "Update scopes", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"scopes\": [\"incident:create\", \"incident:list\"]\n}" }, "url": { "raw": "{{base_url}}/applications/{{applicationId}}/scopes", "host": ["{{base_url}}"], "path": ["applications", "{{applicationId}}", "scopes"] } } },
+        { "name": "Rotate secret", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/applications/{{applicationId}}/rotate-secret", "host": ["{{base_url}}"], "path": ["applications", "{{applicationId}}", "rotate-secret"] } } }
+      ]
+    },
+    {
+      "name": "Audit (Bearer admin)",
+      "item": [
+        { "name": "Stats", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/audit/stats", "host": ["{{base_url}}"], "path": ["audit", "stats"] } } },
+        { "name": "Recent", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/audit/recent?limit=50", "host": ["{{base_url}}"], "path": ["audit", "recent"], "query": [{ "key": "limit", "value": "50" }] } } }
+      ]
+    },
+    {
+      "name": "Permissions (Bearer admin)",
+      "item": [
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"resource\": \"incident\",\n  \"action\": \"create\",\n  \"description\": \"Crear incidencias\",\n  \"category\": \"incidents\"\n}" }, "url": { "raw": "{{base_url}}/permissions", "host": ["{{base_url}}"], "path": ["permissions"] } } },
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/permissions", "host": ["{{base_url}}"], "path": ["permissions"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/permissions/{{permissionId}}", "host": ["{{base_url}}"], "path": ["permissions", "{{permissionId}}"] } } },
+        { "name": "Update", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"description\": \"Descripción actualizada\"\n}" }, "url": { "raw": "{{base_url}}/permissions/{{permissionId}}", "host": ["{{base_url}}"], "path": ["permissions", "{{permissionId}}"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/permissions/{{permissionId}}", "host": ["{{base_url}}"], "path": ["permissions", "{{permissionId}}"] } } },
+        { "name": "Reactivate", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/permissions/{{permissionId}}/reactivate", "host": ["{{base_url}}"], "path": ["permissions", "{{permissionId}}", "reactivate"] } } },
+        { "name": "Delete permanent", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/permissions/{{permissionId}}/permanent", "host": ["{{base_url}}"], "path": ["permissions", "{{permissionId}}", "permanent"] } } }
+      ]
+    },
+    {
+      "name": "Policies (Bearer admin)",
+      "item": [
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Política de horario\",\n  \"effect\": \"allow\",\n  \"priority\": 10,\n  \"applicationId\": \"{{applicationId}}\",\n  \"conditions\": {}\n}" }, "url": { "raw": "{{base_url}}/policies", "host": ["{{base_url}}"], "path": ["policies"] } } },
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/policies", "host": ["{{base_url}}"], "path": ["policies"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/policies/{{policyId}}", "host": ["{{base_url}}"], "path": ["policies", "{{policyId}}"] } } },
+        { "name": "Update", "request": { "method": "PUT", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"priority\": 20\n}" }, "url": { "raw": "{{base_url}}/policies/{{policyId}}", "host": ["{{base_url}}"], "path": ["policies", "{{policyId}}"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/policies/{{policyId}}", "host": ["{{base_url}}"], "path": ["policies", "{{policyId}}"] } } },
+        { "name": "Reactivate", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/policies/{{policyId}}/reactivate", "host": ["{{base_url}}"], "path": ["policies", "{{policyId}}", "reactivate"] } } },
+        { "name": "Add rule", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"condition\": { \"all\": [{ \"fact\": \"user.department\", \"operator\": \"equal\", \"value\": \"IT\" }] },\n  \"priority\": 1\n}" }, "url": { "raw": "{{base_url}}/policies/{{policyId}}/rules", "host": ["{{base_url}}"], "path": ["policies", "{{policyId}}", "rules"] } } },
+        { "name": "List rules", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/policies/{{policyId}}/rules", "host": ["{{base_url}}"], "path": ["policies", "{{policyId}}", "rules"] } } },
+        { "name": "Delete rule", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/policies/rules/{{ruleId}}", "host": ["{{base_url}}"], "path": ["policies", "rules", "{{ruleId}}"] } } },
+        { "name": "Add permission to policy", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/policies/{{policyId}}/permissions/{{permissionId}}", "host": ["{{base_url}}"], "path": ["policies", "{{policyId}}", "permissions", "{{permissionId}}"] } } },
+        { "name": "List policy permissions", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/policies/{{policyId}}/permissions", "host": ["{{base_url}}"], "path": ["policies", "{{policyId}}", "permissions"] } } },
+        { "name": "Remove permission from policy", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/policies/{{policyId}}/permissions/{{permissionId}}", "host": ["{{base_url}}"], "path": ["policies", "{{policyId}}", "permissions", "{{permissionId}}"] } } },
+        { "name": "Validate rule", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"condition\": { \"all\": [{ \"fact\": \"user.department\", \"operator\": \"equal\", \"value\": \"IT\" }] }\n}" }, "url": { "raw": "{{base_url}}/policies/validate-rule", "host": ["{{base_url}}"], "path": ["policies", "validate-rule"] } } }
+      ]
+    },
+    {
+      "name": "Roles (Bearer admin)",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/roles", "host": ["{{base_url}}"], "path": ["roles"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/roles/{{roleId}}", "host": ["{{base_url}}"], "path": ["roles", "{{roleId}}"] } } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"manager\",\n  \"description\": \"Rol de manager\",\n  \"applicationId\": \"{{applicationId}}\",\n  \"weight\": 10\n}" }, "url": { "raw": "{{base_url}}/roles", "host": ["{{base_url}}"], "path": ["roles"] } } },
+        { "name": "Update", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"description\": \"Descripción actualizada\"\n}" }, "url": { "raw": "{{base_url}}/roles/{{roleId}}", "host": ["{{base_url}}"], "path": ["roles", "{{roleId}}"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/roles/{{roleId}}", "host": ["{{base_url}}"], "path": ["roles", "{{roleId}}"] } } },
+        { "name": "Reactivate", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/roles/{{roleId}}/reactivate", "host": ["{{base_url}}"], "path": ["roles", "{{roleId}}", "reactivate"] } } },
+        { "name": "Delete permanent", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/roles/{{roleId}}/permanent", "host": ["{{base_url}}"], "path": ["roles", "{{roleId}}", "permanent"] } } },
+        { "name": "List role permissions", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/roles/{{roleId}}/permissions", "host": ["{{base_url}}"], "path": ["roles", "{{roleId}}", "permissions"] } } },
+        { "name": "Add permission to role", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"permissionId\": \"{{permissionId}}\",\n  \"effect\": \"allow\"\n}" }, "url": { "raw": "{{base_url}}/roles/{{roleId}}/permissions", "host": ["{{base_url}}"], "path": ["roles", "{{roleId}}", "permissions"] } } },
+        { "name": "Remove permission from role", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/roles/{{roleId}}/permissions/{{permissionId}}", "host": ["{{base_url}}"], "path": ["roles", "{{roleId}}", "permissions", "{{permissionId}}"] } } }
+      ]
+    },
+    {
+      "name": "Users (Bearer admin)",
+      "item": [
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"nuevo@eventcorner.com\",\n  \"username\": \"nuevo\",\n  \"firstName\": \"Nuevo\",\n  \"lastName\": \"Usuario\",\n  \"accountType\": \"user\"\n}" }, "url": { "raw": "{{base_url}}/users", "host": ["{{base_url}}"], "path": ["users"] } } },
+        { "name": "List", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/users", "host": ["{{base_url}}"], "path": ["users"] } } },
+        { "name": "Get by id", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/users/{{userId}}", "host": ["{{base_url}}"], "path": ["users", "{{userId}}"] } } },
+        { "name": "Update", "request": { "method": "PATCH", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Nombre\",\n  \"lastName\": \"Apellido\"\n}" }, "url": { "raw": "{{base_url}}/users/{{userId}}", "host": ["{{base_url}}"], "path": ["users", "{{userId}}"] } } },
+        { "name": "Delete", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/users/{{userId}}", "host": ["{{base_url}}"], "path": ["users", "{{userId}}"] } } },
+        { "name": "Reactivate", "request": { "method": "POST", "header": [], "url": { "raw": "{{base_url}}/users/{{userId}}/reactivate", "host": ["{{base_url}}"], "path": ["users", "{{userId}}", "reactivate"] } } },
+        { "name": "Delete permanent", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/users/{{userId}}/permanent", "host": ["{{base_url}}"], "path": ["users", "{{userId}}", "permanent"] } } },
+        { "name": "Get user policies", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/users/{{userId}}/policies", "host": ["{{base_url}}"], "path": ["users", "{{userId}}", "policies"] } } },
+        { "name": "Get user roles", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/users/{{userId}}/roles", "host": ["{{base_url}}"], "path": ["users", "{{userId}}", "roles"] } } },
+        { "name": "Assign role to user", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"roleId\": \"{{roleId}}\",\n  \"applicationId\": \"{{applicationId}}\"\n}" }, "url": { "raw": "{{base_url}}/users/{{userId}}/roles", "host": ["{{base_url}}"], "path": ["users", "{{userId}}", "roles"] } } },
+        { "name": "Remove role from user", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/users/{{userId}}/roles/{{roleId}}", "host": ["{{base_url}}"], "path": ["users", "{{userId}}", "roles", "{{roleId}}"] } } },
+        { "name": "Get user applications", "request": { "method": "GET", "header": [], "url": { "raw": "{{base_url}}/users/{{userId}}/applications", "host": ["{{base_url}}"], "path": ["users", "{{userId}}", "applications"] } } },
+        { "name": "Add application to user", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"applicationId\": \"{{applicationId}}\",\n  \"membershipType\": \"member\"\n}" }, "url": { "raw": "{{base_url}}/users/{{userId}}/applications", "host": ["{{base_url}}"], "path": ["users", "{{userId}}", "applications"] } } },
+        { "name": "Remove application from user", "request": { "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/users/{{userId}}/applications/{{applicationId}}", "host": ["{{base_url}}"], "path": ["users", "{{userId}}", "applications", "{{applicationId}}"] } } }
+      ]
+    },
+    {
+      "name": "User Policies (sin guard)",
+      "item": [
+        { "name": "Assign policy to user", "request": { "auth": { "type": "noauth" }, "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"policyId\": \"{{policyId}}\",\n  \"applicationId\": \"{{applicationId}}\"\n}" }, "url": { "raw": "{{base_url}}/user-policies", "host": ["{{base_url}}"], "path": ["user-policies"] } } },
+        { "name": "Get user policies", "request": { "auth": { "type": "noauth" }, "method": "GET", "header": [], "url": { "raw": "{{base_url}}/user-policies/{{userId}}", "host": ["{{base_url}}"], "path": ["user-policies", "{{userId}}"] } } },
+        { "name": "Remove policy from user", "request": { "auth": { "type": "noauth" }, "method": "DELETE", "header": [], "url": { "raw": "{{base_url}}/user-policies/{{userId}}/{{policyId}}", "host": ["{{base_url}}"], "path": ["user-policies", "{{userId}}", "{{policyId}}"] } } }
+      ]
+    }
+  ]
+}

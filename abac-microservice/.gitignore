@@ -46,3 +46,6 @@ temp/
 .nest/
 
 
+
+# Postman — no versionar environments con token real
+*.local.postman_environment.json
