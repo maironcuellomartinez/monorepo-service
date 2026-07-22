@@ -58,11 +58,6 @@ const SERVICE_DEFINITIONS: ServiceDefinition[] = [
         tokenDurationDays: 365,
     },
     {
-        name: 'api-middleware-service',
-        description: 'Middleware de integración para apps externas — proxy OAuth hacia monolith',
-        tokenDurationDays: 180,
-    },
-    {
         name: 'observability-service',
         description: 'Observability Service — ingesta y consulta de logs, traces y métricas',
         tokenDurationDays: 365,

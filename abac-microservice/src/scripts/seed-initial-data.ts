@@ -70,7 +70,8 @@ const ALL_PERMISSIONS: [string, string, string, string, number][] = [
     ['corner', 'update',           'Actualizar corner',                         'corner', 25],
     ['corner', 'delete',           'Eliminar corner',                           'corner', 40],
     ['corner', 'manage-schedules', 'Gestionar horarios del corner',             'corner', 20],
-    ['corner', 'assign-technician','Asignar técnicos a horario',                'corner', 15],
+    // Nota: 'corner:assign-technician' se elimino por redundante — la asignacion
+    // de tecnicos a horarios se enforced con 'schedule:assign-technicians'.
 
     // ── Schedule ──────────────────────────────────────────────────────────────
     ['schedule', 'create',             'Crear horario',                         'schedule', 30],
@@ -157,7 +158,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         'incident:validate', 'incident:reopen', 'incident:delete',
         // Corners & schedules — configuración completa
         'corner:create', 'corner:read', 'corner:list', 'corner:update', 'corner:delete',
-        'corner:manage-schedules', 'corner:assign-technician',
+        'corner:manage-schedules',
         'schedule:create', 'schedule:read', 'schedule:list',
         'schedule:update', 'schedule:delete', 'schedule:assign-technicians',
         'slot:read', 'slot:list', 'slot:expire',
@@ -201,9 +202,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         // Issue types & companies — solo lectura
         'issue-type:read', 'issue-type:list',
         'company:read', 'company:list',
-        // Technicians — gestión completa + asignación
+        // Technicians — gestión completa (la asignación a horarios va por 'schedule:assign-technicians')
         'technician:create', 'technician:read', 'technician:list', 'technician:update',
-        'corner:assign-technician',
         // Users — lectura
         'user:read',
         // Devices
