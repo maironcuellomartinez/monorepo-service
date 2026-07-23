@@ -44,6 +44,7 @@ const CATEGORIES: { value: string; label: string }[] = [
 const EMPTY_IT_FORM: Partial<IssueType> = {
   name: '', category: '', deviceType: '',
   servicenowCategory: '', servicenowCloseCategory: '',
+  snUrgency: 2, snImpact: 2, snSeverity: 'medium',
   workMinutes: undefined, spareMinutes: undefined, closeMinutes: undefined,
   position: undefined, icon: '',
   notUserVisible: false, npsDisabled: false, isActive: true,
@@ -193,6 +194,7 @@ export function IssueTypesPage() {
       deviceType: it.deviceType ?? '',
       servicenowCategory: it.servicenowCategory ?? '',
       servicenowCloseCategory: it.servicenowCloseCategory ?? '',
+      snUrgency: it.snUrgency ?? 2, snImpact: it.snImpact ?? 2, snSeverity: it.snSeverity ?? 'medium',
       workMinutes: it.workMinutes, spareMinutes: it.spareMinutes, closeMinutes: it.closeMinutes,
       position: it.position, icon: it.icon ?? '',
       notUserVisible: it.notUserVisible ?? false,
@@ -594,6 +596,42 @@ export function IssueTypesPage() {
                 <Label>ServiceNow Close</Label>
                 <Input value={itForm.servicenowCloseCategory ?? ''}
                   onChange={(e) => setItField('servicenowCloseCategory', e.target.value)} placeholder="Hardware Failure" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2">
+                <Label>SN Urgencia</Label>
+                <Select value={String(itForm.snUrgency ?? 2)} onValueChange={(v) => setItField('snUrgency', Number(v))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 — Alta</SelectItem>
+                    <SelectItem value="2">2 — Media</SelectItem>
+                    <SelectItem value="3">3 — Baja</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>SN Impacto</Label>
+                <Select value={String(itForm.snImpact ?? 2)} onValueChange={(v) => setItField('snImpact', Number(v))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 — Alto</SelectItem>
+                    <SelectItem value="2">2 — Medio</SelectItem>
+                    <SelectItem value="3">3 — Bajo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>SN Severidad</Label>
+                <Select value={itForm.snSeverity ?? 'medium'} onValueChange={(v) => setItField('snSeverity', v as IssueType['snSeverity'])}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">

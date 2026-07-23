@@ -74,10 +74,17 @@ export class ServiceNowOutboundController {
   }
 
   private buildIncidentBody(payload: Record<string, any>) {
+    // Clasificación SN provista por el monolith (desde el IssueType). Fallback a
+    // los valores neutros previos por robustez (si el emisor no los envía).
+    const severity = payload.severity ?? 'medium';
+    const impact = payload.impact ?? 2;
+    const urgency = payload.urgency ?? 2;
     return {
-      severity: 'medium',
-      impact: 2,
-      urgency: 2,
+      // Top-level: requerido por BaseSnowRequestDto (validación) del api-snowq-service.
+      severity,
+      impact,
+      urgency,
+      // priority es el ORDEN DE COLA (bulkhead/reintentos), no la clasificación SN.
       priority: 2,
       source: 'event-corner',
       payload: {
@@ -89,6 +96,10 @@ export class ServiceNowOutboundController {
         company: payload.company,
         location: payload.location,
         expected_start: payload.expected_start,
+        // snowq (buildPayloadForServiceNow) lee la clasificación DESDE payload.
+        urgency,
+        impact,
+        severity,
         // Identidad para deduplicación en snowq (ver computeFingerprint en api-snowq-service).
         externalId: payload.externalId,
       },

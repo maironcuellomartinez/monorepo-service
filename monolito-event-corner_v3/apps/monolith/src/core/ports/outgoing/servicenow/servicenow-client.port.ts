@@ -9,6 +9,12 @@ export interface ServiceNowIncidentPayload {
   short_description: string;
   description: string;
   caller_id: string;
+  /** Urgencia SN (1–3) — proviene del IssueType. */
+  urgency: number;
+  /** Impacto SN (1–3) — proviene del IssueType. */
+  impact: number;
+  /** Severidad SN (critical|high|medium|low, mapeada a `u_severity`) — proviene del IssueType. */
+  severity: string;
   expected_start?: Date;
   /** ID del incident en el monolito — usado por snowq para deduplicar reintentos/re-encolados. */
   externalId?: string;
