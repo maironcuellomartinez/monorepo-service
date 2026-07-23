@@ -381,6 +381,9 @@ export interface IssueType {
   deviceType?: string
   servicenowCategory?: string
   servicenowCloseCategory?: string
+  snUrgency?: number
+  snImpact?: number
+  snSeverity?: 'critical' | 'high' | 'medium' | 'low'
   workMinutes?: number
   spareMinutes?: number
   closeMinutes?: number

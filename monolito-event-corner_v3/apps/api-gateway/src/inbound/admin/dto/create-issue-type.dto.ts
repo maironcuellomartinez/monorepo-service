@@ -4,6 +4,10 @@ import {
   IsOptional,
   IsNumber,
   IsBoolean,
+  IsInt,
+  Min,
+  Max,
+  IsIn,
 } from 'class-validator';
 
 export class CreateIssueTypeDto {
@@ -31,6 +35,22 @@ export class CreateIssueTypeDto {
   @IsOptional()
   @IsString()
   servicenowCloseCategory?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(3)
+  snUrgency?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(3)
+  snImpact?: number;
+
+  @IsOptional()
+  @IsIn(['critical', 'high', 'medium', 'low'])
+  snSeverity?: string;
 
   @IsOptional()
   @IsNumber()
@@ -81,6 +101,22 @@ export class UpdateIssueTypeDto {
   @IsOptional()
   @IsString()
   servicenowCloseCategory?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(3)
+  snUrgency?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(3)
+  snImpact?: number;
+
+  @IsOptional()
+  @IsIn(['critical', 'high', 'medium', 'low'])
+  snSeverity?: string;
 
   @IsOptional()
   @IsNumber()

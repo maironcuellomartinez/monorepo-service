@@ -49,6 +49,7 @@ import { AddUniqueSnowCompanySysIdToServiceNowProfiles1784324876162 } from './in
 import { WidenSnowqCorrelationIdColumns1784384307249 } from './infrastructure/persistence/typeorm/migrations/1784384307249-WidenSnowqCorrelationIdColumns';
 import { AddUniqueWindowToCornerSlots1784389154861 } from './infrastructure/persistence/typeorm/migrations/1784389154861-AddUniqueWindowToCornerSlots';
 import { WidenIncidentOriginChannel1784481206018 } from './infrastructure/persistence/typeorm/migrations/1784481206018-WidenIncidentOriginChannel';
+import { AddSnClassificationToIssueTypes1784600000000 } from './infrastructure/persistence/typeorm/migrations/1784600000000-AddSnClassificationToIssueTypes';
 
 @Module({
   imports: [
@@ -93,6 +94,7 @@ import { WidenIncidentOriginChannel1784481206018 } from './infrastructure/persis
         WidenSnowqCorrelationIdColumns1784384307249,
         AddUniqueWindowToCornerSlots1784389154861,
         WidenIncidentOriginChannel1784481206018,
+        AddSnClassificationToIssueTypes1784600000000,
       ],
       migrationsRun: true,
     }),

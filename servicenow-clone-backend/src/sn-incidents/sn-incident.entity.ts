@@ -32,6 +32,10 @@ export class SnIncidentEntity {
   @Column({ type: 'varchar', length: 10, default: '2' })
   urgency: string;
 
+  // Campo custom que envía api-snowq-service (mapea el severity del monolito).
+  @Column({ type: 'varchar', length: 20, default: 'medium' })
+  u_severity: string;
+
   @Column({ type: 'varchar', length: 36, nullable: true })
   assignment_group: string | null;
 
