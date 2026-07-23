@@ -661,13 +661,13 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
 
 const TECHNICIAN_TRANSITIONS: Partial<Record<IncidentStatus, IncidentStatus[]>> = {
   CREATED:                    ['DELIVERED'],
-  DELIVERED:                  ['IN_PROGRESS', 'PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART'],
+  DELIVERED:                  ['IN_PROGRESS'],
   IN_PROGRESS:                ['PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART', 'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY'],
   PENDING_THIRD_PARTY:        ['IN_PROGRESS'],
   PENDING_USER:               ['IN_PROGRESS'],
   PENDING_SPARE_PART:         ['IN_PROGRESS'],
-  PENDING_PICKUP:             ['CLOSED'],
-  PENDING_REPLACEMENT_DELIVERY: ['CLOSED'],
+  PENDING_PICKUP:             ['IN_PROGRESS', 'CLOSED'],
+  PENDING_REPLACEMENT_DELIVERY: ['IN_PROGRESS', 'CLOSED'],
   REOPENED:                   ['IN_PROGRESS'],
 }
 

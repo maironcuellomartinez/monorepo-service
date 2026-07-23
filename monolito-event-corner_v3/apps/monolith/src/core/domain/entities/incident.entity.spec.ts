@@ -237,6 +237,26 @@ describe('Incident.changeStatus()', () => {
         expect(incident.status).toBe(IncidentStatus.CLOSED);
     });
 
+    it('PENDING_PICKUP → IN_PROGRESS (retomar trabajo)', () => {
+        const incident = makeIncident({ status: IncidentStatus.PENDING_PICKUP });
+        const result = incident.changeStatus(IncidentStatus.IN_PROGRESS, TECH);
+        expect(result.isSuccess).toBe(true);
+        expect(incident.status).toBe(IncidentStatus.IN_PROGRESS);
+    });
+
+    it('PENDING_REPLACEMENT_DELIVERY → IN_PROGRESS (retomar trabajo)', () => {
+        const incident = makeIncident({ status: IncidentStatus.PENDING_REPLACEMENT_DELIVERY });
+        const result = incident.changeStatus(IncidentStatus.IN_PROGRESS, TECH);
+        expect(result.isSuccess).toBe(true);
+        expect(incident.status).toBe(IncidentStatus.IN_PROGRESS);
+    });
+
+    it('DELIVERED → PENDING_SPARE_PART falla (solo puede ir a IN_PROGRESS)', () => {
+        const incident = makeIncident({ status: IncidentStatus.DELIVERED });
+        const result = incident.changeStatus(IncidentStatus.PENDING_SPARE_PART, TECH);
+        expect(result.isFailure).toBe(true);
+    });
+
     it('cualquier técnico puede cambiar estado (sin validación de asignado)', () => {
         const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS });
         incident.pullEvents();
