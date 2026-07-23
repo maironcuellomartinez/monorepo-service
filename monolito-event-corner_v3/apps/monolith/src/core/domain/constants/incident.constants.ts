@@ -18,10 +18,10 @@ export const INCIDENT_CONSTANTS = {
         PENDING_SPARE_PART: ['IN_PROGRESS'],
         PENDING_PICKUP: ['IN_PROGRESS', 'CLOSED'],
         PENDING_REPLACEMENT_DELIVERY: ['IN_PROGRESS', 'CLOSED'],
-        CLOSED: [],     // solo via reopen() o validate()
+        CLOSED: [],     // sale via reopen() (→REOPENED) o validate() (→VALIDATED)
         REOPENED: ['IN_PROGRESS'],
-        VALIDATED: [],
-        CANCELED: [],
+        VALIDATED: [],  // terminal definitivo
+        CANCELED: [],   // sale via reopen() (→REOPENED) — recuperar cancelada por error
     }
 } as const;
 

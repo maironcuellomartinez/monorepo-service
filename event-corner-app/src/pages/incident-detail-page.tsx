@@ -61,6 +61,21 @@ export function IncidentDetailPage() {
     }
   }
 
+  const handleReopen = async () => {
+    if (!incident || !user?.monolithUserId) return
+    setActionLoading(true)
+    setActionError('')
+    try {
+      await incidentsApi.reopen(incident.id, user.monolithUserId)
+      await load()
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setActionError(msg || 'Error al reabrir la incidencia')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col h-full">
@@ -93,7 +108,14 @@ export function IncidentDetailPage() {
   }
 
   const statusIdx = STATUS_ORDER.indexOf(incident.status)
-  const canTake = !incident.currentTechnicianId && user?.technicianId
+  // No se puede tomar en estados terminales (CANCELED/VALIDATED).
+  const canTake =
+    !incident.currentTechnicianId &&
+    !!user?.technicianId &&
+    !['CANCELED', 'VALIDATED'].includes(incident.status)
+  // CLOSED o CANCELED se pueden reabrir (recuperar sin crear una nueva).
+  const canReopen =
+    !!user?.monolithUserId && ['CLOSED', 'CANCELED'].includes(incident.status)
 
   return (
     <div className="flex flex-col h-full">
@@ -240,16 +262,29 @@ export function IncidentDetailPage() {
           </Card>
         </div>
 
-        {/* Actions — solo Tomar */}
-        {canTake && (
+        {/* Actions — Tomar / Reabrir según estado */}
+        {(canTake || canReopen) && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Acciones</CardTitle>
             </CardHeader>
-            <CardContent>
-              <Button onClick={handleTake} disabled={actionLoading}>
-                {actionLoading ? 'Tomando...' : 'Tomar incidencia'}
-              </Button>
+            <CardContent className="space-y-3">
+              {actionError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{actionError}</AlertDescription>
+                </Alert>
+              )}
+              {canTake && (
+                <Button onClick={handleTake} disabled={actionLoading}>
+                  {actionLoading ? 'Tomando...' : 'Tomar incidencia'}
+                </Button>
+              )}
+              {canReopen && (
+                <Button variant="outline" onClick={handleReopen} disabled={actionLoading}>
+                  {actionLoading ? 'Reabriendo...' : 'Reabrir incidencia'}
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}

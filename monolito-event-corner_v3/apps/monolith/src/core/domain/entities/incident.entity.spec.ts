@@ -339,13 +339,21 @@ describe('Incident.reopen()', () => {
         expect(incident.currentTechnicianId).toBeNull();
     });
 
+    it('transiciona de CANCELED a REOPENED (recuperar cancelada por error)', () => {
+        const incident = makeIncident({ status: IncidentStatus.CANCELED });
+        const result = incident.reopen('cancelada por error');
+        expect(result.isSuccess).toBe(true);
+        expect(incident.status).toBe(IncidentStatus.REOPENED);
+        expect(incident.currentTechnicianId).toBeNull();
+    });
+
     it('desde REOPENED puede ir a IN_PROGRESS', () => {
         const incident = makeIncident({ status: IncidentStatus.REOPENED });
         const result = incident.changeStatus(IncidentStatus.IN_PROGRESS, TECH);
         expect(result.isSuccess).toBe(true);
     });
 
-    it('falla si no está en CLOSED', () => {
+    it('falla si no está en CLOSED ni CANCELED', () => {
         const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS });
         expect(incident.reopen().isFailure).toBe(true);
     });
