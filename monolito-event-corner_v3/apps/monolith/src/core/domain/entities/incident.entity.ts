@@ -383,9 +383,15 @@ export class Incident {
    * ```
    */
   reopen(reason?: string): Result<void> {
-    if (this._status !== IncidentStatus.CLOSED) {
+    if (
+      this._status !== IncidentStatus.CLOSED &&
+      this._status !== IncidentStatus.CANCELED
+    ) {
       return Result.err(
-        new InvalidIncidentStateError(this._status, 'reopen (must be CLOSED)'),
+        new InvalidIncidentStateError(
+          this._status,
+          'reopen (must be CLOSED or CANCELED)',
+        ),
       );
     }
 

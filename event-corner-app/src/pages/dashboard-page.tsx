@@ -472,9 +472,9 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
 
   if (!incident) return null
 
-  const canCancel = incident.status === 'CREATED'
+  const canCancel = ['CREATED', 'IN_PROGRESS'].includes(incident.status)
   const canValidate = incident.status === 'CLOSED'
-  const canReopen = ['CLOSED', 'VALIDATED'].includes(incident.status)
+  const canReopen = ['CLOSED', 'CANCELED'].includes(incident.status)
   const hasActions = canCancel || canValidate || canReopen
 
   const handleAction = async () => {
@@ -662,7 +662,7 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
 const TECHNICIAN_TRANSITIONS: Partial<Record<IncidentStatus, IncidentStatus[]>> = {
   CREATED:                    ['DELIVERED'],
   DELIVERED:                  ['IN_PROGRESS', 'PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART'],
-  IN_PROGRESS:                ['PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART', 'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY'],
+  IN_PROGRESS:                ['PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART', 'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY', 'CLOSED'],
   PENDING_THIRD_PARTY:        ['IN_PROGRESS'],
   PENDING_USER:               ['IN_PROGRESS'],
   PENDING_SPARE_PART:         ['IN_PROGRESS'],
