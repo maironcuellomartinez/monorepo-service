@@ -229,6 +229,7 @@ export type IncidentStatus =
 
 export interface Incident {
   id: string
+  issueId: number | null
   status: IncidentStatus
   customerId: string
   customer?: { id: string; email: string; name?: string }
@@ -246,6 +247,8 @@ export interface Incident {
   servicenowNumber?: string
   snowqCorrelationId?: string
   scheduledRange?: { start: string; end: string }
+  estimatedCloseAt?: string | null
+  durationMinutes?: number
   createdAt: string
   updatedAt: string
 }
@@ -307,10 +310,14 @@ export const incidentsApi = {
     apiClient.patch<Incident>(`/api/incidents/${id}/status`, dto).then((r) => r.data),
   cancel: (id: string, customerId: string, reason?: string) =>
     apiClient.patch<Incident>(`/api/incidents/${id}/cancel`, { customerId, reason }).then((r) => r.data),
-  take: (id: string, dto: { technicianId: string }) =>
+  take: (id: string, dto: { technicianId: string; slotIds?: string[] }) =>
     apiClient.patch<Incident>(`/api/incidents/${id}/take`, dto).then((r) => r.data),
   release: (id: string, technicianId: string, reason?: string) =>
     apiClient.patch<Incident>(`/api/incidents/${id}/release`, { technicianId, reason }).then((r) => r.data),
+  reschedule: (id: string, dto: { technicianId: string; slotIds: string[] }) =>
+    apiClient.patch<Incident>(`/api/incidents/${id}/reschedule`, dto).then((r) => r.data),
+  setEstimatedClose: (id: string, dto: { technicianId: string; estimatedCloseAt: string }) =>
+    apiClient.patch<Incident>(`/api/incidents/${id}/estimated-close`, dto).then((r) => r.data),
   deliver: (id: string, dto: { notes?: string }) =>
     apiClient.patch<Incident>(`/api/incidents/${id}/deliver`, dto).then((r) => r.data),
   validate: (id: string, customerId: string) =>
@@ -599,6 +606,10 @@ export const techniciansApi = {
   list: (cornerId?: string) =>
     apiClient.get<TechnicianProfile[]>('/api/admin/technicians', { params: cornerId ? { cornerId } : {} }).then((r) => r.data),
 
+  /** Lista usuarios disponibles para el picker de "Nuevo técnico" — gateado por technician:create, no user:list */
+  listUsers: () =>
+    apiClient.get<MonolithUser[]>('/api/admin/technicians/users').then((r) => r.data),
+
   /** Crea un técnico vinculando un User existente (cornerId es opcional) */
   create: (dto: { userId: string; name: string; email: string; cornerId?: string; lastName?: string }) =>
     apiClient.post<TechnicianProfile>('/api/admin/technicians', dto).then((r) => r.data),
@@ -637,6 +648,9 @@ export const snowGroupsApi = {
           (g): ServiceNowGroup => ({ groupId: g.sys_id, groupName: g.name, isActive: true }),
         ),
       ),
+  /** Trae el catálogo vivo de ServiceNow y actualiza el catálogo local */
+  sync: () =>
+    apiClient.post<{ synced: number }>('/api/admin/servicenow-groups/sync').then((r) => r.data),
 }
 
 export interface SnLocation {

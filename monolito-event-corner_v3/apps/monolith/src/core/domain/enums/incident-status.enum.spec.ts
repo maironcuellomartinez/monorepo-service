@@ -17,24 +17,31 @@ describe('canTransitionTo()', () => {
         [IncidentStatus.CREATED,   IncidentStatus.CANCELED],
         // Desde DELIVERED
         [IncidentStatus.DELIVERED, IncidentStatus.IN_PROGRESS],
-        [IncidentStatus.DELIVERED, IncidentStatus.PENDING_THIRD_PARTY],
-        [IncidentStatus.DELIVERED, IncidentStatus.PENDING_USER],
-        [IncidentStatus.DELIVERED, IncidentStatus.PENDING_SPARE_PART],
+        [IncidentStatus.DELIVERED, IncidentStatus.CLOSED],
         // Desde IN_PROGRESS
         [IncidentStatus.IN_PROGRESS, IncidentStatus.PENDING_THIRD_PARTY],
         [IncidentStatus.IN_PROGRESS, IncidentStatus.PENDING_USER],
         [IncidentStatus.IN_PROGRESS, IncidentStatus.PENDING_SPARE_PART],
         [IncidentStatus.IN_PROGRESS, IncidentStatus.PENDING_PICKUP],
         [IncidentStatus.IN_PROGRESS, IncidentStatus.PENDING_REPLACEMENT_DELIVERY],
-        // Vuelta a IN_PROGRESS desde pendientes
+        [IncidentStatus.IN_PROGRESS, IncidentStatus.CLOSED],
+        // Vuelta a IN_PROGRESS desde pendientes, o cierre directo desde cualquiera
         [IncidentStatus.PENDING_THIRD_PARTY, IncidentStatus.IN_PROGRESS],
+        [IncidentStatus.PENDING_THIRD_PARTY, IncidentStatus.CLOSED],
         [IncidentStatus.PENDING_USER,        IncidentStatus.IN_PROGRESS],
+        [IncidentStatus.PENDING_USER,        IncidentStatus.CLOSED],
         [IncidentStatus.PENDING_SPARE_PART,  IncidentStatus.IN_PROGRESS],
-        // Pre-cierre → cierre
+        [IncidentStatus.PENDING_SPARE_PART,  IncidentStatus.CLOSED],
+        // Pre-cierre ↔ cierre / vuelta a trabajar
+        [IncidentStatus.PENDING_PICKUP,               IncidentStatus.IN_PROGRESS],
         [IncidentStatus.PENDING_PICKUP,               IncidentStatus.CLOSED],
+        [IncidentStatus.PENDING_REPLACEMENT_DELIVERY, IncidentStatus.IN_PROGRESS],
         [IncidentStatus.PENDING_REPLACEMENT_DELIVERY, IncidentStatus.CLOSED],
-        // Reapertura
-        [IncidentStatus.REOPENED, IncidentStatus.IN_PROGRESS],
+        // Reapertura — REOPENED es un nuevo slot, el cliente debe entregar el
+        // dispositivo de nuevo (igual que CREATED).
+        [IncidentStatus.REOPENED, IncidentStatus.DELIVERED],
+        [IncidentStatus.REOPENED, IncidentStatus.CLOSED],
+        [IncidentStatus.REOPENED, IncidentStatus.CANCELED],
     ];
 
     validTransitions.forEach(([from, to]) => {
@@ -48,15 +55,15 @@ describe('canTransitionTo()', () => {
         [IncidentStatus.CREATED,   IncidentStatus.IN_PROGRESS],   // debe pasar por DELIVERED
         [IncidentStatus.CREATED,   IncidentStatus.CLOSED],
         [IncidentStatus.CREATED,   IncidentStatus.VALIDATED],
-        [IncidentStatus.IN_PROGRESS, IncidentStatus.CLOSED],       // debe ir por PENDING_PICKUP
+        // DELIVERED no salta directo a un pendiente — primero debe pasar por IN_PROGRESS
+        [IncidentStatus.DELIVERED, IncidentStatus.PENDING_THIRD_PARTY],
+        [IncidentStatus.DELIVERED, IncidentStatus.PENDING_USER],
+        [IncidentStatus.DELIVERED, IncidentStatus.PENDING_SPARE_PART],
         [IncidentStatus.IN_PROGRESS, IncidentStatus.CANCELED],
-        [IncidentStatus.PENDING_THIRD_PARTY, IncidentStatus.CLOSED],
-        [IncidentStatus.PENDING_USER,        IncidentStatus.CLOSED],
-        [IncidentStatus.PENDING_SPARE_PART,  IncidentStatus.CLOSED],
         [IncidentStatus.CLOSED, IncidentStatus.IN_PROGRESS],       // debe reabrir primero
         [IncidentStatus.CANCELED, IncidentStatus.CREATED],
         [IncidentStatus.VALIDATED, IncidentStatus.REOPENED],
-        [IncidentStatus.REOPENED, IncidentStatus.CANCELED],
+        [IncidentStatus.REOPENED, IncidentStatus.IN_PROGRESS],   // debe pasar por DELIVERED de nuevo
     ];
 
     invalidTransitions.forEach(([from, to]) => {

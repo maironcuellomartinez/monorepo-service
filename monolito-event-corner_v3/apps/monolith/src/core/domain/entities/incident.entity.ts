@@ -52,6 +52,19 @@ export class Incident {
     private readonly _createdAt: Date,
     private _updatedAt: Date,
     private _snowqCorrelationId: string | null = null,
+    /**
+     * Correlativo incremental (por entidad) usado como referencia externa
+     * estable — análogo al id numérico del legacy (ej. '1526'). Lo asigna la
+     * DB (AUTO_INCREMENT) al insertar, por eso es null hasta que se recarga
+     * el agregado desde persistencia tras el primer save().
+     */
+    private readonly _issueId: number | null = null,
+    /**
+     * Fecha estimada de cierre — editable libremente por el técnico asignado
+     * (paridad con legacy: independiente del slot, no valida disponibilidad).
+     * Default al crear: scheduledRange.start + IssueType.closeMinutes.
+     */
+    private _estimatedCloseAt: Date | null = null,
   ) {}
 
   // Enriched device info (populated from DB relation, not persisted)
@@ -88,9 +101,28 @@ export class Incident {
     this._technicianInfo = info;
   }
 
+  // Enriched corner info (populated from DB relation, not persisted)
+  private _cornerInfo: { id: string; name: string } | null = null;
+  setCornerInfo(info: { id: string; name: string } | null) {
+    this._cornerInfo = info;
+  }
+
+  // Enriched issue type info (populated from DB relation, not persisted)
+  private _issueTypeInfo: { id: string; name: string } | null = null;
+  setIssueTypeInfo(info: { id: string; name: string } | null) {
+    this._issueTypeInfo = info;
+  }
+
   // Getters
   get id(): IncidentId {
     return this._id;
+  }
+  /** Correlativo incremental estable — null hasta el primer reload post-persistencia. */
+  get issueId(): number | null {
+    return this._issueId;
+  }
+  get estimatedCloseAt(): Date | null {
+    return this._estimatedCloseAt;
   }
   get status(): IncidentStatus {
     return this._status;
@@ -444,6 +476,94 @@ export class Incident {
   }
 
   /**
+   * Reprograma la cita a un nuevo horario (nuevos slots ya reservados por el
+   * llamador — este método solo actualiza el agregado, no toca disponibilidad).
+   * Paridad con legacy: permitido desde cualquier estado no terminal, solo
+   * requiere ser el técnico actualmente asignado.
+   */
+  reschedule(
+    technicianId: TechnicianId,
+    newSlotIds: SlotId[],
+    newRange: DateRange,
+  ): Result<void> {
+    if (
+      !this._currentTechnicianId ||
+      this._currentTechnicianId !== technicianId
+    ) {
+      return Result.err(
+        new TechnicianNotAuthorizedError(technicianId, 'reschedule this incident'),
+      );
+    }
+    if (TERMINAL_STATUSES.includes(this._status)) {
+      return Result.err(
+        new InvalidIncidentStateError(this._status, 'reschedule (ya es terminal)'),
+      );
+    }
+
+    const previousSlotIds = [...this._slotIds];
+    this._slotIds = newSlotIds;
+    this._scheduledRange = newRange;
+    this._durationMinutes = newRange.getDurationMinutes();
+    this._updatedAt = new Date();
+
+    this.addEvent(
+      new DomainEvent('INCIDENT_RESCHEDULED', this._id, 'Incident', {
+        technicianId,
+        previousSlotIds,
+        newSlotIds,
+        scheduledStart: newRange.start,
+        scheduledEnd: newRange.end,
+      }),
+    );
+
+    return Result.ok(undefined);
+  }
+
+  /**
+   * Corrige la fecha estimada de cierre. Es un dato informativo del técnico
+   * (no gatilla ninguna lógica de disponibilidad) — paridad con legacy:
+   * editable libremente desde cualquier estado no terminal.
+   */
+  setEstimatedClose(technicianId: TechnicianId, date: Date): Result<void> {
+    if (
+      !this._currentTechnicianId ||
+      this._currentTechnicianId !== technicianId
+    ) {
+      return Result.err(
+        new TechnicianNotAuthorizedError(
+          technicianId,
+          'set estimated close for this incident',
+        ),
+      );
+    }
+    if (TERMINAL_STATUSES.includes(this._status)) {
+      return Result.err(
+        new InvalidIncidentStateError(
+          this._status,
+          'setEstimatedClose (ya es terminal)',
+        ),
+      );
+    }
+    if (isNaN(date.getTime())) {
+      return Result.err(new Error('Invalid estimated close date'));
+    }
+
+    const previousEstimatedCloseAt = this._estimatedCloseAt;
+    this._estimatedCloseAt = date;
+    this._updatedAt = new Date();
+
+    this.addEvent(
+      new DomainEvent('INCIDENT_ESTIMATED_CLOSE_CHANGED', this._id, 'Incident', {
+        technicianId,
+        previousEstimatedCloseAt,
+        newEstimatedCloseAt: date,
+      }),
+    );
+
+    return Result.ok(undefined);
+  }
+
+  /**
    * Devuelve los campos base del incidente para construir un ticket en ServiceNow.
    * @returns {Record<string, any>} Objeto con los campos del ticket. Los campos dependientes
    * de entidades relacionadas (`company_sys_id`, `category`, `assignment_group`, `location`)
@@ -755,10 +875,13 @@ export class Incident {
   toJSON() {
     return {
       id: this._id,
+      issueId: this._issueId,
       issueTypeId: this._issueTypeId,
+      issueType: this._issueTypeInfo ?? undefined,
       customerId: this._customerId,
       customer: this._customerInfo ?? undefined,
       cornerId: this._cornerId,
+      corner: this._cornerInfo ?? undefined,
       slotIds: this._slotIds,
       scheduledRange: this._scheduledRange,
       durationMinutes: this._durationMinutes,
@@ -778,6 +901,7 @@ export class Incident {
       createdAt: this._createdAt,
       updatedAt: this._updatedAt,
       snowqCorrelationId: this._snowqCorrelationId,
+      estimatedCloseAt: this._estimatedCloseAt,
     };
   }
 
@@ -790,6 +914,9 @@ export class Incident {
     scheduledRange: DateRange,
     origin: IncidentOrigin,
     metadata: Record<string, any> = {},
+    estimatedCloseAt: Date | null = null,
+    /** Email del técnico que crea la incidencia (si aplica) — viaja solo en el evento, no se persiste en el aggregate. */
+    creatorTechnicianEmail: string | null = null,
   ): Result<Incident> {
     // Validaciones
     if (slotIds.length === 0) {
@@ -830,6 +957,9 @@ export class Incident {
       null,
       now,
       now,
+      null,
+      null,
+      estimatedCloseAt,
     );
 
     incident.addEvent(
@@ -841,6 +971,7 @@ export class Incident {
         scheduledStart: scheduledRange.start,
         scheduledEnd: scheduledRange.end,
         origin,
+        creatorTechnicianEmail,
       }),
     );
 
@@ -891,6 +1022,8 @@ export class Incident {
     createdAt: Date,
     updatedAt: Date,
     snowqCorrelationId: string | null = null,
+    issueId: number | null = null,
+    estimatedCloseAt: Date | null = null,
   ): Incident {
     return new Incident(
       id,
@@ -914,6 +1047,8 @@ export class Incident {
       createdAt,
       updatedAt,
       snowqCorrelationId,
+      issueId,
+      estimatedCloseAt,
     );
   }
 

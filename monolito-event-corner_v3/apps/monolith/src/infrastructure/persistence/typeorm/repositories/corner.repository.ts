@@ -94,6 +94,25 @@ export class TypeOrmCornerRepository implements ICornerRepository {
     }
 
     /**
+     * Busca un corner por su código técnico.
+     * @param code El código del corner a buscar.
+     * @returns Un resultado que indica si la operación fue exitosa.
+     */
+    async findByCode(code: string): Promise<Result<Corner | null>> {
+        try {
+            const entity = await this.repo.findOne({
+                where: { code },
+                relations: ['schedules', 'technicians', 'lockers'],
+            });
+            if (!entity) return Result.ok(null);
+            const domain = this.toDomain(entity);
+            return Result.ok(domain);
+        } catch (error) {
+            return Result.err(error);
+        }
+    }
+
+    /**
      * Busca todos los corners activos.
      * @example
      * ```typescript
@@ -143,6 +162,7 @@ export class TypeOrmCornerRepository implements ICornerRepository {
                 { corner_id: entity.corner_id },
                 {
                     name: entity.name,
+                    code: entity.code,
                     client_name: entity.client_name,
                     description: entity.description,
                     servicenow_location: entity.servicenow_location,
@@ -220,6 +240,7 @@ export class TypeOrmCornerRepository implements ICornerRepository {
         const entity = new CornerEntity();
         entity.corner_id = domain.id.toString();
         entity.name = domain.name;
+        entity.code = domain.code;
         entity.client_name = domain.clientName;
         entity.description = domain.description;
         entity.servicenow_location = domain.servicenowLocation;
@@ -254,6 +275,7 @@ export class TypeOrmCornerRepository implements ICornerRepository {
         return Corner.reconstitute(
             CornerId(entity.corner_id),
             entity.name,
+            entity.code,
             entity.only_technicians,
             entity.is_active,
             entity.client_name,

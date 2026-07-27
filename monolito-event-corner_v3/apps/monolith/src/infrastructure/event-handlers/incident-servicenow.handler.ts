@@ -85,7 +85,8 @@ export class IncidentServiceNowHandler implements OnModuleInit {
             return;
         }
 
-        const result = await this.serviceNowService.createIncidentTicket(incident, company, user.principalName ?? undefined);
+        const creatorTechnicianEmail: string | undefined = event.data?.creatorTechnicianEmail ?? undefined;
+        const result = await this.serviceNowService.createIncidentTicket(incident, company, user.principalName ?? undefined, creatorTechnicianEmail);
         if (result.isFailure) {
             const msg = `[INCIDENT_CREATED] Failed to create SN ticket for incident ${event.aggregateId}: ${result.unwrapError().message}`;
             this.logger.error(msg);

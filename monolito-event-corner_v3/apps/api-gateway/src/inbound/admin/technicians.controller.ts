@@ -1,7 +1,8 @@
 // api-gateway/inbound/admin/technicians.controller.ts
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { MonolithClient } from '../../client/monolith.client';
+import { AbacClient } from '../../auth/abac.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { TracingService } from '@app/observability';
 
@@ -11,6 +12,7 @@ import { TracingService } from '@app/observability';
 export class TechniciansController {
     constructor(
         private readonly monolith: MonolithClient,
+        private readonly abac: AbacClient,
         private readonly tracing: TracingService,
     ) {}
 
@@ -73,6 +75,15 @@ export class TechniciansController {
         cornerId?: string;
         lastName?: string;
     }) {
+        // El rol técnico se otorga en ABAC, no acá — solo verificamos que ya lo tenga
+        // antes de crear el vínculo operativo (corner/horario) en el monolith.
+        const monolithUser = await this.monolith.get<{ externalId: string }>(`/users/${dto.userId}`);
+        const hasTechnicianRole = await this.abac.canAccess(monolithUser.externalId, 'dashboard-technician', 'read');
+        if (!hasTechnicianRole) {
+            throw new ForbiddenException(
+                'El usuario no tiene el rol "technician" en ABAC. Asignale el rol antes de promoverlo.',
+            );
+        }
         return this.monolith.post('/technicians', dto);
     }
 

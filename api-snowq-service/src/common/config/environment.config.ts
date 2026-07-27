@@ -14,6 +14,10 @@ export const databaseConnection = registerAs('database', () => ({
 // SERVICENOW: URL base + auth saliente (Basic legado u OAuth2 JWT Bearer segun SN_AUTH_MODE).
 export const serviceNowConfig = registerAs('servicenow', () => ({
   base_url_servicenow: process.env.BASE_URL_SERVICENOW,
+  // Nombre del campo custom en SN que guarda la referencia externa (id del
+  // monolito + corner.code) — usado para trazabilidad/soporte. Configurable
+  // porque el nombre real del campo varía por instancia de ServiceNow.
+  external_id_field: process.env.SN_EXTERNAL_ID_FIELD ?? 'u_external_system_id',
   auth_mode: process.env.SN_AUTH_MODE ?? 'basic',
   auth: process.env.SN_AUTH,
   oauth_url: process.env.SN_OAUTH_URL,

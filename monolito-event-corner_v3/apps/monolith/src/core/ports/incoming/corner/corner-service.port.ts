@@ -4,6 +4,8 @@ import { DayOfWeek } from '../../../domain/enums/day-of-week.enum';
 
 export interface CreateCornerCommand {
     name: string;
+    /** Código técnico estable (slug). Si se omite, se autogenera desde el nombre. */
+    code?: string;
     onlyTechnicians?: boolean;
     servicenowLocation?: string;
     clientName?: string;
@@ -12,6 +14,8 @@ export interface CreateCornerCommand {
 
 export interface UpdateCornerCommand {
     name?: string;
+    /** Corrección explícita del código (uso excepcional — ver Corner.updateCode()). */
+    code?: string;
     clientName?: string;
     description?: string;
     servicenowLocation?: string;

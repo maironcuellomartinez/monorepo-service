@@ -127,7 +127,7 @@ function buildMocks(opts?: {
           ? Result.err(new Error('DB error'))
           : Result.ok(undefined),
       ),
-    saveEvents: jest.fn().mockResolvedValue(undefined),
+    saveEvents: jest.fn().mockResolvedValue(Result.ok(undefined)),
     findAvailable: jest.fn().mockResolvedValue(Result.ok([])),
     findByTechnician: jest.fn().mockResolvedValue(Result.ok([])),
     findByDateRange: jest.fn().mockResolvedValue(Result.ok([])),
@@ -163,6 +163,7 @@ function buildMocks(opts?: {
       Result.ok({
         id: IssueTypeId('issue-1'),
         treeId: 'tree-1',
+        closeMinutes: { value: 60 },
       }),
     ),
   };
@@ -510,7 +511,7 @@ describe('IncidentService.changeStatus()', () => {
     expect(result.unwrap().closedAt).not.toBeNull();
   });
 
-  it('falla con transición inválida (PENDING_PICKUP → IN_PROGRESS)', async () => {
+  it('permite PENDING_PICKUP → IN_PROGRESS (el cliente no se presenta, el técnico sigue trabajando)', async () => {
     const incident = makeIncident(IncidentStatus.IN_PROGRESS);
     incident.changeStatus(
       IncidentStatus.PENDING_PICKUP,
@@ -523,6 +524,36 @@ describe('IncidentService.changeStatus()', () => {
       incidentId: IncidentId('inc-1'),
       technicianId: TechnicianId('tech-1'),
       newStatus: IncidentStatus.IN_PROGRESS,
+    });
+
+    expect(result.isSuccess).toBe(true);
+    expect(result.unwrap().status).toBe(IncidentStatus.IN_PROGRESS);
+  });
+
+  it('permite cerrar directo desde IN_PROGRESS (sin pasar por PENDING_PICKUP)', async () => {
+    const incident = makeIncident(IncidentStatus.IN_PROGRESS);
+    const { service, incidentRepository } = buildMocks();
+    incidentRepository.findById.mockResolvedValue(Result.ok(incident));
+
+    const result = await service.changeStatus({
+      incidentId: IncidentId('inc-1'),
+      technicianId: TechnicianId('tech-1'),
+      newStatus: IncidentStatus.CLOSED,
+    });
+
+    expect(result.isSuccess).toBe(true);
+    expect(result.unwrap().closedAt).not.toBeNull();
+  });
+
+  it('falla con transición inválida (DELIVERED → PENDING_USER, debe pasar por IN_PROGRESS)', async () => {
+    const incident = makeIncident(IncidentStatus.DELIVERED);
+    const { service, incidentRepository } = buildMocks();
+    incidentRepository.findById.mockResolvedValue(Result.ok(incident));
+
+    const result = await service.changeStatus({
+      incidentId: IncidentId('inc-1'),
+      technicianId: TechnicianId('tech-1'),
+      newStatus: IncidentStatus.PENDING_USER,
     });
 
     expect(result.isFailure).toBe(true);

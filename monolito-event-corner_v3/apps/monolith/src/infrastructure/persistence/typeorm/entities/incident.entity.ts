@@ -20,6 +20,19 @@ export class IncidentEntity {
   @PrimaryColumn({ type: 'varchar', length: 50 })
   incident_id: string;
 
+  /**
+   * Correlativo incremental usado como referencia externa estable (ver
+   * ServiceNowIntegrationService.buildExternalId). Se asigna en
+   * TypeOrmIncidentRepository.save() vía la tabla issue_sequences —
+   * deliberadamente NO es una columna AUTO_INCREMENT/@Generated: TypeORM
+   * synchronize reescribe el índice único de esas columnas en cada
+   * comparación de esquema y en MySQL eso choca con la regla "an
+   * auto_increment column must be a key" (ER_WRONG_AUTO_KEY en cada
+   * restart). Plain column = sin ese churn.
+   */
+  @Column({ type: 'int', unsigned: true })
+  issue_id: number;
+
   @Column({ type: 'varchar', length: 50 })
   issue_type_id: string;
 
@@ -77,6 +90,10 @@ export class IncidentEntity {
 
   @Column({ type: 'timestamp', nullable: true })
   closed_at: Date | null;
+
+  /** Fecha estimada de cierre — editable por el técnico, independiente del slot. */
+  @Column({ type: 'timestamp', nullable: true })
+  estimated_close_at: Date | null;
 
   @Column({ type: 'text', nullable: true })
   comment: string | null;

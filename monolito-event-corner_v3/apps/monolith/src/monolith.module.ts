@@ -50,6 +50,9 @@ import { WidenSnowqCorrelationIdColumns1784384307249 } from './infrastructure/pe
 import { AddUniqueWindowToCornerSlots1784389154861 } from './infrastructure/persistence/typeorm/migrations/1784389154861-AddUniqueWindowToCornerSlots';
 import { WidenIncidentOriginChannel1784481206018 } from './infrastructure/persistence/typeorm/migrations/1784481206018-WidenIncidentOriginChannel';
 import { AddSnClassificationToIssueTypes1784600000000 } from './infrastructure/persistence/typeorm/migrations/1784600000000-AddSnClassificationToIssueTypes';
+import { AddCodeToCorners1784700000000 } from './infrastructure/persistence/typeorm/migrations/1784700000000-AddCodeToCorners';
+import { AddIncrementalIssueIdToIncidentsAndRequests1784800000000 } from './infrastructure/persistence/typeorm/migrations/1784800000000-AddIncrementalIssueIdToIncidentsAndRequests';
+import { AddEstimatedCloseToIncidents1784900000000 } from './infrastructure/persistence/typeorm/migrations/1784900000000-AddEstimatedCloseToIncidents';
 
 @Module({
   imports: [
@@ -95,6 +98,9 @@ import { AddSnClassificationToIssueTypes1784600000000 } from './infrastructure/p
         AddUniqueWindowToCornerSlots1784389154861,
         WidenIncidentOriginChannel1784481206018,
         AddSnClassificationToIssueTypes1784600000000,
+        AddCodeToCorners1784700000000,
+        AddIncrementalIssueIdToIncidentsAndRequests1784800000000,
+        AddEstimatedCloseToIncidents1784900000000,
       ],
       migrationsRun: true,
     }),

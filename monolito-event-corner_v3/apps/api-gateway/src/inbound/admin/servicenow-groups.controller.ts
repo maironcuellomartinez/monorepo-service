@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Post, Param, HttpCode, HttpStatus } from '@nestjs/common';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -46,5 +46,20 @@ export class AdminServiceNowGroupsController {
   @ApiParam({ name: 'sys_id', description: 'sys_id del grupo en ServiceNow' })
   validateGroup(@Param('sys_id') sys_id: string) {
     return this.snCatalog.getGroupBySysId(sys_id);
+  }
+
+  /** Trae el catálogo vivo de SN y lo upsertea en el catálogo local del monolith */
+  @Post('sync')
+  @HttpCode(HttpStatus.OK)
+  @Permission('corner', 'list')
+  @ApiOperation({
+    summary: 'Sincronizar catálogo local con ServiceNow',
+    description: 'Trae los grupos vigentes de ServiceNow y actualiza el catálogo local — evita llamar a SN en cada carga del picker de corners.',
+  })
+  async sync() {
+    const groups = await this.snCatalog.getGroups();
+    return this.monolith.post('/servicenow-groups/sync', {
+      groups: groups.map((g) => ({ groupId: g.sys_id, groupName: g.name })),
+    });
   }
 }

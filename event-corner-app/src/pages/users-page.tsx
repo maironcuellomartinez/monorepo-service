@@ -403,7 +403,7 @@ function TechniciansTab() {
     setLoadingUsers(true)
     setUsersError('')
     try {
-      const all = await usersApi.listAll()
+      const all = await techniciansApi.listUsers()
       const techUserIds = new Set(technicians.map((t) => t.userId).filter(Boolean))
       setAllUsers(all.filter((u) => !techUserIds.has(u.id)))
     } catch {

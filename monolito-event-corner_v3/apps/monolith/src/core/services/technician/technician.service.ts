@@ -166,6 +166,12 @@ export class TechnicianService implements ITechnicianService {
         if (techResult.isFailure) return Result.err(techResult.unwrapError());
         const technician = techResult.unwrap();
         if (!technician) return Result.err(new Error(`Technician ${id} not found`));
+        // No se puede despromover mientras siga asignado a un corner: quedaría
+        // contando en la disponibilidad (horarios/slots) de un corner sin poder
+        // atenderla. Primero hay que retirarlo del corner.
+        if (technician.cornerId) {
+            return Result.err(new Error('No se puede quitar de técnicos mientras esté asignado a un corner. Retiralo del corner primero.'));
+        }
         // Soft-delete: el registro debe permanecer por integridad referencial con incident_timeline.
         // Desvinculamos el usuario y deshabilitamos para que no aparezca en listas activas.
         technician.disable();

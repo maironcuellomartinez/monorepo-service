@@ -123,7 +123,8 @@ export class TypeOrmIssueTypeRepository implements IIssueTypeRepository {
         qb.andWhere('it.category = :category', { category: filters.category });
       }
       if (filters.deviceType) {
-        qb.andWhere('it.device_type = :deviceType', {
+        // device_type IS NULL = tipo genérico, aplica a cualquier dispositivo
+        qb.andWhere('(it.device_type = :deviceType OR it.device_type IS NULL)', {
           deviceType: filters.deviceType,
         });
       }

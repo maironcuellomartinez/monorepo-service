@@ -8,6 +8,8 @@ import {
   DeliverIncidentCommand,
   TakeIncidentCommand,
   ReleaseIncidentCommand,
+  RescheduleIncidentCommand,
+  SetEstimatedCloseCommand,
   ChangeIncidentStatusCommand,
   ValidateIncidentCommand,
   ReopenIncidentCommand,
@@ -285,6 +287,26 @@ export class IncidentService implements IIncidentService {
       );
     }
 
+    // Default de cierre estimado = inicio de la cita + closeMinutes del tipo
+    // de incidencia. Es solo el punto de partida — el técnico lo puede
+    // corregir libremente después vía setEstimatedClose().
+    const estimatedCloseAt = new Date(
+      scheduledRange.start.getTime() + issueType.closeMinutes.value * 60_000,
+    );
+
+    // Si quien crea la incidencia es un técnico, se usa como assigned_to en SN
+    // (SN_DEFAULT_TECHNICIAN queda para employee/manager, que no tienen perfil de técnico).
+    let creatorTechnicianEmail: string | null = null;
+    if (command.creatorExternalId) {
+      const creatorUserResult = await this.userRepository.findByExternalId(command.creatorExternalId);
+      const creatorUser = creatorUserResult.isSuccess ? creatorUserResult.unwrap() : null;
+      if (creatorUser) {
+        const creatorTechResult = await this.technicianRepository.findByUserId(creatorUser.id.toString());
+        const creatorTech = creatorTechResult.isSuccess ? creatorTechResult.unwrap() : null;
+        if (creatorTech) creatorTechnicianEmail = creatorTech.email;
+      }
+    }
+
     const incidentResult = Incident.create(
       incidentId,
       command.issueTypeId,
@@ -294,6 +316,8 @@ export class IncidentService implements IIncidentService {
       scheduledRange,
       command.origin as IncidentOrigin,
       command.metadata || {},
+      estimatedCloseAt,
+      creatorTechnicianEmail,
     );
 
     if (incidentResult.isFailure) {
@@ -323,7 +347,13 @@ export class IncidentService implements IIncidentService {
      * @returns {Result<void>} `Result.ok` si la operación tuvo éxito.
      * @returns {Error} Si el timeline no se pudo persistir o los eventos no se pudieron publicar.
      */
-    await this.incidentRepository.saveEvents(incident.id, events);
+    const timelineResult = await this.incidentRepository.saveEvents(incident.id, events);
+    if (timelineResult.isFailure) {
+      this.logger.error(
+        `createIncident — saveEvents failed id=${incident.id}: ${timelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
     await this.eventBus.publishMany(events);
 
     /**
@@ -407,7 +437,13 @@ export class IncidentService implements IIncidentService {
     const saveResult = await this.incidentRepository.save(incident);
     if (saveResult.isFailure) return Result.err(saveResult.unwrapError());
 
-    await this.incidentRepository.saveEvents(incident.id, deliverEvents);
+    const deliverTimelineResult = await this.incidentRepository.saveEvents(incident.id, deliverEvents);
+    if (deliverTimelineResult.isFailure) {
+      this.logger.error(
+        `deliverIncident — saveEvents failed id=${incident.id}: ${deliverTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
     await this.eventBus.publishMany(deliverEvents);
 
     const dateStr = incident.scheduledRange.start.toISOString().split('T')[0];
@@ -447,28 +483,145 @@ export class IncidentService implements IIncidentService {
       return Result.err(new Error(`Incident ${command.incidentId} not found`));
     }
 
-    // 2. Validar técnico
     const technicianId = command.technicianId;
 
-    // 3. Tomar incidencia
+    // Tomar una incidencia CLOSED/CANCELED implica recuperarla: se reabre
+    // (→ REOPENED), se asigna el técnico y se reprograma a un horario nuevo
+    // (el anterior ya pasó o quedó liberado). Requiere slotIds del llamador.
+    const needsReopen =
+      incident.status === IncidentStatus.CLOSED ||
+      incident.status === IncidentStatus.CANCELED;
+
+    if (needsReopen) {
+      return this._takeAndReopenIncident(incident, technicianId, command.slotIds);
+    }
+
+    // 2. Tomar incidencia (caso normal — sin cambio de horario)
     const takeResult = incident.take(technicianId);
     if (takeResult.isFailure) return Result.err(takeResult.unwrapError());
 
-    // 4. Extraer eventos antes de guardar
+    // 3. Extraer eventos antes de guardar
     const takeEvents = incident.pullEvents();
 
-    // 5. Guardar cambios
+    // 4. Guardar cambios
     const saveResult = await this.incidentRepository.save(incident);
     if (saveResult.isFailure) return Result.err(saveResult.unwrapError());
 
-    // 6. Persistir timeline y publicar al Outbox
-    await this.incidentRepository.saveEvents(incident.id, takeEvents);
+    // 5. Persistir timeline y publicar al Outbox
+    const takeTimelineResult = await this.incidentRepository.saveEvents(incident.id, takeEvents);
+    if (takeTimelineResult.isFailure) {
+      this.logger.error(
+        `takeIncident — saveEvents failed id=${incident.id}: ${takeTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
     await this.eventBus.publishMany(takeEvents);
 
     // 6. Invalidar caché
     const dateStr = incident.scheduledRange.start.toISOString().split('T')[0];
     await this.cache.deletePattern(
       `availability:${incident.cornerId}:${dateStr}:*`,
+    );
+
+    return Result.ok(incident);
+  }
+
+  private async _takeAndReopenIncident(
+    incident: Incident,
+    technicianId: TechnicianId,
+    slotIds?: SlotId[],
+  ): Promise<Result<Incident>> {
+    if (!slotIds || slotIds.length === 0) {
+      return Result.err(
+        new Error('Debés elegir un horario nuevo para tomar esta incidencia'),
+      );
+    }
+
+    const newSlotsResult = await this.slotRepository.findManyByIds(slotIds);
+    if (newSlotsResult.isFailure) return Result.err(newSlotsResult.unwrapError());
+    const newSlots = newSlotsResult.unwrap();
+    const missingIds = slotIds.filter((id) => !newSlots.some((s) => s.id === id));
+    if (missingIds.length > 0) {
+      return Result.err(new Error(`Slots not found: ${missingIds.join(', ')}`));
+    }
+
+    const bookResult = await this.slotRepository.bookManyAtomic(slotIds);
+    if (bookResult.isFailure) return Result.err(bookResult.unwrapError());
+    const booked = bookResult.unwrap();
+    if (booked < slotIds.length) {
+      return Result.err(
+        new Error('El horario seleccionado ya no está disponible. Por favor elegí otro horario.'),
+      );
+    }
+
+    const sorted = [...newSlots].sort(
+      (a, b) => a.timeRange.start.getTime() - b.timeRange.start.getTime(),
+    );
+    const newRange = DateRange.reconstitute(
+      sorted[0].timeRange.start,
+      sorted[sorted.length - 1].timeRange.end,
+    );
+
+    const previousSlotIds = incident.slotIds;
+    const previousCornerId = incident.cornerId;
+    const previousDateStr = incident.scheduledRange.start.toISOString().split('T')[0];
+
+    const reopenResult = incident.reopen('Recuperada por técnico al tomarla');
+    if (reopenResult.isFailure) {
+      await this.releaseBookedSlots(slotIds);
+      return Result.err(reopenResult.unwrapError());
+    }
+
+    const takeResult = incident.take(technicianId);
+    if (takeResult.isFailure) {
+      await this.releaseBookedSlots(slotIds);
+      return Result.err(takeResult.unwrapError());
+    }
+
+    const rescheduleResult = incident.reschedule(technicianId, slotIds, newRange);
+    if (rescheduleResult.isFailure) {
+      await this.releaseBookedSlots(slotIds);
+      return Result.err(rescheduleResult.unwrapError());
+    }
+
+    const events = incident.pullEvents();
+    const saveResult = await this.incidentRepository.save(incident);
+    if (saveResult.isFailure) {
+      await this.releaseBookedSlots(slotIds);
+      return Result.err(saveResult.unwrapError());
+    }
+
+    // Liberar el/los slot(s) viejo(s): futuro → AVAILABLE, pasado → EXPIRED.
+    const oldSlotsResult = await this.slotRepository.findManyByIds(previousSlotIds);
+    if (!oldSlotsResult.isFailure) {
+      const oldSlots = oldSlotsResult.unwrap();
+      const now = new Date();
+      for (const s of oldSlots) {
+        if (s.timeRange.start > now) {
+          s.release();
+        } else {
+          s.expire();
+        }
+      }
+      await this.slotRepository.updateMany(oldSlots);
+    }
+
+    const timelineResult = await this.incidentRepository.saveEvents(incident.id, events);
+    if (timelineResult.isFailure) {
+      this.logger.error(
+        `takeIncident(reopen) — saveEvents failed id=${incident.id}: ${timelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
+    await this.eventBus.publishMany(events);
+
+    await this.cache.deletePattern(`availability:${previousCornerId}:${previousDateStr}:*`);
+    const newDateStr = newRange.start.toISOString().split('T')[0];
+    await this.cache.deletePattern(`availability:${incident.cornerId}:${newDateStr}:*`);
+
+    this.logger.log(
+      `takeIncident(reopen) — id=${incident.id} technician=${technicianId} ${previousDateStr}→${newDateStr}`,
+      CTX,
     );
 
     return Result.ok(incident);
@@ -513,13 +666,202 @@ export class IncidentService implements IIncidentService {
     const saveResult = await this.incidentRepository.save(incident);
     if (saveResult.isFailure) return Result.err(saveResult.unwrapError());
 
-    await this.incidentRepository.saveEvents(incident.id, releaseEvents);
+    const releaseTimelineResult = await this.incidentRepository.saveEvents(incident.id, releaseEvents);
+    if (releaseTimelineResult.isFailure) {
+      this.logger.error(
+        `releaseIncident — saveEvents failed id=${incident.id}: ${releaseTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
     await this.eventBus.publishMany(releaseEvents);
 
     const dateStr = incident.scheduledRange.start.toISOString().split('T')[0];
     await this.cache.deletePattern(
       `availability:${incident.cornerId}:${dateStr}:*`,
     );
+
+    return Result.ok(incident);
+  }
+
+  async rescheduleIncident(
+    command: RescheduleIncidentCommand,
+  ): Promise<Result<Incident>> {
+    return this.tracing.run(
+      'monolith.rescheduleIncident',
+      {
+        kind: 'server',
+        attributes: {
+          'incident.incidentId': command.incidentId,
+          'incident.technicianId': command.technicianId,
+        },
+      },
+      () => this._rescheduleIncident(command),
+    );
+  }
+
+  private async _rescheduleIncident(
+    command: RescheduleIncidentCommand,
+  ): Promise<Result<Incident>> {
+    const incidentResult = await this.incidentRepository.findById(
+      command.incidentId,
+    );
+    if (incidentResult.isFailure)
+      return Result.err(incidentResult.unwrapError());
+    const incident = incidentResult.unwrap();
+    if (!incident) {
+      return Result.err(new Error(`Incident ${command.incidentId} not found`));
+    }
+
+    const newSlotIds = command.slotIds;
+    if (newSlotIds.length === 0) {
+      return Result.err(new Error('Debe indicar al menos un slot nuevo'));
+    }
+
+    const newSlotsResult = await this.slotRepository.findManyByIds(newSlotIds);
+    if (newSlotsResult.isFailure)
+      return Result.err(newSlotsResult.unwrapError());
+    const newSlots = newSlotsResult.unwrap();
+    const missingIds = newSlotIds.filter(
+      (id) => !newSlots.some((s) => s.id === id),
+    );
+    if (missingIds.length > 0) {
+      return Result.err(new Error(`Slots not found: ${missingIds.join(', ')}`));
+    }
+
+    // Reserva atómica de los slots nuevos ANTES de tocar el agregado —
+    // mismo patrón (y mismo mensaje de conflicto) que _createIncident.
+    const bookResult = await this.slotRepository.bookManyAtomic(newSlotIds);
+    if (bookResult.isFailure) return Result.err(bookResult.unwrapError());
+    const booked = bookResult.unwrap();
+    if (booked < newSlotIds.length) {
+      return Result.err(
+        new Error(
+          'El horario seleccionado ya no está disponible. Por favor elegí otro horario.',
+        ),
+      );
+    }
+
+    const sorted = [...newSlots].sort(
+      (a, b) => a.timeRange.start.getTime() - b.timeRange.start.getTime(),
+    );
+    const newRange = DateRange.reconstitute(
+      sorted[0].timeRange.start,
+      sorted[sorted.length - 1].timeRange.end,
+    );
+
+    const previousSlotIds = incident.slotIds;
+    const previousCornerId = incident.cornerId;
+    const previousDateStr = incident.scheduledRange.start
+      .toISOString()
+      .split('T')[0];
+
+    const rescheduleResult = incident.reschedule(
+      command.technicianId,
+      newSlotIds,
+      newRange,
+    );
+    if (rescheduleResult.isFailure) {
+      await this.releaseBookedSlots(newSlotIds);
+      return Result.err(rescheduleResult.unwrapError());
+    }
+
+    const events = incident.pullEvents();
+    const saveResult = await this.incidentRepository.save(incident);
+    if (saveResult.isFailure) {
+      await this.releaseBookedSlots(newSlotIds);
+      return Result.err(saveResult.unwrapError());
+    }
+
+    // Liberar el/los slot(s) viejo(s): futuro → AVAILABLE, pasado → EXPIRED
+    // (misma semántica que cancelIncident/changeStatus(CANCELED)).
+    const oldSlotsResult = await this.slotRepository.findManyByIds(
+      previousSlotIds,
+    );
+    if (!oldSlotsResult.isFailure) {
+      const oldSlots = oldSlotsResult.unwrap();
+      const now = new Date();
+      for (const s of oldSlots) {
+        if (s.timeRange.start > now) {
+          s.release();
+        } else {
+          s.expire();
+        }
+      }
+      await this.slotRepository.updateMany(oldSlots);
+    }
+
+    const rescheduleTimelineResult = await this.incidentRepository.saveEvents(incident.id, events);
+    if (rescheduleTimelineResult.isFailure) {
+      this.logger.error(
+        `rescheduleIncident — saveEvents failed id=${incident.id}: ${rescheduleTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
+    await this.eventBus.publishMany(events);
+
+    await this.cache.deletePattern(
+      `availability:${previousCornerId}:${previousDateStr}:*`,
+    );
+    const newDateStr = newRange.start.toISOString().split('T')[0];
+    await this.cache.deletePattern(
+      `availability:${incident.cornerId}:${newDateStr}:*`,
+    );
+
+    this.logger.log(
+      `rescheduleIncident — id=${incident.id} technician=${command.technicianId} ${previousDateStr}→${newDateStr}`,
+      CTX,
+    );
+
+    return Result.ok(incident);
+  }
+
+  async setEstimatedClose(
+    command: SetEstimatedCloseCommand,
+  ): Promise<Result<Incident>> {
+    return this.tracing.run(
+      'monolith.setEstimatedClose',
+      {
+        kind: 'server',
+        attributes: {
+          'incident.incidentId': command.incidentId,
+          'incident.technicianId': command.technicianId,
+        },
+      },
+      () => this._setEstimatedClose(command),
+    );
+  }
+
+  private async _setEstimatedClose(
+    command: SetEstimatedCloseCommand,
+  ): Promise<Result<Incident>> {
+    const incidentResult = await this.incidentRepository.findById(
+      command.incidentId,
+    );
+    if (incidentResult.isFailure)
+      return Result.err(incidentResult.unwrapError());
+    const incident = incidentResult.unwrap();
+    if (!incident) {
+      return Result.err(new Error(`Incident ${command.incidentId} not found`));
+    }
+
+    const result = incident.setEstimatedClose(
+      command.technicianId,
+      command.estimatedCloseAt,
+    );
+    if (result.isFailure) return Result.err(result.unwrapError());
+
+    const events = incident.pullEvents();
+    const saveResult = await this.incidentRepository.save(incident);
+    if (saveResult.isFailure) return Result.err(saveResult.unwrapError());
+
+    const estimatedCloseTimelineResult = await this.incidentRepository.saveEvents(incident.id, events);
+    if (estimatedCloseTimelineResult.isFailure) {
+      this.logger.error(
+        `setEstimatedClose — saveEvents failed id=${incident.id}: ${estimatedCloseTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
+    await this.eventBus.publishMany(events);
 
     return Result.ok(incident);
   }
@@ -595,7 +937,13 @@ export class IncidentService implements IIncidentService {
         return Result.err(slotsUpdateResult.unwrapError());
     }
 
-    await this.incidentRepository.saveEvents(incident.id, statusEvents);
+    const statusTimelineResult = await this.incidentRepository.saveEvents(incident.id, statusEvents);
+    if (statusTimelineResult.isFailure) {
+      this.logger.error(
+        `changeStatus — saveEvents failed id=${incident.id}: ${statusTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
     await this.eventBus.publishMany(statusEvents);
 
     const dateStr = incident.scheduledRange.start.toISOString().split('T')[0];
@@ -651,7 +999,13 @@ export class IncidentService implements IIncidentService {
     const saveResult = await this.incidentRepository.save(incident);
     if (saveResult.isFailure) return Result.err(saveResult.unwrapError());
 
-    await this.incidentRepository.saveEvents(incident.id, statusEvents);
+    const closeSyncTimelineResult = await this.incidentRepository.saveEvents(incident.id, statusEvents);
+    if (closeSyncTimelineResult.isFailure) {
+      this.logger.error(
+        `closeFromExternalSync — saveEvents failed id=${incident.id}: ${closeSyncTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
     await this.eventBus.publishMany(statusEvents);
 
     const dateStr = incident.scheduledRange.start.toISOString().split('T')[0];
@@ -698,7 +1052,13 @@ export class IncidentService implements IIncidentService {
     const saveResult = await this.incidentRepository.save(incident);
     if (saveResult.isFailure) return Result.err(saveResult.unwrapError());
 
-    await this.incidentRepository.saveEvents(incident.id, validateEvents);
+    const validateTimelineResult = await this.incidentRepository.saveEvents(incident.id, validateEvents);
+    if (validateTimelineResult.isFailure) {
+      this.logger.error(
+        `validateIncident — saveEvents failed id=${incident.id}: ${validateTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
     await this.eventBus.publishMany(validateEvents);
     return Result.ok(incident);
   }
@@ -735,7 +1095,13 @@ export class IncidentService implements IIncidentService {
     const saveResult = await this.incidentRepository.save(incident);
     if (saveResult.isFailure) return Result.err(saveResult.unwrapError());
 
-    await this.incidentRepository.saveEvents(incident.id, reopenEvents);
+    const reopenTimelineResult = await this.incidentRepository.saveEvents(incident.id, reopenEvents);
+    if (reopenTimelineResult.isFailure) {
+      this.logger.error(
+        `reopenIncident — saveEvents failed id=${incident.id}: ${reopenTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
     await this.eventBus.publishMany(reopenEvents);
     const dateStr = incident.scheduledRange.start.toISOString().split('T')[0];
     await this.cache.deletePattern(
@@ -772,10 +1138,15 @@ export class IncidentService implements IIncidentService {
     if (!incident)
       return Result.err(new Error(`Incident ${command.incidentId} not found`));
 
-    if (incident.status !== IncidentStatus.CREATED) {
+    // REOPENED = nuevo slot, el dispositivo aún no fue entregado (igual que
+    // CREATED) — el cliente también puede cancelarla desde ahí.
+    if (
+      incident.status !== IncidentStatus.CREATED &&
+      incident.status !== IncidentStatus.REOPENED
+    ) {
       return Result.err(
         new Error(
-          `Solo se pueden cancelar incidencias en estado CREATED. Estado actual: ${incident.status}`,
+          `Solo se pueden cancelar incidencias en estado CREATED o REOPENED. Estado actual: ${incident.status}`,
         ),
       );
     }
@@ -809,7 +1180,13 @@ export class IncidentService implements IIncidentService {
       await this.slotRepository.updateMany(slots);
     }
 
-    await this.incidentRepository.saveEvents(incident.id, events);
+    const cancelTimelineResult = await this.incidentRepository.saveEvents(incident.id, events);
+    if (cancelTimelineResult.isFailure) {
+      this.logger.error(
+        `cancelIncident — saveEvents failed id=${incident.id}: ${cancelTimelineResult.unwrapError().message}`,
+        CTX,
+      );
+    }
     await this.eventBus.publishMany(events);
     const dateStr = incident.scheduledRange.start.toISOString().split('T')[0];
     await this.cache.deletePattern(
@@ -934,7 +1311,13 @@ export class IncidentService implements IIncidentService {
           continue;
         }
 
-        await this.incidentRepository.saveEvents(incident.id, batchEvents);
+        const batchTimelineResult = await this.incidentRepository.saveEvents(incident.id, batchEvents);
+        if (batchTimelineResult.isFailure) {
+          this.logger.error(
+            `batchChangeStatus — saveEvents failed id=${incident.id}: ${batchTimelineResult.unwrapError().message}`,
+            CTX,
+          );
+        }
         await this.eventBus.publishMany(batchEvents);
 
         const dateStr = incident.scheduledRange.start

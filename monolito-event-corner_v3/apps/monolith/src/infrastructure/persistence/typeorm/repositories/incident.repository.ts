@@ -66,6 +66,11 @@ export class TypeOrmIncidentRepository implements IIncidentRepository {
   async save(incident: Incident): Promise<Result<void>> {
     try {
       const entity = this.toEntity(incident);
+      // issue_id no es AUTO_INCREMENT (ver comentario en IncidentEntity) —
+      // se asigna acá vía la tabla issue_sequences la primera vez que se
+      // persiste el agregado; en saves posteriores ya viene poblado desde
+      // el reload (findById) que precede a cada update.
+      entity.issue_id = incident.issueId ?? (await this.allocateIssueId());
       await this.incidentRepository.save(entity);
 
       // Guardar slots asociados
@@ -564,7 +569,7 @@ export class TypeOrmIncidentRepository implements IIncidentRepository {
         timelineEntity.action_type = event.type;
         timelineEntity.from_status = event.data?.oldStatus;
         timelineEntity.to_status = event.data?.newStatus;
-        timelineEntity.technician_id = event.technicianId?.toString();
+        timelineEntity.technician_id = event.data?.technicianId?.toString();
         timelineEntity.comment = event.data?.comment || event.data?.reason;
         timelineEntity.worked_from = event.data?.workedFrom;
         timelineEntity.worked_until = event.data?.workedUntil;
@@ -615,17 +620,43 @@ export class TypeOrmIncidentRepository implements IIncidentRepository {
     comment: string,
   ): Promise<Result<void>> {
     try {
+      const incident = await this.incidentRepository.findOne({
+        where: { incident_id: incidentId },
+        select: ['status'],
+      });
+
       const entry = new IncidentTimelineEntity();
       entry.incident_id = incidentId;
       entry.technician_id = technicianId as string;
       entry.action_type = 'NOTE_ADDED';
       entry.comment = comment;
+      // Snapshot del estado al momento de la nota — NOTE_ADDED no es una
+      // transición (from/to), por eso solo se guarda el estado actual.
+      entry.to_status = incident?.status as string;
       entry.created_at = new Date();
       await this.timelineRepository.save(entry);
       return Result.ok(undefined);
     } catch (error) {
       return Result.err(error);
     }
+  }
+
+  /**
+   * Asigna el próximo valor de la secuencia `issue_sequences` (fila
+   * 'incident') de forma atómica vía el truco LAST_INSERT_ID(expr) de MySQL:
+   * el UPDATE toma un row lock sobre esa fila (serializa allocations
+   * concurrentes) y deja el nuevo valor disponible como LAST_INSERT_ID() en
+   * la misma conexión — por eso ambas queries corren en la misma
+   * transacción (manager.transaction reutiliza una única conexión).
+   */
+  private async allocateIssueId(): Promise<number> {
+    return this.incidentRepository.manager.transaction(async (txEm) => {
+      await txEm.query(
+        `UPDATE issue_sequences SET next_value = LAST_INSERT_ID(next_value + 1) WHERE entity_name = 'incident'`,
+      );
+      const rows = await txEm.query(`SELECT LAST_INSERT_ID() AS id`);
+      return Number(rows[0].id);
+    });
   }
 
   private toEntity(domain: Incident): IncidentEntity {
@@ -649,6 +680,7 @@ export class TypeOrmIncidentRepository implements IIncidentRepository {
     entity.snowq_correlation_id = domain.snowqCorrelationId;
     entity.metadata = domain.metadata;
     entity.closed_at = domain.closedAt;
+    entity.estimated_close_at = domain.estimatedCloseAt;
     entity.created_at = domain.createdAt;
     entity.updated_at = domain.updatedAt;
     return entity;
@@ -697,6 +729,8 @@ export class TypeOrmIncidentRepository implements IIncidentRepository {
       entity.created_at,
       entity.updated_at,
       entity.snowq_correlation_id || null,
+      entity.issue_id ?? null,
+      entity.estimated_close_at || null,
     );
 
     if (entity.device) {
@@ -712,6 +746,20 @@ export class TypeOrmIncidentRepository implements IIncidentRepository {
         id: entity.customer.customer_id,
         email: entity.customer.email ?? null,
         name: entity.customer.name ?? null,
+      });
+    }
+
+    if (entity.corner) {
+      incident.setCornerInfo({
+        id: entity.corner.corner_id,
+        name: entity.corner.name,
+      });
+    }
+
+    if (entity.issueType) {
+      incident.setIssueTypeInfo({
+        id: entity.issueType.issue_type_id,
+        name: entity.issueType.name,
       });
     }
 

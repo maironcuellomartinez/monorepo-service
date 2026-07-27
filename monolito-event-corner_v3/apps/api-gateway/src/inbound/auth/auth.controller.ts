@@ -166,8 +166,12 @@ export class AuthController {
       .post(`/devices/sync-for-user/${monolithUser.id}`, {})
       .catch(() => {});
 
-    // Si el usuario tiene el permiso de técnico, buscar su perfil de técnico.
-    // Si no existe todavía, auto-crearlo (ABAC es la fuente de verdad del rol).
+    // Si el usuario tiene el permiso de técnico en ABAC, debe existir su perfil
+    // de técnico en el monolith (creado por un admin vía /api/admin/technicians,
+    // que ya valida el rol ABAC). Si el rol está pero todavía no fue promovido,
+    // se rechaza el login en vez de auto-provisionar: de lo contrario el usuario
+    // entra al Panel Técnico sin technicianId y no puede tomar/entregar/liberar
+    // incidencias (esos DTOs requieren technicianId).
     const isTechnician = user.permissions?.includes(
       'dashboard-technician:read',
     );
@@ -177,20 +181,12 @@ export class AuthController {
         .get<{ id: string } | null>(`/technicians/by-user/${monolithUser.id}`)
         .catch(() => null);
 
-      if (technicianProfile?.id) {
-        technicianId = technicianProfile.id;
-      } else {
-        // Primera vez que este usuario llega con rol técnico → auto-provisionar
-        const created = await this.monolith
-          .post<{ id: string }>('/technicians', {
-            userId: monolithUser.id,
-            name: user.firstName ?? user.email ?? 'Técnico',
-            lastName: user.lastName,
-            email: user.email,
-          })
-          .catch(() => null);
-        technicianId = created?.id ?? null;
+      if (!technicianProfile?.id) {
+        throw new ForbiddenException(
+          'Se debe promover como técnico en el monolith. Contactá a un administrador.',
+        );
       }
+      technicianId = technicianProfile.id;
     }
 
     return {

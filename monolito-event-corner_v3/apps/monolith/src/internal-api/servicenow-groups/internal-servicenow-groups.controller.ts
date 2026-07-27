@@ -4,7 +4,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam,
 import { SERVICENOW_GROUP_SERVICE } from '@app/core/ports/incoming/service-tokens';
 import { ServiceNowGroupService } from '@app/core/services/servicenow/servicenow-group.service';
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
-import { RegisterSnowGroupDto, UpdateSnowGroupDto } from './dto/servicenow-groups.dto';
+import { RegisterSnowGroupDto, UpdateSnowGroupDto, SyncSnowGroupsDto } from './dto/servicenow-groups.dto';
 import { TracingService } from '@app/observability';
 
 @ApiTags('ServiceNow Groups')
@@ -32,7 +32,20 @@ export class InternalServiceNowGroupsController {
     }
 
     private async _register(dto: RegisterSnowGroupDto) {
-        return unwrapOrThrow(await this.service.register(dto.groupName, dto.description));
+        return unwrapOrThrow(await this.service.register(dto.groupId, dto.groupName, dto.description));
+    }
+
+    @Post('sync')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Sincronizar catálogo local con ServiceNow', description: 'Upsert masivo — reemplaza/actualiza el catálogo local con la lista de grupos vigentes en ServiceNow.' })
+    @ApiResponse({ status: 200, description: 'Cantidad de grupos sincronizados' })
+    async sync(@Body() dto: SyncSnowGroupsDto) {
+        return this.tracing.run('monolith.controller.snGroups.sync', { kind: 'server' }, () => this._sync(dto));
+    }
+
+    private async _sync(dto: SyncSnowGroupsDto) {
+        const count = unwrapOrThrow(await this.service.syncMany(dto.groups));
+        return { synced: count };
     }
 
     @Put(':id')

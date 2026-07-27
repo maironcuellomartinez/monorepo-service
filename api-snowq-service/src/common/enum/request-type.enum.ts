@@ -158,6 +158,8 @@ export class RequestTypeUtils {
     }
 
     static buildPayloadForServiceNow(incidence: any): Record<string, any> {
+        // Nombre del campo configurable por instancia de SN (ver docs/config-strategy.md).
+        const externalIdField = process.env.SN_EXTERNAL_ID_FIELD || 'u_external_system_id';
         const basePayload = {
             short_description: incidence.payload.short_description ?? incidence.description ?? '',
             description: incidence.payload.description ?? incidence.description ?? '',
@@ -167,6 +169,7 @@ export class RequestTypeUtils {
             caller_id: incidence.payload.caller_id || incidence.source || "default_user",
             location: incidence.payload.location || undefined,
             expected_start: incidence.payload.expected_start || undefined,
+            [externalIdField]: incidence.payload.externalId || undefined,
         };
 
         const map = {
@@ -174,6 +177,7 @@ export class RequestTypeUtils {
                 ...basePayload,
                 category:         incidence.payload.category        || "email",
                 assignment_group: incidence.payload.assignmentGroup || undefined,
+                assigned_to:      incidence.payload.assigned_to     || undefined,
                 company:          incidence.payload.company         || undefined,
                 contact_type: "phone"
             },

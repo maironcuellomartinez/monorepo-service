@@ -9,6 +9,7 @@ import { IServiceNowClient } from '../../ports/outgoing/servicenow/servicenow-cl
 import { Incident } from '../../domain/entities/incident.entity';
 import { Request } from '../../domain/entities/request.entity';
 import { Company } from '../../domain/entities/company.entity';
+import { Corner } from '../../domain/entities/corner.entity';
 import { IssueTypeNotFoundError } from '../../domain/errors/incident.errors';
 import { ServiceNowId } from '../../domain/value-objects/servicenow-id.value';
 import { ServiceNowNumber } from '../../domain/value-objects/servicenow-number.value';
@@ -27,6 +28,33 @@ export class ServiceNowIntegrationService {
     private readonly companyIssueConfigRepo: ICompanyIssueConfigRepository,
     private readonly tracing: TracingService,
   ) {}
+
+  /**
+   * Referencia externa estable enviada a snowq (campo `externalId`, usado para
+   * el fingerprint de deduplicación — ver computeFingerprint en api-snowq-service —
+   * y para poblar u_external_system_id en ServiceNow).
+   * Formato `{issueId}_{corner.code}`, replicando el patrón legacy exacto
+   * (ej. '1526_local_abelias'): un correlativo incremental corto (no el UUID
+   * interno) + el código estable del corner (ver Corner.updateCode()).
+   *
+   * `issueId` es DB-generado (AUTO_INCREMENT) y solo es null si este método
+   * se invoca antes de recargar el agregado desde persistencia — no debería
+   * ocurrir en el flujo normal (los handlers de INCIDENT_CREATED/REQUEST_CREATED
+   * recargan desde el repositorio antes de llamar a create*Ticket). Si ocurre,
+   * se cae al UUID para no bloquear la creación del ticket.
+   */
+  private buildExternalId(
+    issueId: number | null,
+    fallbackId: string,
+    corner: Corner,
+  ): string {
+    if (issueId == null) {
+      this.logger.warn(
+        `[buildExternalId] issueId no disponible para ${fallbackId} — usando UUID como fallback`,
+      );
+    }
+    return `${issueId ?? fallbackId}_${corner.code}`;
+  }
 
   /** Resuelve el sys_id de empresa en SN: perfil asignado → fallback env DEFAULT. */
   private async resolveSnowCompanySysId(
@@ -61,6 +89,7 @@ export class ServiceNowIntegrationService {
     incident: Incident,
     company: Company,
     callerPrincipalName?: string,
+    creatorTechnicianEmail?: string,
   ): Promise<Result<void>> {
     return this.tracing.run(
       'monolith.sn.createIncidentTicket',
@@ -71,7 +100,7 @@ export class ServiceNowIntegrationService {
           'sn.companyId': String(company.id),
         },
       },
-      () => this._createIncidentTicket(incident, company, callerPrincipalName),
+      () => this._createIncidentTicket(incident, company, callerPrincipalName, creatorTechnicianEmail),
     );
   }
 
@@ -79,6 +108,7 @@ export class ServiceNowIntegrationService {
     incident: Incident,
     company: Company,
     callerPrincipalName?: string,
+    creatorTechnicianEmail?: string,
   ): Promise<Result<void>> {
     const issueTypeResult = await this.issueTypeRepo.findById(
       incident.issueTypeId,
@@ -118,7 +148,9 @@ export class ServiceNowIntegrationService {
       impact: issueType.snImpact.value,
       severity: issueType.snSeverity.value,
       expected_start: incident.scheduledRange.start,
-      externalId: String(incident.id),
+      externalId: this.buildExternalId(incident.issueId, String(incident.id), corner),
+      // Si un técnico crea la incidencia, va como assigned_to; si no (employee/manager), el default.
+      assigned_to: creatorTechnicianEmail ?? process.env.SN_DEFAULT_TECHNICIAN ?? undefined,
     });
 
     if (snResult.isFailure) {
@@ -226,7 +258,7 @@ export class ServiceNowIntegrationService {
       description: request.notes ?? 'Solicitud creada por técnico',
       caller_id: callerPrincipalName ?? String(request.technicianId),
       requested_for: requestedForPrincipalName ?? String(request.customerId),
-      externalId: String(request.id),
+      externalId: this.buildExternalId(request.issueId, String(request.id), corner),
     });
 
     if (snResult.isFailure) {
@@ -331,7 +363,8 @@ export class ServiceNowIntegrationService {
       impact: issueType.snImpact.value,
       severity: issueType.snSeverity.value,
       expected_start: incident.scheduledRange.start,
-      externalId: String(incident.id),
+      externalId: this.buildExternalId(incident.issueId, String(incident.id), corner),
+      assigned_to: process.env.SN_DEFAULT_TECHNICIAN ?? undefined,
     });
 
     if (enqueueResult.isFailure) {
@@ -408,7 +441,7 @@ export class ServiceNowIntegrationService {
       description: request.notes ?? 'Solicitud creada por técnico',
       caller_id: String(request.technicianId),
       requested_for: String(request.customerId),
-      externalId: String(request.id),
+      externalId: this.buildExternalId(request.issueId, String(request.id), corner),
     });
 
     if (enqueueResult.isFailure) {

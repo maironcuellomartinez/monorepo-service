@@ -20,6 +20,16 @@ export class RequestEntity {
   @PrimaryColumn({ length: 50 })
   request_id: string;
 
+  /**
+   * Correlativo incremental usado como referencia externa estable (ver
+   * ServiceNowIntegrationService.buildExternalId). Se asigna en
+   * TypeOrmRequestRepository.save() vía la tabla issue_sequences — ver el
+   * comentario análogo en IncidentEntity.issue_id sobre por qué no es
+   * AUTO_INCREMENT/@Generated.
+   */
+  @Column({ type: 'int', unsigned: true })
+  issue_id: number;
+
   @Column({ length: 50 })
   issue_type_id: string;
 

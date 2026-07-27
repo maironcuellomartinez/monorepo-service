@@ -11,6 +11,22 @@ import { SERVICENOW_INTEGRATION_SERVICE } from '@app/core/ports/incoming/service
 import { IncidentId } from '@app/shared/types/branded-ids';
 import { IncidentStatus } from '@app/core/domain/enums/incident-status.enum';
 
+/**
+ * Estado SN (semántico, lo traduce servicenow-clone-backend/SN real) para cada
+ * IncidentStatus intermedio. IMPORTANTE: nunca usar 'resolved'/'closed' acá —
+ * SnowSyncJob auto-cierra la incidencia en el monolith si detecta SN en {6,7},
+ * así que solo el cierre real (closeIncidentTicket, más abajo) puede usarlos.
+ */
+const INCIDENT_STATUS_TO_SN_STATE: Partial<Record<IncidentStatus, string>> = {
+    [IncidentStatus.IN_PROGRESS]: 'in_progress',
+    [IncidentStatus.PENDING_THIRD_PARTY]: 'on_hold',
+    [IncidentStatus.PENDING_USER]: 'on_hold',
+    [IncidentStatus.PENDING_SPARE_PART]: 'on_hold',
+    [IncidentStatus.PENDING_PICKUP]: 'on_hold',
+    [IncidentStatus.PENDING_REPLACEMENT_DELIVERY]: 'on_hold',
+    [IncidentStatus.CANCELED]: 'canceled',
+};
+
 @Injectable()
 export class IncidentStatusChangedHandler implements OnModuleInit {
     private readonly logger = new Logger(IncidentStatusChangedHandler.name);
@@ -25,6 +41,8 @@ export class IncidentStatusChangedHandler implements OnModuleInit {
     onModuleInit(): void {
         this.eventBus.subscribe('INCIDENT_STATUS_CHANGED', (event) => this.handleStatusChanged(event));
         this.eventBus.subscribe('INCIDENT_REOPENED', (event) => this.handleReopened(event));
+        this.eventBus.subscribe('INCIDENT_DELIVERED', (event) => this.handleDelivered(event));
+        this.eventBus.subscribe('INCIDENT_VALIDATED', (event) => this.handleValidated(event));
     }
 
     private async handleStatusChanged(event: DomainEvent): Promise<void> {
@@ -38,34 +56,129 @@ export class IncidentStatusChangedHandler implements OnModuleInit {
     private async _handleStatusChanged(event: DomainEvent): Promise<void> {
         const newStatus: IncidentStatus = event.data?.newStatus;
 
-        // Only CLOSED needs a ServiceNow call; other transitions are internal state changes
-        if (newStatus !== IncidentStatus.CLOSED) return;
-
         const incident = await this.loadIncident(event.aggregateId, 'INCIDENT_STATUS_CHANGED');
         if (!incident) return;
 
-        // Idempotency: if the ticket was never created in SN there is nothing to close
+        // Idempotency: if the ticket was never created in SN there is nothing to sync
         if (!incident.servicenowId) {
-            this.logger.warn(`[INCIDENT_STATUS_CHANGED] Incident ${event.aggregateId} has no SN ticket — skipping close`);
+            this.logger.warn(`[INCIDENT_STATUS_CHANGED] Incident ${event.aggregateId} has no SN ticket — skipping sync`);
             return;
         }
 
-        const closeCategory: string = event.data?.closeCategory ?? 'resolved';
-        const closeNotes: string | undefined = event.data?.comment;
+        if (newStatus === IncidentStatus.CLOSED) {
+            const closeCategory: string = event.data?.closeCategory ?? 'resolved';
+            const closeNotes: string | undefined = event.data?.comment;
 
-        const result = await this.snService.closeIncidentTicket(
-            incident.servicenowId.value,
-            closeCategory,
-            closeNotes,
-        );
+            const result = await this.snService.closeIncidentTicket(
+                incident.servicenowId.value,
+                closeCategory,
+                closeNotes,
+            );
 
-        if (result.isFailure) {
-            const msg = `[INCIDENT_STATUS_CHANGED] Failed to close SN ticket for incident ${event.aggregateId}: ${result.unwrapError().message}`;
-            this.logger.error(msg);
-            throw new Error(msg);
+            if (result.isFailure) {
+                const msg = `[INCIDENT_STATUS_CHANGED] Failed to close SN ticket for incident ${event.aggregateId}: ${result.unwrapError().message}`;
+                this.logger.error(msg);
+                throw new Error(msg);
+            }
+
+            this.logger.log(`[INCIDENT_STATUS_CHANGED] SN ticket closed for incident ${event.aggregateId} — sysId: ${incident.servicenowId.value}`);
+            return;
         }
 
-        this.logger.log(`[INCIDENT_STATUS_CHANGED] SN ticket closed for incident ${event.aggregateId} — sysId: ${incident.servicenowId.value}`);
+        // Resto de las transiciones (IN_PROGRESS, PENDING_*, CANCELED) — quedan
+        // como auditoría en el ticket (work_notes) para poder consultarlas desde SN.
+        const snState = INCIDENT_STATUS_TO_SN_STATE[newStatus];
+        if (!snState) {
+            this.logger.debug(`[INCIDENT_STATUS_CHANGED] Sin mapeo SN para newStatus=${newStatus} — solo se registra en el timeline interno`);
+            return;
+        }
+
+        const comment: string | undefined = event.data?.comment;
+        const result = await this.snService.updateTicket('incident', incident.servicenowId.value, {
+            state: snState,
+            work_notes: comment ?? `Estado actualizado a ${newStatus} desde Event Corner`,
+        });
+
+        // No-bloqueante a propósito: publishMany() se awaitea de forma síncrona dentro
+        // de _changeStatus() (incident.service.ts) — tirar acá haría fallar con 500 un
+        // cambio de estado que YA se guardó en el monolith, por un problema puntual de SN.
+        // Distinto de CLOSED (arriba), donde sí se propaga el error.
+        if (result.isFailure) {
+            this.logger.error(
+                `[INCIDENT_STATUS_CHANGED] Failed to sync SN ticket (newStatus=${newStatus}) for incident ${event.aggregateId}: ${result.unwrapError().message}`,
+            );
+            return;
+        }
+
+        this.logger.log(`[INCIDENT_STATUS_CHANGED] SN ticket updated for incident ${event.aggregateId} — sysId: ${incident.servicenowId.value} | state: ${snState}`);
+    }
+
+    private async handleDelivered(event: DomainEvent): Promise<void> {
+        return this.tracing.run(
+            'monolith.handler.incidentDelivered',
+            { kind: 'server', attributes: { 'handler.aggregateId': event.aggregateId } },
+            () => this._handleDelivered(event),
+        );
+    }
+
+    private async _handleDelivered(event: DomainEvent): Promise<void> {
+        const incident = await this.loadIncident(event.aggregateId, 'INCIDENT_DELIVERED');
+        if (!incident) return;
+
+        if (!incident.servicenowId) {
+            this.logger.warn(`[INCIDENT_DELIVERED] Incident ${event.aggregateId} has no SN ticket — skipping sync`);
+            return;
+        }
+
+        // No cambia el state en SN (todavía no hay técnico trabajando) — solo
+        // deja constancia de la entrega en el work_notes para auditoría.
+        const result = await this.snService.updateTicket('incident', incident.servicenowId.value, {
+            work_notes: 'Dispositivo entregado por el cliente en el corner',
+        });
+
+        // No-bloqueante — ver comentario en _handleStatusChanged.
+        if (result.isFailure) {
+            this.logger.error(
+                `[INCIDENT_DELIVERED] Failed to sync SN ticket for incident ${event.aggregateId}: ${result.unwrapError().message}`,
+            );
+            return;
+        }
+
+        this.logger.log(`[INCIDENT_DELIVERED] SN ticket updated for incident ${event.aggregateId} — sysId: ${incident.servicenowId.value}`);
+    }
+
+    private async handleValidated(event: DomainEvent): Promise<void> {
+        return this.tracing.run(
+            'monolith.handler.incidentValidated',
+            { kind: 'server', attributes: { 'handler.aggregateId': event.aggregateId } },
+            () => this._handleValidated(event),
+        );
+    }
+
+    private async _handleValidated(event: DomainEvent): Promise<void> {
+        const incident = await this.loadIncident(event.aggregateId, 'INCIDENT_VALIDATED');
+        if (!incident) return;
+
+        if (!incident.servicenowId) {
+            this.logger.warn(`[INCIDENT_VALIDATED] Incident ${event.aggregateId} has no SN ticket — skipping sync`);
+            return;
+        }
+
+        // El ticket ya está resolved/closed en SN — solo se deja la constancia
+        // de la validación del cliente en work_notes, sin tocar el state.
+        const result = await this.snService.updateTicket('incident', incident.servicenowId.value, {
+            work_notes: 'Resolución validada por el cliente',
+        });
+
+        // No-bloqueante — ver comentario en _handleStatusChanged.
+        if (result.isFailure) {
+            this.logger.error(
+                `[INCIDENT_VALIDATED] Failed to sync SN ticket for incident ${event.aggregateId}: ${result.unwrapError().message}`,
+            );
+            return;
+        }
+
+        this.logger.log(`[INCIDENT_VALIDATED] SN ticket updated for incident ${event.aggregateId} — sysId: ${incident.servicenowId.value}`);
     }
 
     private async handleReopened(event: DomainEvent): Promise<void> {

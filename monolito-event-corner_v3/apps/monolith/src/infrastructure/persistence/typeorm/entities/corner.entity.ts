@@ -12,6 +12,9 @@ export class CornerEntity {
     @Column({ length: 100 })
     name: string;
 
+    @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
+    code: string;
+
     @Column({ type: 'varchar', length: 100, nullable: true })
     client_name: string | null;
 

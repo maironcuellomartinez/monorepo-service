@@ -8,7 +8,7 @@ import { CornerId } from '@app/shared/types/branded-ids';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeCorner(): Corner {
-    return Corner.create(CornerId('corner-1'), 'Sala A').unwrap();
+    return Corner.create(CornerId('corner-1'), 'Sala A', 'sala_a').unwrap();
 }
 
 function buildMocks(opts?: {
@@ -20,6 +20,7 @@ function buildMocks(opts?: {
 
     const cornerRepo = {
         findById: jest.fn().mockResolvedValue(Result.ok(corner)),
+        findByCode: jest.fn().mockResolvedValue(Result.ok(null)),
         save: jest.fn().mockResolvedValue(
             opts?.saveFails ? Result.err(new Error('DB error')) : Result.ok(undefined),
         ),

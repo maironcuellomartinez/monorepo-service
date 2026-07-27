@@ -18,6 +18,8 @@ export interface ScheduleBlock {
 export interface CornerProps {
     id: CornerId;
     name: string;
+    /** Identificador técnico estable (slug), inmutable salvo corrección explícita. Usado como referencia externa (p.ej. ServiceNow). */
+    code: string;
     clientName: string | null;
     description: string | null;
     servicenowLocation: string | null;
@@ -35,6 +37,9 @@ export interface CornerProps {
     createdAt: Date;
     updatedAt: Date;
 }
+
+/** Formato de `code`: slug técnico en minúsculas (snake_case), p.ej. 'local_abelias'. */
+const CODE_REGEX = /^[a-z0-9]+(_[a-z0-9]+)*$/;
 
 /**
  * Entidad Corner
@@ -54,6 +59,12 @@ export class Corner {
      * @returns Nombre del corner
      */
     get name(): string { return this.props.name; }
+
+    /**
+     * Código técnico estable del corner (slug). Referencia externa inmutable.
+     * @returns Código del corner
+     */
+    get code(): string { return this.props.code; }
 
     /**
      * Nombre del cliente
@@ -273,6 +284,23 @@ export class Corner {
     }
 
     /**
+     * Corrige el código técnico del corner. Operación explícita y deliberada
+     * (separada de updateInfo) porque el code es una referencia externa
+     * inmutable por convención: solo debe cambiarse para corregir un backfill
+     * incorrecto, no como parte de una edición regular.
+     * @param code Nuevo código (slug, snake_case)
+     * @returns Resultado de la operación
+     */
+    updateCode(code: string): Result<void> {
+        if (!CODE_REGEX.test(code)) {
+            return Result.err(new Error('Invalid corner code format. Use lowercase snake_case (e.g. local_abelias)'));
+        }
+        this.props.code = code;
+        this.props.updatedAt = new Date();
+        return Result.ok(undefined);
+    }
+
+    /**
      * Actualiza la configuración operativa
      * @example
      * corner.updateOperationalConfig(true);
@@ -369,6 +397,7 @@ export class Corner {
     static create(
         id: CornerId,
         name: string,
+        code: string,
         onlyTechnicians: boolean = false,
         timezone: string = 'UTC',
         country: string = 'AR',
@@ -376,11 +405,15 @@ export class Corner {
         if (!name || name.trim().length === 0) {
             return Result.err(new Error('Corner name is required'));
         }
+        if (!code || !CODE_REGEX.test(code)) {
+            return Result.err(new Error('Invalid corner code format. Use lowercase snake_case (e.g. local_abelias)'));
+        }
 
         const now = new Date();
         const corner = new Corner({
             id,
             name,
+            code,
             clientName: null,
             description: null,
             servicenowLocation: null,
@@ -435,6 +468,7 @@ export class Corner {
     static reconstitute(
         id: CornerId,
         name: string,
+        code: string,
         onlyTechnicians: boolean,
         isActive: boolean,
         clientName: string | null,
@@ -453,6 +487,7 @@ export class Corner {
         return new Corner({
             id,
             name,
+            code,
             clientName,
             description,
             servicenowLocation,

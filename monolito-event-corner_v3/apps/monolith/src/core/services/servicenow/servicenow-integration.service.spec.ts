@@ -38,6 +38,7 @@ function fakeCorner(): Corner {
   return {
     id: CornerId('corner-1'),
     name: 'Corner A',
+    code: 'corner_a',
     snowAssignmentGroup: 'GRUPO_X',
     servicenowLocation: 'LOC-1',
   } as unknown as Corner;
@@ -51,6 +52,7 @@ function fakeCompany(): Company {
 function fakeIncident(): Incident {
   return {
     id: IncidentId('inc-1'),
+    issueId: 1526,
     issueTypeId: IssueTypeId('issue-1'),
     cornerId: CornerId('corner-1'),
     customerId: CustomerId('cust-1'),
@@ -110,7 +112,12 @@ describe('ServiceNowIntegrationService — clasificación SN desde IssueType', (
     expect(result.isSuccess).toBe(true);
     expect(createIncident).toHaveBeenCalledTimes(1);
     expect(createIncident).toHaveBeenCalledWith(
-      expect.objectContaining({ urgency: 1, impact: 1, severity: 'high' }),
+      expect.objectContaining({
+        urgency: 1,
+        impact: 1,
+        severity: 'high',
+        externalId: '1526_corner_a',
+      }),
     );
   });
 
@@ -130,7 +137,39 @@ describe('ServiceNowIntegrationService — clasificación SN desde IssueType', (
 
     expect(result.isSuccess).toBe(true);
     expect(enqueueIncident).toHaveBeenCalledWith(
-      expect.objectContaining({ urgency: 3, impact: 2, severity: 'low' }),
+      expect.objectContaining({
+        urgency: 3,
+        impact: 2,
+        severity: 'low',
+        externalId: '1526_corner_a',
+      }),
+    );
+  });
+
+  it('createIncidentTicket cae al UUID si issueId aún no fue asignado por la DB', async () => {
+    const createIncident = jest.fn().mockResolvedValue(
+      Result.ok({
+        sysId: '',
+        number: '',
+        deferred: true,
+        correlationId: 'corr-3',
+      }),
+    );
+    const service = buildService({
+      issueType: fakeIssueType({ urgency: 2, impact: 2, severity: 'medium' }),
+      snClient: { createIncident },
+    });
+
+    const incidentWithoutIssueId = { ...fakeIncident(), issueId: null };
+
+    const result = await service.createIncidentTicket(
+      incidentWithoutIssueId as unknown as Incident,
+      fakeCompany(),
+    );
+
+    expect(result.isSuccess).toBe(true);
+    expect(createIncident).toHaveBeenCalledWith(
+      expect.objectContaining({ externalId: 'inc-1_corner_a' }),
     );
   });
 });

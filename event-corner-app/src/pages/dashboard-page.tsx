@@ -7,6 +7,7 @@ import {
   Wrench, Inbox, MessageSquare, History, Send, LogIn,
 } from 'lucide-react'
 import { Header } from '@/components/header'
+import { SlotPicker } from '@/components/slot-picker'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -659,19 +660,23 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
 // ── Technician Incident Modal ──────────────────────────────────────────────
 // Transiciones válidas que puede ejecutar un técnico
 
+// El técnico puede cerrar como resuelta desde cualquier estado activo (paridad
+// legacy) — no hace falta pasar por PENDING_PICKUP/PENDING_REPLACEMENT_DELIVERY.
 const TECHNICIAN_TRANSITIONS: Partial<Record<IncidentStatus, IncidentStatus[]>> = {
-  CREATED:                    ['DELIVERED'],
-  DELIVERED:                  ['IN_PROGRESS'],
-  IN_PROGRESS:                ['PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART', 'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY'],
-  PENDING_THIRD_PARTY:        ['IN_PROGRESS'],
-  PENDING_USER:               ['IN_PROGRESS'],
-  PENDING_SPARE_PART:         ['IN_PROGRESS'],
+  CREATED:                    ['DELIVERED', 'CANCELED'],
+  DELIVERED:                  ['IN_PROGRESS', 'CLOSED'],
+  IN_PROGRESS:                ['PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART', 'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY', 'CLOSED'],
+  PENDING_THIRD_PARTY:        ['IN_PROGRESS', 'CLOSED'],
+  PENDING_USER:                ['IN_PROGRESS', 'CLOSED'],
+  PENDING_SPARE_PART:         ['IN_PROGRESS', 'CLOSED'],
   PENDING_PICKUP:             ['IN_PROGRESS', 'CLOSED'],
   PENDING_REPLACEMENT_DELIVERY: ['IN_PROGRESS', 'CLOSED'],
-  REOPENED:                   ['IN_PROGRESS'],
+  // REOPENED = nuevo slot, el cliente debe entregar el dispositivo de nuevo
+  // (igual que CREATED) — no salta directo a IN_PROGRESS.
+  REOPENED:                   ['DELIVERED', 'CLOSED', 'CANCELED'],
 }
 
-const STATUS_LABELS: Record<string, string> = {
+export const STATUS_LABELS: Record<string, string> = {
   CREATED: 'Creada', DELIVERED: 'Entregada', IN_PROGRESS: 'En progreso',
   PENDING_THIRD_PARTY: 'Pend. tercero', PENDING_USER: 'Pend. usuario',
   PENDING_SPARE_PART: 'Pend. repuesto', PENDING_PICKUP: 'Pend. recogida',
@@ -679,13 +684,36 @@ const STATUS_LABELS: Record<string, string> = {
   REOPENED: 'Reabierta', VALIDATED: 'Validada', CANCELED: 'Cancelada', NOTE_ADDED: 'Nota añadida',
   ASSIGNED: 'Asignada', ACCEPTED: 'Aceptada', TECHNICIAN_CHANGED: 'Técnico cambiado',
   STATUS_CHANGED: 'Estado cambiado',
+  // Nombres reales de action_type que persiste saveEvents() (event.type del dominio,
+  // sin normalizar contra el enum TimelineAction — ese enum quedó sin usar).
+  INCIDENT_CREATED: 'Creada',
+  INCIDENT_DELIVERED: 'Entregada',
+  INCIDENT_TAKEN: 'Tomada por técnico',
+  INCIDENT_RELEASED: 'Liberada por técnico',
+  INCIDENT_STATUS_CHANGED: 'Estado cambiado',
+  INCIDENT_VALIDATED: 'Validada',
+  INCIDENT_REOPENED: 'Reabierta',
+  INCIDENT_COMMENT_ADDED: 'Comentario añadido',
+  INCIDENT_RESCHEDULED: 'Reprogramada',
+  INCIDENT_ESTIMATED_CLOSE_CHANGED: 'Cierre estimado actualizado',
+  INCIDENT_LOCKER_ASSIGNED: 'Locker asignado',
+  INCIDENT_LOCKER_RELEASED: 'Locker liberado',
+  INCIDENT_SERVICENOW_UPDATED: 'Ticket ServiceNow actualizado',
 }
 
-const TIMELINE_ICON: Record<string, React.ElementType> = {
+export const TIMELINE_ICON: Record<string, React.ElementType> = {
   NOTE_ADDED: MessageSquare,
   ASSIGNED: LogIn,
   ACCEPTED: CheckCircle2,
   TECHNICIAN_CHANGED: RefreshCw,
+  INCIDENT_CREATED: Plus,
+  INCIDENT_DELIVERED: Inbox,
+  INCIDENT_TAKEN: LogIn,
+  INCIDENT_RELEASED: XCircle,
+  INCIDENT_STATUS_CHANGED: RefreshCw,
+  INCIDENT_VALIDATED: ThumbsUp,
+  INCIDENT_REOPENED: RotateCcw,
+  INCIDENT_COMMENT_ADDED: MessageSquare,
 }
 
 interface TechnicianIncidentModalProps {
@@ -712,6 +740,17 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
   const [loadingNote, setLoadingNote] = useState(false)
   const [noteError, setNoteError] = useState('')
 
+  // Reprogramar cita
+  const [rescheduleOpen, setRescheduleOpen] = useState(false)
+  const [selectedRescheduleSlot, setSelectedRescheduleSlot] = useState<AvailabilitySlot | null>(null)
+  const [loadingReschedule, setLoadingReschedule] = useState(false)
+  const [rescheduleError, setRescheduleError] = useState('')
+
+  // Cierre estimado
+  const [estimatedClose, setEstimatedCloseValue] = useState('')
+  const [loadingEstimatedClose, setLoadingEstimatedClose] = useState(false)
+  const [estimatedCloseError, setEstimatedCloseError] = useState('')
+
   useEffect(() => {
     if (!open || !incident) return
     setNewStatus('')
@@ -719,6 +758,11 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
     setStatusError('')
     setNoteText('')
     setNoteError('')
+    setRescheduleOpen(false)
+    setSelectedRescheduleSlot(null)
+    setRescheduleError('')
+    setEstimatedCloseValue(incident.estimatedCloseAt ? incident.estimatedCloseAt.slice(0, 10) : '')
+    setEstimatedCloseError('')
     setLoadingTimeline(true)
     incidentsApi.getTimeline(incident.id)
       .then(setTimeline)
@@ -794,13 +838,52 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
     }
   }
 
+  const handleReschedule = async () => {
+    if (!selectedRescheduleSlot || !technicianId) return
+    setLoadingReschedule(true)
+    setRescheduleError('')
+    try {
+      const updated = await incidentsApi.reschedule(incident.id, {
+        technicianId,
+        slotIds: selectedRescheduleSlot.slotIds,
+      })
+      await refreshTimeline()
+      setRescheduleOpen(false)
+      setSelectedRescheduleSlot(null)
+      onUpdated(updated)
+    } catch (err: unknown) {
+      setRescheduleError((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'No se pudo reprogramar — el horario elegido puede ya no estar disponible')
+    } finally {
+      setLoadingReschedule(false)
+    }
+  }
+
+  const handleSetEstimatedClose = async () => {
+    if (!estimatedClose || !technicianId) return
+    setLoadingEstimatedClose(true)
+    setEstimatedCloseError('')
+    try {
+      const updated = await incidentsApi.setEstimatedClose(incident.id, {
+        technicianId,
+        estimatedCloseAt: new Date(`${estimatedClose}T00:00:00`).toISOString(),
+      })
+      await refreshTimeline()
+      onUpdated(updated)
+    } catch (err: unknown) {
+      setEstimatedCloseError((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Error al actualizar el cierre estimado')
+    } finally {
+      setLoadingEstimatedClose(false)
+    }
+  }
+
   const deviceLabel = incident.device
     ? ([incident.device.brand, incident.device.model].filter(Boolean).join(' ') || incident.device.serialNumber)
     : incident.deviceId?.slice(0, 8)
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-4xl w-full max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-6xl w-full max-h-[90vh] flex flex-col">
         {/* ── Header ── */}
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
@@ -849,6 +932,51 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
                 )}
                 <InfoLine label="Creada" value={<span className="text-xs">{formatDate(incident.createdAt)}</span>} />
               </div>
+            </div>
+
+            {/* Reprogramar cita */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reprogramar cita</p>
+                <Button variant="ghost" size="sm" className="h-6 text-xs gap-1" onClick={() => setRescheduleOpen(true)}>
+                  <Calendar className="h-3 w-3" />
+                  Cambiar
+                </Button>
+              </div>
+              {incident.scheduledRange && (
+                <p className="text-sm">
+                  {formatDate(incident.scheduledRange.start)} → {formatDate(incident.scheduledRange.end)}
+                </p>
+              )}
+            </div>
+
+            {/* Cierre estimado */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Cierre estimado</p>
+              <div className="flex gap-2 items-end">
+                <div className="flex-1 space-y-1.5">
+                  <Input
+                    type="date"
+                    value={estimatedClose}
+                    onChange={(e) => setEstimatedCloseValue(e.target.value)}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={!estimatedClose || loadingEstimatedClose}
+                  onClick={handleSetEstimatedClose}
+                >
+                  {loadingEstimatedClose ? 'Guardando...' : 'Guardar'}
+                </Button>
+              </div>
+              {estimatedCloseError && (
+                <Alert variant="destructive" className="py-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="text-sm">{estimatedCloseError}</AlertDescription>
+                </Alert>
+              )}
             </div>
 
             {/* Cambiar estado */}
@@ -943,11 +1071,15 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
                           <span className="font-medium text-xs">{label}</span>
                           <span className="text-xs text-muted-foreground shrink-0">{formatDate(entry.createdAt)}</span>
                         </div>
-                        {entry.fromStatus && entry.toStatus && (
+                        {entry.fromStatus && entry.toStatus ? (
                           <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
                             <span>{STATUS_LABELS[entry.fromStatus] ?? entry.fromStatus}</span>
                             <ArrowRight className="h-3 w-3" />
                             <span>{STATUS_LABELS[entry.toStatus] ?? entry.toStatus}</span>
+                          </div>
+                        ) : entry.toStatus && (
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            Estado: {STATUS_LABELS[entry.toStatus] ?? entry.toStatus}
                           </div>
                         )}
                         {entry.comment && (
@@ -979,6 +1111,45 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
         </div>
       </DialogContent>
     </Dialog>
+
+    <Dialog
+      open={rescheduleOpen}
+      onOpenChange={(v) => { if (!v && !loadingReschedule) { setRescheduleOpen(false); setSelectedRescheduleSlot(null); setRescheduleError('') } }}
+    >
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Reprogramar cita</DialogTitle>
+        </DialogHeader>
+
+        {rescheduleError && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-sm">{rescheduleError}</AlertDescription>
+          </Alert>
+        )}
+
+        <SlotPicker
+          cornerId={incident.cornerId}
+          duration={incident.issueType?.workMinutes ?? 60}
+          selectedSlot={selectedRescheduleSlot}
+          onSelect={setSelectedRescheduleSlot}
+        />
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => { setRescheduleOpen(false); setSelectedRescheduleSlot(null); setRescheduleError('') }}
+            disabled={loadingReschedule}
+          >
+            Cancelar
+          </Button>
+          <Button disabled={!selectedRescheduleSlot || loadingReschedule} onClick={handleReschedule}>
+            {loadingReschedule ? 'Reprogramando...' : 'Confirmar nuevo horario'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
 

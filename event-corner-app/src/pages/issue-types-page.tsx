@@ -25,12 +25,9 @@ import { issueTypesApi, treesApi, IssueType, IssueTypeTree } from '@/lib/api'
 
 // ── Catalogs ─────────────────────────────────────────────────────────────────
 
-const DEVICE_TYPES = [
-  'Equipo sobremesa', 'Portatil', 'Portatil virtual',
-  'Telefono movil', 'Telefono movil virtual',
-  'Puesto VDI', 'Pantalla', 'SIM', 'Tableta',
-  'Portátil', 'Sobremesa', 'Teléfono', 'Monitor', 'Impresora', 'Otro',
-]
+// Debe coincidir con el vocabulario de dispositivos reales (ver DEVICE_TYPES en devices-page.tsx) —
+// es el que usan los dispositivos sincronizados vía Minerva.
+const DEVICE_TYPES = ['LAPTOP', 'CELULAR', 'TABLET', 'DESKTOP', 'IMPRESORA', 'OTRO']
 
 const CATEGORIES: { value: string; label: string }[] = [
   { value: 'ISSUE',                label: 'INCIDENT' },

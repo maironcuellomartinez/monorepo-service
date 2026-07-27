@@ -2,7 +2,7 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, Inject, HttpCode, HttpStatus, BadRequestException, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
-import { IncidentId, TechnicianId, CornerId, CustomerId } from '@app/shared/types/branded-ids';
+import { IncidentId, TechnicianId, CornerId, CustomerId, SlotId } from '@app/shared/types/branded-ids';
 import { INCIDENT_SERVICE } from '../../core/ports';
 import { IIncidentService } from '../../core/ports';
 import { INCIDENT_REPOSITORY, IIncidentRepository } from '../../core/ports/outgoing/repositories/incident-repository.port';
@@ -12,6 +12,8 @@ import {
     DeliverIncidentDto,
     TakeIncidentDto,
     ReleaseIncidentDto,
+    RescheduleIncidentDto,
+    SetEstimatedCloseDto,
     ChangeStatusDto,
     BatchStatusChangeDto,
     ValidateIncidentDto,
@@ -129,6 +131,7 @@ export class InternalIncidentsController {
         return unwrapOrThrow(await this.service.takeIncident({
             incidentId: IncidentId(id),
             technicianId: TechnicianId(dto.technicianId),
+            slotIds: dto.slotIds?.map((s) => SlotId(s)),
         }));
     }
 
@@ -145,6 +148,39 @@ export class InternalIncidentsController {
             incidentId: IncidentId(id),
             technicianId: TechnicianId(dto.technicianId),
             reason: dto.reason,
+        }));
+    }
+
+    @Patch(':id/reschedule')
+    @ApiOperation({ summary: 'Reprogramar la cita', description: 'Cambia el horario de la incidencia: reserva el/los slot(s) nuevo(s) y libera el/los actual(es) (a AVAILABLE si es futuro, EXPIRED si ya pasó). Requiere ser el técnico asignado. Permitido desde cualquier estado no terminal.' })
+    @ApiParam({ name: 'id', example: 'uuid-incident' })
+    @ApiResponse({ status: 200, description: 'Cita reprogramada' })
+    @ApiResponse({ status: 400, description: 'Horario no disponible o técnico no autorizado' })
+    async reschedule(@Param('id') id: string, @Body() dto: RescheduleIncidentDto) {
+        return this.tracing.run('monolith.controller.incidents.reschedule', { kind: 'server', attributes: { 'incident.id': id } }, () => this._reschedule(id, dto));
+    }
+
+    private async _reschedule(id: string, dto: RescheduleIncidentDto) {
+        return unwrapOrThrow(await this.service.rescheduleIncident({
+            incidentId: IncidentId(id),
+            technicianId: TechnicianId(dto.technicianId),
+            slotIds: dto.slotIds.map((s) => SlotId(s)),
+        }));
+    }
+
+    @Patch(':id/estimated-close')
+    @ApiOperation({ summary: 'Corregir la fecha estimada de cierre', description: 'Dato informativo del técnico, no toca slots ni disponibilidad. Requiere ser el técnico asignado. Permitido desde cualquier estado no terminal.' })
+    @ApiParam({ name: 'id', example: 'uuid-incident' })
+    @ApiResponse({ status: 200, description: 'Cierre estimado actualizado' })
+    async setEstimatedClose(@Param('id') id: string, @Body() dto: SetEstimatedCloseDto) {
+        return this.tracing.run('monolith.controller.incidents.setEstimatedClose', { kind: 'server', attributes: { 'incident.id': id } }, () => this._setEstimatedClose(id, dto));
+    }
+
+    private async _setEstimatedClose(id: string, dto: SetEstimatedCloseDto) {
+        return unwrapOrThrow(await this.service.setEstimatedClose({
+            incidentId: IncidentId(id),
+            technicianId: TechnicianId(dto.technicianId),
+            estimatedCloseAt: new Date(dto.estimatedCloseAt),
         }));
     }
 

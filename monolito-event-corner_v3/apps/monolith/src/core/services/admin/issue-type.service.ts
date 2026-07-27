@@ -367,7 +367,10 @@ export class IssueTypeService implements IIssueTypeService {
     }
 
     if (filters?.deviceType) {
-      types = types.filter((t) => t.deviceType?.value === filters.deviceType);
+      // deviceType null = tipo genérico, aplica a cualquier dispositivo
+      types = types.filter(
+        (t) => !t.deviceType || t.deviceType.value === filters.deviceType,
+      );
     }
 
     if (filters?.visibleToUsers !== undefined) {

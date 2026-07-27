@@ -131,7 +131,7 @@ No hay poller en el nuevo sistema todavía. Cuando se implemente, estas serán v
 | `SN_INTEGRATION_ENABLED` | ⏳ Pendiente | Guard antes de llamar al cliente SN |
 | `SN_DEFAULT_CATEGORY` | ⏳ Pendiente | Fallback cuando `issueType.servicenowCategory` es null |
 | `SN_DEFAULT_PRIORITY` | ⏳ Pendiente | Añadir al payload de SN |
-| `SN_EXTERNAL_ID_FIELD` | ⏳ Pendiente | Nombre del campo en SN al actualizar con external ID |
+| `SN_EXTERNAL_ID_FIELD` | ✅ Implementado | `api-snowq-service/src/common/enum/request-type.enum.ts` (`buildPayloadForServiceNow`) — mapea `payload.externalId` al campo configurable (default `u_external_system_id`). El monolito arma `externalId` como `{incidentId}_{corner.code}` en `servicenow-integration.service.ts` (`buildExternalId`). Verificado end-to-end 2026-07-23. |
 | `SN_CREATE_REQUESTS_ENABLED` | ⏳ Pendiente | Feature flag en `RequestService` |
 | `AVAILABILITY_DAYS_AHEAD` | ⏳ Pendiente | En `AvailabilityService` |
 | `AVAILABILITY_GAP_MIN` | ⏳ Pendiente | En `AvailabilityService` |
