@@ -17,20 +17,23 @@ export class ServiceNowGroupService {
         return this.repo.findAll();
     }
 
-    async register(groupName: string, description?: string): Promise<Result<void>> {
+    async register(groupId: string, groupName: string, description?: string): Promise<Result<void>> {
         return this.tracing.run(
             'monolith.register',
-            { kind: 'server', attributes: { 'snGroup.name': groupName } },
-            () => this._register(groupName, description),
+            { kind: 'server', attributes: { 'snGroup.id': groupId, 'snGroup.name': groupName } },
+            () => this._register(groupId, groupName, description),
         );
     }
 
-    private async _register(groupName: string, description?: string): Promise<Result<void>> {
+    private async _register(groupId: string, groupName: string, description?: string): Promise<Result<void>> {
         const existing = await this.repo.findByName(groupName);
         if (existing.isFailure) return Result.err(existing.unwrapError());
         if (existing.unwrap()) return Result.err(new Error(`Group '${groupName}' is already registered`));
 
-        return this.repo.save(crypto.randomUUID(), groupName, description);
+        // groupId debe ser el sys_id real del grupo en ServiceNow — es lo que
+        // corners.snow_assignment_group / company_issue_configs.servicenow_group
+        // terminan usando para rutear tickets, no un ID interno inventado.
+        return this.repo.save(groupId, groupName, description);
     }
 
     async update(groupId: string, data: { description?: string; isActive?: boolean }): Promise<Result<void>> {
@@ -59,5 +62,26 @@ export class ServiceNowGroupService {
 
     async isKnownGroup(groupName: string): Promise<Result<boolean>> {
         return this.repo.isKnownGroup(groupName);
+    }
+
+    /** Upsert masivo — usado para sincronizar el catálogo local con el vivo de ServiceNow. */
+    async syncMany(
+        groups: { groupId: string; groupName: string; description?: string }[],
+    ): Promise<Result<number>> {
+        return this.tracing.run(
+            'monolith.syncManyGroups',
+            { kind: 'server', attributes: { 'snGroups.count': String(groups.length) } },
+            () => this._syncMany(groups),
+        );
+    }
+
+    private async _syncMany(
+        groups: { groupId: string; groupName: string; description?: string }[],
+    ): Promise<Result<number>> {
+        for (const g of groups) {
+            const result = await this.repo.save(g.groupId, g.groupName, g.description);
+            if (result.isFailure) return Result.err(result.unwrapError());
+        }
+        return Result.ok(groups.length);
     }
 }

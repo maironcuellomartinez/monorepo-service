@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, AlertCircle, CheckCircle2, Monitor } from 'lucide-react'
+import { ArrowLeft, AlertCircle, CheckCircle2, Monitor, Clock, History, ArrowRight } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { incidentsApi, Incident, IncidentStatus } from '@/lib/api'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { SlotPicker } from '@/components/slot-picker'
+import { incidentsApi, Incident, IncidentStatus, IncidentTimelineEntry, AvailabilitySlot } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth'
 import { IncidentStatusBadge } from './incidents-page'
+import { STATUS_LABELS, TIMELINE_ICON } from './dashboard-page'
 
 const STATUS_ORDER: IncidentStatus[] = [
   'CREATED',
@@ -28,6 +31,13 @@ export function IncidentDetailPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
+  const [timeline, setTimeline] = useState<IncidentTimelineEntry[]>([])
+  const [loadingTimeline, setLoadingTimeline] = useState(false)
+
+  // Tomar una incidencia CLOSED/CANCELED la reabre y reprograma en el mismo paso —
+  // hace falta elegir un horario nuevo antes de confirmar.
+  const [slotPickerOpen, setSlotPickerOpen] = useState(false)
+  const [selectedTakeSlot, setSelectedTakeSlot] = useState<AvailabilitySlot | null>(null)
 
   const load = async () => {
     if (!id) return
@@ -42,16 +52,36 @@ export function IncidentDetailPage() {
     } finally {
       setLoading(false)
     }
+
+    setLoadingTimeline(true)
+    incidentsApi.getTimeline(id)
+      .then(setTimeline)
+      .catch(() => setTimeline([]))
+      .finally(() => setLoadingTimeline(false))
   }
 
   useEffect(() => { load() }, [id])
 
+  const needsNewSlot = !!incident && ['CLOSED', 'CANCELED'].includes(incident.status)
+
+  const handleTakeClick = () => {
+    if (needsNewSlot) {
+      setSlotPickerOpen(true)
+      return
+    }
+    handleTake()
+  }
+
   const handleTake = async () => {
     if (!incident || !user?.technicianId) return
+    if (needsNewSlot && !selectedTakeSlot) return
     setActionLoading(true)
     setActionError('')
     try {
-      await incidentsApi.take(incident.id, { technicianId: user.technicianId })
+      await incidentsApi.take(incident.id, {
+        technicianId: user.technicianId,
+        slotIds: needsNewSlot ? selectedTakeSlot!.slotIds : undefined,
+      })
       navigate('/dashboard')
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
@@ -93,7 +123,13 @@ export function IncidentDetailPage() {
   }
 
   const statusIdx = STATUS_ORDER.indexOf(incident.status)
-  const canTake = !incident.currentTechnicianId && user?.technicianId
+  // VALIDATED es terminal definitivo (el cliente ya confirmó la resolución) — no se
+  // puede tomar. CLOSED/CANCELED sí: tomarla la reabre y reprograma en el mismo paso
+  // (ver needsNewSlot más arriba), no hace falta un botón "Reabrir" aparte.
+  const canTake =
+    !incident.currentTechnicianId &&
+    !!user?.technicianId &&
+    incident.status !== 'VALIDATED'
 
   return (
     <div className="flex flex-col h-full">
@@ -162,6 +198,9 @@ export function IncidentDetailPage() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <InfoRow label="ID" value={<code className="font-mono text-xs">{incident.id}</code>} />
+              {incident.issueId != null && (
+                <InfoRow label="Issue ID" value={<code className="font-mono text-xs">{incident.issueId}</code>} />
+              )}
               <InfoRow label="Estado" value={<IncidentStatusBadge status={incident.status} />} />
               <InfoRow label="Corner" value={incident.corner?.name ?? incident.cornerId} />
               <InfoRow label="Tipo" value={incident.issueType?.name ?? incident.issueTypeId} />
@@ -178,6 +217,92 @@ export function IncidentDetailPage() {
                 </>
               )}
               {incident.notes && <InfoRow label="Notas" value={incident.notes} />}
+            </CardContent>
+          </Card>
+
+          {/* Status history */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <History className="h-4 w-4" />
+                Historial de estados {timeline.length > 0 && `(${timeline.length})`}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingTimeline ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => <div key={i} className="h-10 bg-muted animate-pulse rounded" />)}
+                </div>
+              ) : timeline.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">Sin historial disponible</p>
+              ) : (
+                <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
+                  {[...timeline].reverse().map((entry) => {
+                    const Icon = TIMELINE_ICON[entry.actionType] ?? Clock
+                    const label = STATUS_LABELS[entry.actionType] ?? entry.actionType
+                    return (
+                      <div key={entry.activityId} className="flex gap-2.5 p-2 rounded-lg hover:bg-muted/50 text-sm">
+                        <div className="mt-0.5 shrink-0">
+                          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-medium text-xs">{label}</span>
+                              {entry.technicianName && (
+                                <span className="text-xs text-muted-foreground truncate">— {entry.technicianName}</span>
+                              )}
+                            </div>
+                            <span className="text-xs text-muted-foreground shrink-0">{formatDate(entry.createdAt)}</span>
+                          </div>
+                          {entry.fromStatus && entry.toStatus ? (
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                              <span>{STATUS_LABELS[entry.fromStatus] ?? entry.fromStatus}</span>
+                              <ArrowRight className="h-3 w-3" />
+                              <span>{STATUS_LABELS[entry.toStatus] ?? entry.toStatus}</span>
+                            </div>
+                          ) : entry.toStatus && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              Estado: {STATUS_LABELS[entry.toStatus] ?? entry.toStatus}
+                            </div>
+                          )}
+                          {entry.comment && (
+                            <p className="text-xs text-muted-foreground mt-0.5 italic">"{entry.comment}"</p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* ServiceNow info */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">ServiceNow</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <InfoRow
+                label="SN Number"
+                value={incident.servicenowNumber
+                  ? <span className="font-mono font-semibold">{incident.servicenowNumber}</span>
+                  : <span className="text-muted-foreground">Pendiente</span>}
+              />
+              <InfoRow
+                label="SN ID (sys_id)"
+                value={incident.servicenowId
+                  ? <code className="font-mono text-xs">{incident.servicenowId}</code>
+                  : <span className="text-muted-foreground">—</span>}
+              />
+              {incident.snowqCorrelationId && (
+                <Alert>
+                  <AlertDescription className="text-xs">
+                    Correlation ID pendiente de reconciliar: <code className="font-mono">{incident.snowqCorrelationId}</code>
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
 
@@ -210,50 +335,69 @@ export function IncidentDetailPage() {
               </CardContent>
             </Card>
           )}
-
-          {/* ServiceNow info */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">ServiceNow</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <InfoRow
-                label="SN Number"
-                value={incident.servicenowNumber
-                  ? <span className="font-mono font-semibold">{incident.servicenowNumber}</span>
-                  : <span className="text-muted-foreground">Pendiente</span>}
-              />
-              <InfoRow
-                label="SN ID (sys_id)"
-                value={incident.servicenowId
-                  ? <code className="font-mono text-xs">{incident.servicenowId}</code>
-                  : <span className="text-muted-foreground">—</span>}
-              />
-              {incident.snowqCorrelationId && (
-                <Alert>
-                  <AlertDescription className="text-xs">
-                    Correlation ID pendiente de reconciliar: <code className="font-mono">{incident.snowqCorrelationId}</code>
-                  </AlertDescription>
-                </Alert>
-              )}
-            </CardContent>
-          </Card>
         </div>
 
-        {/* Actions — solo Tomar */}
+        {/* Actions — Tomar (reabre y reprograma automáticamente si está CLOSED/CANCELED) */}
         {canTake && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Acciones</CardTitle>
             </CardHeader>
-            <CardContent>
-              <Button onClick={handleTake} disabled={actionLoading}>
+            <CardContent className="space-y-3">
+              {actionError && !slotPickerOpen && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{actionError}</AlertDescription>
+                </Alert>
+              )}
+
+              <Button onClick={handleTakeClick} disabled={actionLoading}>
                 {actionLoading ? 'Tomando...' : 'Tomar incidencia'}
               </Button>
             </CardContent>
           </Card>
         )}
       </div>
+
+      {needsNewSlot && (
+        <Dialog open={slotPickerOpen} onOpenChange={(open) => { if (!open && !actionLoading) { setSlotPickerOpen(false); setSelectedTakeSlot(null); setActionError('') } }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Reabrir y tomar incidencia</DialogTitle>
+              <DialogDescription>
+                Esta incidencia está {incident.status === 'CLOSED' ? 'cerrada' : 'cancelada'} — elegí un horario nuevo para reabrirla y tomarla.
+              </DialogDescription>
+            </DialogHeader>
+
+            {actionError && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{actionError}</AlertDescription>
+              </Alert>
+            )}
+
+            <SlotPicker
+              cornerId={incident.cornerId}
+              duration={incident.durationMinutes ?? 60}
+              selectedSlot={selectedTakeSlot}
+              onSelect={setSelectedTakeSlot}
+            />
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={actionLoading}
+                onClick={() => { setSlotPickerOpen(false); setSelectedTakeSlot(null); setActionError('') }}
+              >
+                Cancelar
+              </Button>
+              <Button disabled={!selectedTakeSlot || actionLoading} onClick={handleTake}>
+                {actionLoading ? 'Tomando...' : 'Confirmar y tomar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

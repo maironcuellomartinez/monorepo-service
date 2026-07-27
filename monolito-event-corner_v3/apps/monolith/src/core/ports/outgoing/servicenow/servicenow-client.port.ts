@@ -18,6 +18,8 @@ export interface ServiceNowIncidentPayload {
   expected_start?: Date;
   /** ID del incident en el monolito — usado por snowq para deduplicar reintentos/re-encolados. */
   externalId?: string;
+  /** SN exige assigned_to al crear el ticket — se usa un técnico por default (SN_DEFAULT_TECHNICIAN); se reasigna al técnico real al tomar la incidencia. */
+  assigned_to?: string;
 }
 
 export interface ServiceNowRequestPayload {

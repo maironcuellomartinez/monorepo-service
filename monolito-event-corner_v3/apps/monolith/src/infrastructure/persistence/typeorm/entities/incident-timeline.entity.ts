@@ -14,7 +14,7 @@ export class IncidentTimelineEntity {
     @Column({ type: 'varchar', length: 50, nullable: true })
     technician_id: string;
 
-    @Column({ length: 20 })
+    @Column({ length: 40 })
     action_type: string;
 
     @Column({ type: 'varchar', length: 20, nullable: true })

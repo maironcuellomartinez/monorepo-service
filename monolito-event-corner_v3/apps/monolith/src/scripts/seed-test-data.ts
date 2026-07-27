@@ -344,6 +344,7 @@ async function main() {
             {
                 id:          IDS.corners.buenosAires,
                 name:        'Corner Buenos Aires — CABA',
+                code:        'corner_buenos_aires',
                 client_name: 'Santander Argentina',
                 description: 'Corner de atención presencial en sede Buenos Aires',
                 sn_location: 'ARG-BA-001',
@@ -354,6 +355,7 @@ async function main() {
             {
                 id:          IDS.corners.madrid,
                 name:        'Corner Madrid — Sede Central',
+                code:        'corner_madrid',
                 client_name: 'Santander España',
                 description: 'Corner de atención presencial en sede Madrid',
                 sn_location: 'ESP-MD-001',
@@ -365,12 +367,12 @@ async function main() {
         for (const c of corners) {
             await qr.query(
                 `INSERT INTO corners
-                   (corner_id, name, client_name, description,
+                   (corner_id, name, code, client_name, description,
                     servicenow_location, snow_assignment_group,
                     latitude, longitude, only_technicians, is_active,
                     created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`,
-                [c.id, c.name, c.client_name, c.description,
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`,
+                [c.id, c.name, c.code, c.client_name, c.description,
                  c.sn_location, c.sn_group, c.lat, c.lon, now, now],
             );
             console.log(`   ✓ ${c.name}`);

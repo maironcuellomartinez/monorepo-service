@@ -6,6 +6,13 @@ import { DomainEvent } from '@app/shared/domain-event';
 
 export interface RequestProps {
     id: RequestId;
+    /**
+     * Correlativo incremental (por entidad) usado como referencia externa
+     * estable — análogo al id numérico del legacy (ej. '1526'). Lo asigna la
+     * DB (AUTO_INCREMENT) al insertar, por eso es null hasta que se recarga
+     * el agregado desde persistencia tras el primer save().
+     */
+    issueId: number | null;
     issueTypeId: IssueTypeId;
     technicianId: TechnicianId;
     customerId: CustomerId;
@@ -30,6 +37,8 @@ export class Request {
 
     // Getters
     get id(): RequestId { return this.props.id; }
+    /** Correlativo incremental estable — null hasta el primer reload post-persistencia. */
+    get issueId(): number | null { return this.props.issueId; }
     get issueTypeId(): IssueTypeId { return this.props.issueTypeId; }
     get technicianId(): TechnicianId { return this.props.technicianId; }
     get customerId(): CustomerId { return this.props.customerId; }
@@ -117,9 +126,11 @@ export class Request {
         createdAt: Date,
         updatedAt: Date,
         snowqCorrelationId: string | null = null,
+        issueId: number | null = null,
     ): Request {
         return new Request({
             id,
+            issueId,
             issueTypeId,
             technicianId,
             customerId,
@@ -154,6 +165,7 @@ export class Request {
         const now = new Date();
         const request = new Request({
             id,
+            issueId: null,
             issueTypeId,
             technicianId,
             customerId,

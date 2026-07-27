@@ -92,6 +92,7 @@ export class ServiceNowOutboundController {
         description: payload.description,
         assignmentGroup: payload.assignment_group,
         caller_id: payload.caller_id,
+        assigned_to: payload.assigned_to,
         category: payload.category,
         company: payload.company,
         location: payload.location,

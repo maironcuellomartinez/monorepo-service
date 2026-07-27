@@ -95,15 +95,15 @@ export function isTerminalStatus(status: IncidentStatus): boolean {
  * Verifica si la transición `current → next` es válida según la máquina de estados.
  * Nota: las transiciones de `reopen` y `validate` van por métodos dedicados en la entidad,
  * no por `changeStatus`, por lo que CLOSED no tiene salidas aquí.
+ * El técnico puede cerrar como resuelta desde cualquier estado activo (paridad
+ * legacy) — no hace falta pasar por PENDING_PICKUP/PENDING_REPLACEMENT_DELIVERY.
  */
 export function canTransitionTo(current: IncidentStatus, next: IncidentStatus): boolean {
     const validTransitions: Record<IncidentStatus, IncidentStatus[]> = {
         [IncidentStatus.CREATED]: [IncidentStatus.DELIVERED, IncidentStatus.CANCELED],
         [IncidentStatus.DELIVERED]: [
             IncidentStatus.IN_PROGRESS,
-            IncidentStatus.PENDING_THIRD_PARTY,
-            IncidentStatus.PENDING_USER,
-            IncidentStatus.PENDING_SPARE_PART,
+            IncidentStatus.CLOSED,
         ],
         [IncidentStatus.IN_PROGRESS]: [
             IncidentStatus.PENDING_THIRD_PARTY,
@@ -111,14 +111,21 @@ export function canTransitionTo(current: IncidentStatus, next: IncidentStatus): 
             IncidentStatus.PENDING_SPARE_PART,
             IncidentStatus.PENDING_PICKUP,
             IncidentStatus.PENDING_REPLACEMENT_DELIVERY,
+            IncidentStatus.CLOSED,
         ],
-        [IncidentStatus.PENDING_THIRD_PARTY]: [IncidentStatus.IN_PROGRESS],
-        [IncidentStatus.PENDING_USER]: [IncidentStatus.IN_PROGRESS],
-        [IncidentStatus.PENDING_SPARE_PART]: [IncidentStatus.IN_PROGRESS],
-        [IncidentStatus.PENDING_PICKUP]: [IncidentStatus.CLOSED],
-        [IncidentStatus.PENDING_REPLACEMENT_DELIVERY]: [IncidentStatus.CLOSED],
+        [IncidentStatus.PENDING_THIRD_PARTY]: [IncidentStatus.IN_PROGRESS, IncidentStatus.CLOSED],
+        [IncidentStatus.PENDING_USER]: [IncidentStatus.IN_PROGRESS, IncidentStatus.CLOSED],
+        [IncidentStatus.PENDING_SPARE_PART]: [IncidentStatus.IN_PROGRESS, IncidentStatus.CLOSED],
+        [IncidentStatus.PENDING_PICKUP]: [IncidentStatus.IN_PROGRESS, IncidentStatus.CLOSED],
+        [IncidentStatus.PENDING_REPLACEMENT_DELIVERY]: [IncidentStatus.IN_PROGRESS, IncidentStatus.CLOSED],
         [IncidentStatus.CLOSED]: [],   // solo via reopen() / validate()
-        [IncidentStatus.REOPENED]: [IncidentStatus.IN_PROGRESS],
+        // REOPENED = nuevo slot, el cliente debe entregar el dispositivo de
+        // nuevo (igual que CREATED) — no salta directo a IN_PROGRESS.
+        [IncidentStatus.REOPENED]: [
+            IncidentStatus.DELIVERED,
+            IncidentStatus.CLOSED,
+            IncidentStatus.CANCELED,
+        ],
         [IncidentStatus.VALIDATED]: [],
         [IncidentStatus.CANCELED]: [],
     };

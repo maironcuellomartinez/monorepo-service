@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, MapPin, AlertCircle, ChevronDown, ChevronUp, Pencil, Trash2, SquarePen, Search, CheckCircle2, Clock, Globe, Building2, Wrench } from 'lucide-react'
+import { Plus, MapPin, AlertCircle, ChevronDown, ChevronUp, Pencil, Trash2, SquarePen, Search, CheckCircle2, Clock, Globe, Building2, Wrench, RefreshCw } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -142,6 +142,8 @@ export function CornersPage() {
   const [snGroupSearch, setSnGroupSearch] = useState('')
   const [selectedSnLocationId, setSelectedSnLocationId] = useState('')
   const [selectedSnGroupId, setSelectedSnGroupId] = useState('')
+  const [syncingGroups, setSyncingGroups] = useState(false)
+  const [syncGroupsError, setSyncGroupsError] = useState('')
 
   // ── Load ──────────────────────────────────────────────────────────────────────
 
@@ -160,10 +162,24 @@ export function CornersPage() {
 
   useEffect(() => {
     load()
-    // Catálogo vivo de SN: el catálogo local del monolito puede estar vacío
-    snowGroupsApi.listSnCatalog().then(setSnowGroups).catch(() => setSnowGroups([]))
+    // Catálogo local (rápido) — se sincroniza manualmente con el botón "Sincronizar"
+    snowGroupsApi.list().then(setSnowGroups).catch(() => setSnowGroups([]))
     snowLocationsApi.listSnCatalog().then(setSnLocations).catch(() => setSnLocations([]))
   }, [])
+
+  const handleSyncGroups = async () => {
+    setSyncingGroups(true)
+    setSyncGroupsError('')
+    try {
+      await snowGroupsApi.sync()
+      setSnowGroups(await snowGroupsApi.list())
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setSyncGroupsError(msg || 'Error al sincronizar con ServiceNow')
+    } finally {
+      setSyncingGroups(false)
+    }
+  }
 
   const loadSchedules = async (cornerId: string) => {
     if (schedules[cornerId]) return
@@ -879,7 +895,23 @@ export function CornersPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Assignment Group</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Assignment Group</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 gap-1.5 text-xs text-muted-foreground"
+                      disabled={syncingGroups}
+                      onClick={handleSyncGroups}
+                    >
+                      <RefreshCw className={cn('h-3.5 w-3.5', syncingGroups && 'animate-spin')} />
+                      Sincronizar
+                    </Button>
+                  </div>
+                  {syncGroupsError && (
+                    <p className="text-xs text-destructive">{syncGroupsError}</p>
+                  )}
                   <div className="relative">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input

@@ -28,10 +28,19 @@ export class CornerService implements ICornerService {
     }
 
     private async _createCorner(command: CreateCornerCommand): Promise<Result<Corner>> {
+        const code = (command.code?.trim() || this.slugify(command.name)).toLowerCase();
+
+        const existingResult = await this.cornerRepo.findByCode(code);
+        if (existingResult.isFailure) return Result.err(existingResult.unwrapError());
+        if (existingResult.unwrap()) {
+            return Result.err(new Error(`Corner code '${code}' ya está en uso`));
+        }
+
         const cornerId = crypto.randomUUID() as unknown as CornerId;
         const cornerResult = Corner.create(
             cornerId,
             command.name,
+            code,
             command.onlyTechnicians ?? false,
         );
         if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
@@ -79,6 +88,20 @@ export class CornerService implements ICornerService {
         if (command.onlyTechnicians !== undefined) corner.updateOperationalConfig(command.onlyTechnicians);
         if (command.isActive !== undefined) {
             if (command.isActive) corner.activate(); else corner.deactivate();
+        }
+
+        if (command.code !== undefined) {
+            const newCode = command.code.trim().toLowerCase();
+            if (newCode !== corner.code) {
+                const existingResult = await this.cornerRepo.findByCode(newCode);
+                if (existingResult.isFailure) return Result.err(existingResult.unwrapError());
+                const existing = existingResult.unwrap();
+                if (existing && existing.id.toString() !== corner.id.toString()) {
+                    return Result.err(new Error(`Corner code '${newCode}' ya está en uso`));
+                }
+                const codeResult = corner.updateCode(newCode);
+                if (codeResult.isFailure) return Result.err(codeResult.unwrapError());
+            }
         }
 
         const updateResult = await this.cornerRepo.update(corner);
@@ -129,6 +152,22 @@ export class CornerService implements ICornerService {
             { kind: 'server', attributes: { 'corner.scheduleId': scheduleId } },
             () => this._removeSchedule(scheduleId),
         );
+    }
+
+    private static readonly ACCENT_MAP: Record<string, string> = {
+        á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u', ü: 'u', ñ: 'n',
+    };
+
+    /** Deriva un code (slug snake_case) a partir del nombre cuando no se provee uno explícito. */
+    private slugify(name: string): string {
+        const withoutAccents = name
+            .toLowerCase()
+            .split('')
+            .map(ch => CornerService.ACCENT_MAP[ch] ?? ch)
+            .join('');
+        return withoutAccents
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_+|_+$/g, '');
     }
 
     private async _removeSchedule(scheduleId: string): Promise<Result<void>> {

@@ -16,6 +16,8 @@ export interface CreateIncidentCommand {
     metadata?: Record<string, any>;
     /** ID del técnico que generó holds sobre los slots (lote). Si presente, convierte HELD → BOOKED en lugar de AVAILABLE → BOOKED. */
     heldByUserId?: string;
+    /** ABAC externalId de quien crea la incidencia — si resuelve a un técnico, se usa como assigned_to en ServiceNow. */
+    creatorExternalId?: string;
 }
 
 export interface DeliverIncidentCommand {
@@ -26,12 +28,27 @@ export interface DeliverIncidentCommand {
 export interface TakeIncidentCommand {
     incidentId: IncidentId;
     technicianId: TechnicianId;
+    /** Requerido si la incidencia está CLOSED o CANCELED: al tomarla se reabre (→ REOPENED) y se reprograma a este horario. */
+    slotIds?: SlotId[];
 }
 
 export interface ReleaseIncidentCommand {
     incidentId: IncidentId;
     technicianId: TechnicianId;
     reason?: string;
+}
+
+export interface RescheduleIncidentCommand {
+    incidentId: IncidentId;
+    technicianId: TechnicianId;
+    /** IDs de los slots nuevos (ya consultados vía GET /internal/availability). */
+    slotIds: SlotId[];
+}
+
+export interface SetEstimatedCloseCommand {
+    incidentId: IncidentId;
+    technicianId: TechnicianId;
+    estimatedCloseAt: Date;
 }
 
 export interface ChangeIncidentStatusCommand {
@@ -104,6 +121,19 @@ export interface IIncidentService {
      * @param {incidentId, technicianId, reason} command 
      */
     releaseIncident(command: ReleaseIncidentCommand): Promise<Result<Incident>>;
+    /**
+     * Reprograma la cita a un nuevo horario — libera el/los slot(s) actuales
+     * (a AVAILABLE si son futuros, EXPIRED si ya pasaron) y reserva los nuevos.
+     * Requiere ser el técnico actualmente asignado. Permitido desde cualquier
+     * estado no terminal (paridad con legacy).
+     * @param {incidentId, technicianId, slotIds} command
+     */
+    rescheduleIncident(command: RescheduleIncidentCommand): Promise<Result<Incident>>;
+    /**
+     * Corrige la fecha estimada de cierre. Dato informativo, no toca slots.
+     * @param {incidentId, technicianId, estimatedCloseAt} command
+     */
+    setEstimatedClose(command: SetEstimatedCloseCommand): Promise<Result<Incident>>;
     /**
      * Cambia el estado de la incidencia
      * @param {incidentId, technicianId, newStatus, comment} command 

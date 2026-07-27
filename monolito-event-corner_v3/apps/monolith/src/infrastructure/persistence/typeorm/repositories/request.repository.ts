@@ -24,12 +24,32 @@ export class TypeOrmRequestRepository implements IRequestRepository {
     async save(request: Request): Promise<Result<void>> {
         try {
             const entity = this.toEntity(request);
+            // issue_id no es AUTO_INCREMENT (ver comentario en RequestEntity) —
+            // se asigna acá vía la tabla issue_sequences la primera vez que se
+            // persiste el agregado; en saves posteriores ya viene poblado desde
+            // el reload (findById) que precede a cada update.
+            entity.issue_id = request.issueId ?? (await this.allocateIssueId());
             await this.repo.save(entity);
 
             return Result.ok(undefined);
         } catch (error) {
             return Result.err(error);
         }
+    }
+
+    /**
+     * Asigna el próximo valor de la secuencia `issue_sequences` (fila
+     * 'request') de forma atómica — ver el comentario análogo en
+     * TypeOrmIncidentRepository.allocateIssueId().
+     */
+    private async allocateIssueId(): Promise<number> {
+        return this.repo.manager.transaction(async (txEm) => {
+            await txEm.query(
+                `UPDATE issue_sequences SET next_value = LAST_INSERT_ID(next_value + 1) WHERE entity_name = 'request'`,
+            );
+            const rows = await txEm.query(`SELECT LAST_INSERT_ID() AS id`);
+            return Number(rows[0].id);
+        });
     }
 
     async findById(id: RequestId | string): Promise<Result<Request | null>> {
@@ -285,6 +305,7 @@ export class TypeOrmRequestRepository implements IRequestRepository {
             entity.created_at,
             entity.updated_at,
             entity.snowq_correlation_id || null,
+            entity.issue_id ?? null,
         );
     }
 }

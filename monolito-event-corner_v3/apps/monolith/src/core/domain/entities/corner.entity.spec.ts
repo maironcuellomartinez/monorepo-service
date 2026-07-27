@@ -6,7 +6,7 @@ import { CornerId } from '@app/shared/types/branded-ids';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeCorner(): Corner {
-    return Corner.create(CornerId('corner-1'), 'Sala A').unwrap();
+    return Corner.create(CornerId('corner-1'), 'Sala A', 'sala_a').unwrap();
 }
 
 const MON_SCHEDULE = { dayOfWeek: DayOfWeek.MONDAY, startTime: '09:00', endTime: '17:00' };
@@ -15,17 +15,18 @@ const MON_SCHEDULE = { dayOfWeek: DayOfWeek.MONDAY, startTime: '09:00', endTime:
 
 describe('Corner.create()', () => {
     it('crea un corner activo sin schedules', () => {
-        const result = Corner.create(CornerId('c-1'), 'Sala A');
+        const result = Corner.create(CornerId('c-1'), 'Sala A', 'sala_a');
 
         expect(result.isSuccess).toBe(true);
         const corner = result.unwrap();
         expect(corner.isActive).toBe(true);
         expect(corner.schedules).toHaveLength(0);
         expect(corner.onlyTechnicians).toBe(false);
+        expect(corner.code).toBe('sala_a');
     });
 
     it('crea un corner exclusivo para técnicos', () => {
-        const result = Corner.create(CornerId('c-1'), 'Sala Técnica', true);
+        const result = Corner.create(CornerId('c-1'), 'Sala Técnica', 'sala_tecnica', true);
 
         expect(result.isSuccess).toBe(true);
         expect(result.unwrap().onlyTechnicians).toBe(true);
@@ -33,11 +34,39 @@ describe('Corner.create()', () => {
     });
 
     it('falla con nombre vacío', () => {
-        expect(Corner.create(CornerId('c-1'), '').isFailure).toBe(true);
+        expect(Corner.create(CornerId('c-1'), '', 'sala_a').isFailure).toBe(true);
     });
 
     it('falla con nombre solo espacios', () => {
-        expect(Corner.create(CornerId('c-1'), '   ').isFailure).toBe(true);
+        expect(Corner.create(CornerId('c-1'), '   ', 'sala_a').isFailure).toBe(true);
+    });
+
+    it('falla con code vacío', () => {
+        expect(Corner.create(CornerId('c-1'), 'Sala A', '').isFailure).toBe(true);
+    });
+
+    it('falla con code en formato inválido (mayúsculas/espacios)', () => {
+        expect(Corner.create(CornerId('c-1'), 'Sala A', 'Sala A').isFailure).toBe(true);
+    });
+});
+
+describe('Corner.updateCode()', () => {
+    it('actualiza el code con un slug válido', () => {
+        const corner = makeCorner();
+
+        const result = corner.updateCode('local_abelias');
+
+        expect(result.isSuccess).toBe(true);
+        expect(corner.code).toBe('local_abelias');
+    });
+
+    it('falla con formato inválido', () => {
+        const corner = makeCorner();
+
+        const result = corner.updateCode('Local Abelias');
+
+        expect(result.isFailure).toBe(true);
+        expect(corner.code).toBe('sala_a');
     });
 });
 
@@ -189,7 +218,7 @@ describe('Corner.updateOperationalConfig()', () => {
     });
 
     it('actualiza onlyTechnicians a false', () => {
-        const corner = Corner.create(CornerId('c-1'), 'Sala Técnica', true).unwrap();
+        const corner = Corner.create(CornerId('c-1'), 'Sala Técnica', 'sala_tecnica', true).unwrap();
 
         corner.updateOperationalConfig(false);
 
@@ -235,7 +264,7 @@ describe('Corner.canUserCreateIncident()', () => {
     });
 
     it('retorna false si es exclusivo de técnicos', () => {
-        const corner = Corner.create(CornerId('c-1'), 'Sala Técnica', true).unwrap();
+        const corner = Corner.create(CornerId('c-1'), 'Sala Técnica', 'sala_tecnica', true).unwrap();
         expect(corner.canUserCreateIncident()).toBe(false);
     });
 });

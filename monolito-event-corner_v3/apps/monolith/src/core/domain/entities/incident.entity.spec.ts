@@ -207,6 +207,87 @@ describe('Incident.take()', () => {
     });
 });
 
+describe('Incident.reschedule()', () => {
+    it('actualiza slotIds/scheduledRange/durationMinutes', () => {
+        const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS }); // tech-1 asignado
+        const newRange = futureRange(180, 45);
+
+        const result = incident.reschedule(TECH, [SlotId('slot-9')], newRange);
+
+        expect(result.isSuccess).toBe(true);
+        expect(incident.slotIds.map(s => s.toString())).toEqual(['slot-9']);
+        expect(incident.scheduledRange.start.getTime()).toBe(newRange.start.getTime());
+        expect(incident.durationMinutes).toBe(45);
+    });
+
+    it('permite reprogramar desde cualquier estado no terminal (ej. PENDING_USER)', () => {
+        const incident = makeIncident({ status: IncidentStatus.PENDING_USER });
+        const result = incident.reschedule(TECH, [SlotId('slot-9')], futureRange(180, 30));
+        expect(result.isSuccess).toBe(true);
+    });
+
+    it('falla si lo intenta un técnico distinto al asignado', () => {
+        const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS }); // tech-1 asignado
+        const result = incident.reschedule(TechnicianId('tech-2'), [SlotId('slot-9')], futureRange(180, 30));
+        expect(result.isFailure).toBe(true);
+    });
+
+    it('falla si la incidencia está VALIDATED (terminal)', () => {
+        const incident = makeIncident({ status: IncidentStatus.VALIDATED });
+        const result = incident.reschedule(TECH, [SlotId('slot-9')], futureRange(180, 30));
+        expect(result.isFailure).toBe(true);
+    });
+
+    it('emite INCIDENT_RESCHEDULED con los slots previos y nuevos', () => {
+        const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS });
+        incident.pullEvents();
+
+        incident.reschedule(TECH, [SlotId('slot-9')], futureRange(180, 30));
+        const events = incident.pullEvents();
+
+        const rescheduled = events.find(e => e.type === 'INCIDENT_RESCHEDULED');
+        expect(rescheduled).toBeDefined();
+        expect(rescheduled!.data.previousSlotIds.map((s: any) => s.toString())).toEqual(['slot-1', 'slot-2']);
+        expect(rescheduled!.data.newSlotIds.map((s: any) => s.toString())).toEqual(['slot-9']);
+    });
+});
+
+describe('Incident.setEstimatedClose()', () => {
+    it('actualiza estimatedCloseAt', () => {
+        const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS });
+        const newClose = new Date(Date.now() + 5 * 24 * 60 * 60_000);
+
+        const result = incident.setEstimatedClose(TECH, newClose);
+
+        expect(result.isSuccess).toBe(true);
+        expect(incident.estimatedCloseAt?.getTime()).toBe(newClose.getTime());
+    });
+
+    it('permite corregirlo desde cualquier estado no terminal', () => {
+        const incident = makeIncident({ status: IncidentStatus.PENDING_SPARE_PART });
+        const result = incident.setEstimatedClose(TECH, new Date(Date.now() + 86_400_000));
+        expect(result.isSuccess).toBe(true);
+    });
+
+    it('falla si lo intenta un técnico distinto al asignado', () => {
+        const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS });
+        const result = incident.setEstimatedClose(TechnicianId('tech-2'), new Date(Date.now() + 86_400_000));
+        expect(result.isFailure).toBe(true);
+    });
+
+    it('falla si la incidencia está CLOSED (terminal)', () => {
+        const incident = makeIncident({ status: IncidentStatus.CLOSED });
+        const result = incident.setEstimatedClose(TECH, new Date(Date.now() + 86_400_000));
+        expect(result.isFailure).toBe(true);
+    });
+
+    it('falla con una fecha inválida', () => {
+        const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS });
+        const result = incident.setEstimatedClose(TECH, new Date('not-a-date'));
+        expect(result.isFailure).toBe(true);
+    });
+});
+
 describe('Incident.changeStatus()', () => {
     it('DELIVERED → IN_PROGRESS', () => {
         const incident = makeIncident({ status: IncidentStatus.DELIVERED });
@@ -339,13 +420,29 @@ describe('Incident.reopen()', () => {
         expect(incident.currentTechnicianId).toBeNull();
     });
 
-    it('desde REOPENED puede ir a IN_PROGRESS', () => {
-        const incident = makeIncident({ status: IncidentStatus.REOPENED });
-        const result = incident.changeStatus(IncidentStatus.IN_PROGRESS, TECH);
+    it('transiciona de CANCELED a REOPENED (recuperar cancelada por error)', () => {
+        const incident = makeIncident({ status: IncidentStatus.CANCELED });
+        const result = incident.reopen('cancelada por error');
         expect(result.isSuccess).toBe(true);
+        expect(incident.status).toBe(IncidentStatus.REOPENED);
+        expect(incident.currentTechnicianId).toBeNull();
     });
 
-    it('falla si no está en CLOSED', () => {
+    it('desde REOPENED no puede ir directo a IN_PROGRESS (debe entregar el dispositivo de nuevo)', () => {
+        const incident = makeIncident({ status: IncidentStatus.REOPENED });
+        const result = incident.changeStatus(IncidentStatus.IN_PROGRESS, TECH);
+        expect(result.isFailure).toBe(true);
+    });
+
+    it('desde REOPENED puede ir a DELIVERED, CLOSED o CANCELED', () => {
+        for (const target of [IncidentStatus.DELIVERED, IncidentStatus.CLOSED, IncidentStatus.CANCELED]) {
+            const incident = makeIncident({ status: IncidentStatus.REOPENED });
+            const result = incident.changeStatus(target, TECH);
+            expect(result.isSuccess).toBe(true);
+        }
+    });
+
+    it('falla si no está en CLOSED ni CANCELED', () => {
         const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS });
         expect(incident.reopen().isFailure).toBe(true);
     });

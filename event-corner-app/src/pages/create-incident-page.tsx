@@ -119,6 +119,23 @@ export function CreateIncidentPage() {
     }
   }
 
+  // El dispositivo elegido en el paso 3 filtra los tipos disponibles en el paso 4:
+  // solo se muestran los tipos de ese device_type + los genéricos (deviceType null).
+  // Con serial manual no se conoce el device_type, así que no se filtra.
+  const deviceType = selectedDevice?.deviceType ?? null
+  const filteredIssueTypes = deviceType
+    ? issueTypes.filter((it) => !it.deviceType || it.deviceType === deviceType)
+    : issueTypes
+
+  useEffect(() => {
+    if (selectedIssueTypeId && !filteredIssueTypes.some((it) => it.id === selectedIssueTypeId)) {
+      setSelectedIssueTypeId('')
+      setSelectedSlot(null)
+      setSlots([])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceType])
+
   // La duración de la cita la define el tipo de incidencia elegido en el paso 4
   const duration = issueTypes.find((it) => it.id === selectedIssueTypeId)?.workMinutes ?? 60
 
@@ -551,7 +568,7 @@ export function CreateIncidentPage() {
                       <SelectValue placeholder="Seleccionar tipo..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {issueTypes
+                      {filteredIssueTypes
                         .filter((it) => it.isActive !== false)
                         .map((it) => (
                           <SelectItem key={it.id} value={it.id}>
@@ -560,6 +577,11 @@ export function CreateIncidentPage() {
                         ))}
                     </SelectContent>
                   </Select>
+                  {deviceType && filteredIssueTypes.length < issueTypes.length && (
+                    <p className="text-xs text-muted-foreground">
+                      Mostrando tipos para dispositivos de tipo &quot;{deviceType}&quot;
+                    </p>
+                  )}
                 </div>
                 {issueType && (
                   <div className="text-sm text-muted-foreground bg-muted/50 rounded p-3 space-y-1">

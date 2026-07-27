@@ -162,6 +162,23 @@ function IncidentWizardDialog({
     }
   }
 
+  // El dispositivo elegido en el paso 3 filtra los tipos disponibles en el paso 4:
+  // solo se muestran los tipos de ese device_type + los genéricos (deviceType null).
+  // Con serial manual (o en edición, donde solo se conoce el serial) no se filtra.
+  const deviceType = selectedDevice?.deviceType ?? null
+  const filteredIssueTypes = deviceType
+    ? issueTypes.filter((it) => !it.deviceType || it.deviceType === deviceType)
+    : issueTypes
+
+  useEffect(() => {
+    if (selectedIssueTypeId && !filteredIssueTypes.some((it) => it.id === selectedIssueTypeId)) {
+      setSelectedIssueTypeId('')
+      setSelectedSlot(null)
+      setSlots([])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceType])
+
   // La duración de la cita la define el tipo de incidencia elegido en el paso 4
   const duration = issueTypes.find((it) => it.id === selectedIssueTypeId)?.workMinutes ?? 60
 
@@ -402,13 +419,18 @@ function IncidentWizardDialog({
               >
                 <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
                 <SelectContent>
-                  {issueTypes.filter((it) => it.isActive !== false).map((it) => (
+                  {filteredIssueTypes.filter((it) => it.isActive !== false).map((it) => (
                     <SelectItem key={it.id} value={it.id}>
                       {it.name}{it.workMinutes ? ` (${it.workMinutes} min)` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {deviceType && filteredIssueTypes.length < issueTypes.length && (
+                <p className="text-xs text-muted-foreground">
+                  Mostrando tipos para dispositivos de tipo &quot;{deviceType}&quot;
+                </p>
+              )}
             </div>
             {issueType && (
               <div className="text-xs text-muted-foreground bg-muted/50 rounded p-2 space-y-0.5">

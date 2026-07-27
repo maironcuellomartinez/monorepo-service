@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsNotEmpty, IsArray, IsInt, Min, Max, IsObject, ValidateNested } from 'class-validator';
+import { IsOptional, IsString, IsNotEmpty, IsArray, IsInt, Min, Max, IsObject, ValidateNested, IsDateString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class DeviceDto {
@@ -50,6 +50,10 @@ export class CreateIncidentDto {
     @ApiPropertyOptional({ example: { channel: 'web' }, description: 'Metadatos adicionales' })
     @IsOptional()
     metadata?: Record<string, any>;
+
+    @ApiPropertyOptional({ description: 'ABAC externalId de quien crea la incidencia — si es técnico, se usa como assigned_to en ServiceNow' })
+    @IsOptional() @IsString()
+    creatorExternalId?: string;
 }
 
 export class DeliverIncidentDto {
@@ -62,6 +66,30 @@ export class TakeIncidentDto {
     @ApiProperty({ example: 'uuid-technician', description: 'ID del técnico que toma la incidencia' })
     @IsString() @IsNotEmpty()
     technicianId: string;
+
+    @ApiPropertyOptional({ type: [String], example: ['uuid-slot-nuevo'], description: 'Requerido si la incidencia está CLOSED o CANCELED: horario nuevo — se reabre y reprograma automáticamente al tomarla.' })
+    @IsOptional() @IsArray() @IsString({ each: true })
+    slotIds?: string[];
+}
+
+export class RescheduleIncidentDto {
+    @ApiProperty({ example: 'uuid-technician', description: 'ID del técnico asignado (debe ser el actual)' })
+    @IsString() @IsNotEmpty()
+    technicianId: string;
+
+    @ApiProperty({ type: [String], example: ['uuid-slot-nuevo'], description: 'IDs de los slots nuevos — obtenidos vía GET /internal/availability para la fecha elegida' })
+    @IsArray() @IsString({ each: true })
+    slotIds: string[];
+}
+
+export class SetEstimatedCloseDto {
+    @ApiProperty({ example: 'uuid-technician', description: 'ID del técnico asignado (debe ser el actual)' })
+    @IsString() @IsNotEmpty()
+    technicianId: string;
+
+    @ApiProperty({ example: '2026-08-11T00:00:00.000Z', description: 'Nueva fecha estimada de cierre' })
+    @IsDateString()
+    estimatedCloseAt: string;
 }
 
 export class ReleaseIncidentDto {

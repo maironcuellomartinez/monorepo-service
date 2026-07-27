@@ -27,6 +27,8 @@ import {
 import { CreateIncidentDto } from './dto/create-incident.dto';
 import { TakeIncidentDto } from './dto/take-incident.dto';
 import { ReleaseIncidentDto } from './dto/release-incident.dto';
+import { RescheduleIncidentDto } from './dto/reschedule-incident.dto';
+import { SetEstimatedCloseDto } from './dto/set-estimated-close.dto';
 import { ChangeIncidentStatusDto } from './dto/change-status.dto';
 import { TracingService } from '@app/observability';
 
@@ -180,15 +182,17 @@ export class IncidentsController {
     summary: 'Crear incidencia',
     description: 'Estado inicial: CREATED.',
   })
-  async create(@Body() dto: CreateIncidentDto) {
+  async create(@Body() dto: CreateIncidentDto, @CurrentUser() user: JwtPayload) {
     return this.tracing.run(
       'gateway.controller.incidents.create',
       { kind: 'server' },
-      () => this._create(dto),
+      () => this._create(dto, user),
     );
   }
-  private async _create(dto: CreateIncidentDto) {
-    return this.monolith.post('/incidents', dto);
+  private async _create(dto: CreateIncidentDto, user: JwtPayload) {
+    // Quien crea la incidencia (si es técnico) queda como assigned_to en SN —
+    // el monolith resuelve si ese externalId corresponde a un técnico o no.
+    return this.monolith.post('/incidents', { ...dto, creatorExternalId: user.sub });
   }
 
   @Patch(':id/deliver')
@@ -250,6 +254,52 @@ export class IncidentsController {
   }
   private async _release(id: string, dto: ReleaseIncidentDto) {
     return this.monolith.patch(`/incidents/${id}/release`, dto);
+  }
+
+  @Patch(':id/reschedule')
+  @Roles('technician', 'admin', 'super-admin')
+  @Permission('incident', 'change-status')
+  @ApiOperation({
+    summary: 'Reprogramar la cita',
+    description:
+      'Cambia el horario de la incidencia (nuevo slot + libera el anterior). Requiere ser el técnico asignado. Permitido desde cualquier estado no terminal.',
+  })
+  @ApiParam({ name: 'id' })
+  async reschedule(
+    @Param('id') id: string,
+    @Body() dto: RescheduleIncidentDto,
+  ) {
+    return this.tracing.run(
+      'gateway.controller.incidents.reschedule',
+      { kind: 'server', attributes: { 'incident.id': id } },
+      () => this._reschedule(id, dto),
+    );
+  }
+  private async _reschedule(id: string, dto: RescheduleIncidentDto) {
+    return this.monolith.patch(`/incidents/${id}/reschedule`, dto);
+  }
+
+  @Patch(':id/estimated-close')
+  @Roles('technician', 'admin', 'super-admin')
+  @Permission('incident', 'change-status')
+  @ApiOperation({
+    summary: 'Corregir la fecha estimada de cierre',
+    description:
+      'Dato informativo del técnico, no toca slots. Requiere ser el técnico asignado.',
+  })
+  @ApiParam({ name: 'id' })
+  async setEstimatedClose(
+    @Param('id') id: string,
+    @Body() dto: SetEstimatedCloseDto,
+  ) {
+    return this.tracing.run(
+      'gateway.controller.incidents.setEstimatedClose',
+      { kind: 'server', attributes: { 'incident.id': id } },
+      () => this._setEstimatedClose(id, dto),
+    );
+  }
+  private async _setEstimatedClose(id: string, dto: SetEstimatedCloseDto) {
+    return this.monolith.patch(`/incidents/${id}/estimated-close`, dto);
   }
 
   @Patch(':id/status')

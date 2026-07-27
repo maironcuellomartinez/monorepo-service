@@ -6,13 +6,10 @@ export class DeviceType {
     get value(): string { return this._value; }
     toJSON() { return this._value; }
 
+    // Debe coincidir con el vocabulario real de Device.deviceType (dispositivos
+    // sincronizados vía Minerva usan LAPTOP/CELULAR/etc, no el español anterior).
     static create(value: string): Result<DeviceType> {
-        const validValues = [
-            'Portátil', 'Tableta', 'Sobremesa', 'Impresora', 'Monitor', 'Teléfono', 'Otro',
-            'Equipo sobremesa', 'Portatil', 'Portatil virtual',
-            'Telefono movil', 'Telefono movil virtual',
-            'Puesto VDI', 'Pantalla', 'SIM',
-        ];
+        const validValues = ['LAPTOP', 'CELULAR', 'TABLET', 'DESKTOP', 'IMPRESORA', 'OTRO'];
         if (!validValues.includes(value)) {
             return Result.err(new Error(`Invalid device type: ${value}`));
         }

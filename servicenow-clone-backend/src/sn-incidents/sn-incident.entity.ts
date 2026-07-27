@@ -45,6 +45,9 @@ export class SnIncidentEntity {
   @Column({ type: 'varchar', length: 255, nullable: true })
   caller_id: string | null;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  assigned_to: string | null;
+
   @Column({ type: 'varchar', length: 100, nullable: true })
   location: string | null;
 
@@ -56,6 +59,12 @@ export class SnIncidentEntity {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   correlation_id: string | null;
+
+  // Campo custom que envía api-snowq-service: referencia externa estable
+  // ({incidentId}_{corner.code} desde el monolito) — nombre configurable
+  // vía SN_EXTERNAL_ID_FIELD en api-snowq-service.
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  u_external_system_id: string | null;
 
   @Column({ type: 'datetime', nullable: true })
   expected_start: Date | null;

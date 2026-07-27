@@ -1,11 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsArray } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsArray, Matches } from 'class-validator';
 import { DayOfWeek } from '../../../core/domain/enums/day-of-week.enum';
+
+const CODE_PATTERN = /^[a-z0-9]+(_[a-z0-9]+)*$/;
+const CODE_MESSAGE = 'code debe ser snake_case en minúsculas (ej: local_abelias)';
 
 export class CreateCornerDto {
     @ApiProperty({ example: 'Corner Buenos Aires', description: 'Nombre del corner' })
     @IsString() @IsNotEmpty()
     name: string;
+
+    @ApiPropertyOptional({ example: 'local_abelias', description: 'Código técnico estable (slug). Si se omite, se autogenera desde el nombre. Es la referencia usada para sistemas externos — evitar cambiarlo luego de creado.' })
+    @IsOptional() @IsString() @Matches(CODE_PATTERN, { message: CODE_MESSAGE })
+    code?: string;
 
     @ApiPropertyOptional({ example: false })
     @IsOptional() @IsBoolean()
@@ -28,6 +35,10 @@ export class UpdateCornerDto {
     @ApiPropertyOptional({ example: 'Corner Buenos Aires v2' })
     @IsOptional() @IsString()
     name?: string;
+
+    @ApiPropertyOptional({ example: 'local_abelias', description: 'Corrección excepcional del código técnico — es una referencia externa, no editar salvo error de backfill.' })
+    @IsOptional() @IsString() @Matches(CODE_PATTERN, { message: CODE_MESSAGE })
+    code?: string;
 
     @ApiPropertyOptional({ example: 'Santander Argentina' })
     @IsOptional() @IsString()
