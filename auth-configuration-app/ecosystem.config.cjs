@@ -1,10 +1,10 @@
-// ecosystem.config.js
-// PM2 sirve el build estático (dist/) con 'serve'. El contenido de dist/
-// depende de con qué modo se corrió antes 'npm run build[:staging|:prod]'
-// (Vite hornea las VITE_* env vars en el build, no en runtime) — por eso
-// pm2:staging/pm2:prod primero rebuildean y después arrancan/recargan.
-// Detrás de esto va Apache, que sirve como reverse proxy/TLS termination
-// (mismo patrón que api-middleware-service).
+// ecosystem.config.cjs
+// PM2 sirve el build con `vite preview` (no 'serve') — hereda el proxy /api
+// definido en vite.config.ts (si lo hubiera). En staging/prod, Apache
+// reverse-proxea al abac-microservice antes de llegar acá (mismo patrón que
+// api-middleware-service/dashboard). Requiere 'npm run build[:staging|:prod]'
+// antes de arrancar — vite preview falla sin dist/. Sirve bajo /auth/ (base
+// fijo en vite.config.ts).
 //
 // Uso:
 //   pm2 start ecosystem.config.cjs --env development
@@ -17,8 +17,8 @@ module.exports = {
     apps: [
         {
             name: 'auth-configuration-app',
-            script: 'node_modules/serve/build/main.js',
-            args: '-s dist -l 5173',
+            script: 'node_modules/vite/bin/vite.js',
+            args: 'preview --host --port 5173',
             cwd: __dirname,
             instances: 1,
             exec_mode: 'fork',
