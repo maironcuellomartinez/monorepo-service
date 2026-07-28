@@ -415,17 +415,11 @@ export class Incident {
    * ```
    */
   reopen(reason?: string): Result<void> {
-    // CLOSED o CANCELED pueden reabrirse (recuperar una incidencia cancelada
-    // por error y continuar el flujo desde REOPENED, sin crear una nueva).
-    if (
-      this._status !== IncidentStatus.CLOSED &&
-      this._status !== IncidentStatus.CANCELED
-    ) {
+    // Solo CLOSED puede reabrirse. CANCELED es terminal: la cancelación es
+    // una decisión del cliente, no un cierre recuperable.
+    if (this._status !== IncidentStatus.CLOSED) {
       return Result.err(
-        new InvalidIncidentStateError(
-          this._status,
-          'reopen (must be CLOSED or CANCELED)',
-        ),
+        new InvalidIncidentStateError(this._status, 'reopen (must be CLOSED)'),
       );
     }
 

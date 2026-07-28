@@ -26,7 +26,7 @@ export const INCIDENT_CONSTANTS = {
         // (igual que CREATED) — no salta directo a IN_PROGRESS.
         REOPENED: ['DELIVERED', 'CLOSED', 'CANCELED'],
         VALIDATED: [],  // terminal definitivo
-        CANCELED: [],   // sale via reopen() (→REOPENED) — recuperar cancelada por error
+        CANCELED: [],   // terminal definitivo — no se reabre
     }
 } as const;
 

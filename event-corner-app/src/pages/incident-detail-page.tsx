@@ -34,8 +34,9 @@ export function IncidentDetailPage() {
   const [timeline, setTimeline] = useState<IncidentTimelineEntry[]>([])
   const [loadingTimeline, setLoadingTimeline] = useState(false)
 
-  // Tomar una incidencia CLOSED/CANCELED la reabre y reprograma en el mismo paso —
-  // hace falta elegir un horario nuevo antes de confirmar.
+  // Tomar una incidencia CLOSED la reabre y reprograma en el mismo paso —
+  // hace falta elegir un horario nuevo antes de confirmar. CANCELED es
+  // terminal y no puede tomarse/reabrirse.
   const [slotPickerOpen, setSlotPickerOpen] = useState(false)
   const [selectedTakeSlot, setSelectedTakeSlot] = useState<AvailabilitySlot | null>(null)
 
@@ -62,7 +63,7 @@ export function IncidentDetailPage() {
 
   useEffect(() => { load() }, [id])
 
-  const needsNewSlot = !!incident && ['CLOSED', 'CANCELED'].includes(incident.status)
+  const needsNewSlot = !!incident && incident.status === 'CLOSED'
 
   const handleTakeClick = () => {
     if (needsNewSlot) {
@@ -123,13 +124,14 @@ export function IncidentDetailPage() {
   }
 
   const statusIdx = STATUS_ORDER.indexOf(incident.status)
-  // VALIDATED es terminal definitivo (el cliente ya confirmó la resolución) — no se
-  // puede tomar. CLOSED/CANCELED sí: tomarla la reabre y reprograma en el mismo paso
-  // (ver needsNewSlot más arriba), no hace falta un botón "Reabrir" aparte.
+  // VALIDATED y CANCELED son terminales — no se pueden tomar. CLOSED sí:
+  // tomarla la reabre y reprograma en el mismo paso (ver needsNewSlot más
+  // arriba), no hace falta un botón "Reabrir" aparte.
   const canTake =
     !incident.currentTechnicianId &&
     !!user?.technicianId &&
-    incident.status !== 'VALIDATED'
+    incident.status !== 'VALIDATED' &&
+    incident.status !== 'CANCELED'
 
   return (
     <div className="flex flex-col h-full">
@@ -337,7 +339,7 @@ export function IncidentDetailPage() {
           )}
         </div>
 
-        {/* Actions — Tomar (reabre y reprograma automáticamente si está CLOSED/CANCELED) */}
+        {/* Actions — Tomar (reabre y reprograma automáticamente si está CLOSED) */}
         {canTake && (
           <Card>
             <CardHeader>

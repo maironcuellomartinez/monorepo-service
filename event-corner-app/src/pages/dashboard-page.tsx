@@ -475,7 +475,7 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
 
   const canCancel = incident.status === 'CREATED'
   const canValidate = incident.status === 'CLOSED'
-  const canReopen = ['CLOSED', 'CANCELED'].includes(incident.status)
+  const canReopen = incident.status === 'CLOSED'
   const hasActions = canCancel || canValidate || canReopen
 
   const handleAction = async () => {
@@ -1479,8 +1479,6 @@ function IncidentRow({ incident, onClick }: { incident: Incident; onClick: () =>
       ? 'Cancelable'
       : incident.status === 'CLOSED'
       ? 'Validar / Reabrir'
-      : incident.status === 'CANCELED'
-      ? 'Reabrir'
       : null
 
   return (

@@ -420,12 +420,11 @@ describe('Incident.reopen()', () => {
         expect(incident.currentTechnicianId).toBeNull();
     });
 
-    it('transiciona de CANCELED a REOPENED (recuperar cancelada por error)', () => {
+    it('falla si la incidencia está CANCELED (terminal, no se reabre)', () => {
         const incident = makeIncident({ status: IncidentStatus.CANCELED });
         const result = incident.reopen('cancelada por error');
-        expect(result.isSuccess).toBe(true);
-        expect(incident.status).toBe(IncidentStatus.REOPENED);
-        expect(incident.currentTechnicianId).toBeNull();
+        expect(result.isFailure).toBe(true);
+        expect(incident.status).toBe(IncidentStatus.CANCELED);
     });
 
     it('desde REOPENED no puede ir directo a IN_PROGRESS (debe entregar el dispositivo de nuevo)', () => {
@@ -442,7 +441,7 @@ describe('Incident.reopen()', () => {
         }
     });
 
-    it('falla si no está en CLOSED ni CANCELED', () => {
+    it('falla si no está en CLOSED', () => {
         const incident = makeIncident({ status: IncidentStatus.IN_PROGRESS });
         expect(incident.reopen().isFailure).toBe(true);
     });

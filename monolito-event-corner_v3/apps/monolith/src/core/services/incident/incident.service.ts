@@ -485,12 +485,12 @@ export class IncidentService implements IIncidentService {
 
     const technicianId = command.technicianId;
 
-    // Tomar una incidencia CLOSED/CANCELED implica recuperarla: se reabre
-    // (→ REOPENED), se asigna el técnico y se reprograma a un horario nuevo
-    // (el anterior ya pasó o quedó liberado). Requiere slotIds del llamador.
-    const needsReopen =
-      incident.status === IncidentStatus.CLOSED ||
-      incident.status === IncidentStatus.CANCELED;
+    // Tomar una incidencia CLOSED implica recuperarla: se reabre (→ REOPENED),
+    // se asigna el técnico y se reprograma a un horario nuevo (el anterior ya
+    // pasó o quedó liberado). Requiere slotIds del llamador.
+    // CANCELED es terminal — no se reabre, cae al take() normal de abajo,
+    // que falla porque CANCELED no está en TAKEABLE_STATUSES.
+    const needsReopen = incident.status === IncidentStatus.CLOSED;
 
     if (needsReopen) {
       return this._takeAndReopenIncident(incident, technicianId, command.slotIds);
