@@ -11,6 +11,7 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
+import { CorrelationIdService } from '@app/observability';
 import { InternalOnly } from '../../auth/decorators/internal.decorator';
 
 /**
@@ -36,6 +37,7 @@ export class InventoryOutboundController {
   constructor(
     private readonly http: HttpService,
     private readonly config: ConfigService,
+    private readonly correlation: CorrelationIdService,
   ) {
     this.inventoryUrl = this.config.get<string>(
       'INTEGRATION_SERVICE_INVENTORY_URL',
@@ -43,10 +45,19 @@ export class InventoryOutboundController {
     );
   }
 
-  /** Headers M2M requeridos por InternalTokenGuard del integration-service */
+  /**
+   * Headers M2M requeridos por InternalTokenGuard del integration-service,
+   * más el x-correlation-id activo para no cortar la cadena de correlación
+   * (integration-service generaría uno nuevo, desligado del request original,
+   * si este header no viaja).
+   */
   private get authHeaders() {
     const token = this.config.get<string>('ABAC_M2M_TOKEN', '');
-    return { Authorization: `Bearer ${token}` };
+    const cid = this.correlation.getCorrelationId();
+    return {
+      Authorization: `Bearer ${token}`,
+      ...(cid ? { 'x-correlation-id': cid } : {}),
+    };
   }
 
   /**
