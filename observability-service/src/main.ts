@@ -12,6 +12,23 @@ import { AppModule } from './app.module';
 async function bootstrap() {
     const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
+    // NO se replica acá el rechazo 426 "solo HTTPS" de api-middleware-service:
+    // ese patrón asume que TODO el tráfico del servicio entra por Apache, lo
+    // cual vale para api-middleware-service (puramente browser/externo) pero
+    // NO para observability-service — monolith/gateway/abac/snowq/integration
+    // le pegan directo a LOG_TRANSPORT_URL/OBS_METRICS_URL/OBS_TRACES_URL
+    // (ej: http://localhost:3099/ingest/logs) sin pasar por el proxy público;
+    // un rechazo global rompería la ingesta de telemetría de todo el
+    // ecosistema. Ver commit que corrige el mismo error ya cometido en
+    // abac-microservice.
+    //
+    // "trust proxy" sí se deja — no tiene costo y sirve si el único caller
+    // browser (observability-dashboard vía /obs-api/) necesita en algún
+    // momento el protocolo/IP real.
+    if (env !== 'development') {
+        app.getHttpAdapter().getInstance().set('trust proxy', 1);
+    }
+
     app.enableCors({
         origin: process.env.CORS_ORIGINS
             ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
