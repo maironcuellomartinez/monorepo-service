@@ -4,6 +4,14 @@ import axios, { AxiosInstance } from 'axios';
 import { CircuitBreaker, CircuitBreakerState, DEFAULT_CIRCUIT_BREAKER_CONFIG } from '@backendkit-labs/circuit-breaker';
 import { CorrelationIdService } from './correlation-id.service';
 
+/** Describe por qué falló un envío HTTP: código de red, status, o mensaje crudo. */
+function describeSendError(err: unknown): string {
+    const e = err as { code?: string; message?: string; response?: { status?: number } };
+    if (e?.response?.status) return `status=${e.response.status}`;
+    if (e?.code) return e.code;
+    return e?.message ?? String(err);
+}
+
 interface MetricPoint {
     name: string;
     service: string;
@@ -174,8 +182,8 @@ export class MetricsProducerService implements OnModuleDestroy {
         const batch = this.buffer.splice(0, this.BATCH_SIZE);
 
         this.send(batch)
-            .then(({ ok, failed }) => {
-                if (failed > 0) this.logger.warn(`Metrics transport: ${ok} sent, ${failed} dropped`);
+            .then(({ ok, failed, error }) => {
+                if (failed > 0) this.logger.warn(`Metrics transport: ${ok} sent, ${failed} dropped (${error})`);
                 if (this.droppedCount > 0) {
                     this.logger.warn(`Metrics transport: ${this.droppedCount} points dropped (buffer cap)`);
                     this.droppedCount = 0;
@@ -192,13 +200,13 @@ export class MetricsProducerService implements OnModuleDestroy {
         }
     }
 
-    private async send(batch: MetricPoint[]): Promise<{ ok: number; failed: number }> {
+    private async send(batch: MetricPoint[]): Promise<{ ok: number; failed: number; error?: string }> {
         try {
             await this.cb.execute(() => this.http.post(this.url, { metrics: batch }));
             return { ok: batch.length, failed: 0 };
-        } catch {
+        } catch (err) {
             // Falla real o circuito abierto (CircuitBreakerOpenError): batch no enviado.
-            return { ok: 0, failed: batch.length };
+            return { ok: 0, failed: batch.length, error: describeSendError(err) };
         }
     }
 }

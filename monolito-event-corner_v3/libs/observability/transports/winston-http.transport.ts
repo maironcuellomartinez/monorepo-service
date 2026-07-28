@@ -23,6 +23,14 @@ export interface LogInfo {
 
 export type LogInfoLevel = 'info' | 'error' | 'warn' | 'debug' | 'verbose';
 
+/** Describe por qué falló un envío HTTP: código de red, status, o mensaje crudo. */
+function describeSendError(err: unknown): string {
+  const e = err as { code?: string; message?: string; response?: { status?: number } };
+  if (e?.response?.status) return `status=${e.response.status}`;
+  if (e?.code) return e.code;
+  return e?.message ?? String(err);
+}
+
 /**
  * Winston transport que envía logs via HTTP POST a un endpoint.
  *
@@ -198,11 +206,11 @@ export class WinstonHttpTransport extends Transport implements OnModuleDestroy {
     const cbOpen = this.cb.getState() === CircuitBreakerState.OPEN;
 
     this.send(batch)
-      .then(({ ok, failed }) => {
+      .then(({ ok, failed, error }) => {
         // No loguear fallo si el CB ya está abierto — el onStateChange ya avisó
         if (failed > 0 && !cbOpen) {
           this.logger.warn(
-            `Log transport: ${ok} sent, ${failed} failed (observability-service unreachable)`,
+            `Log transport: ${ok} sent, ${failed} failed (${error})`,
           );
         }
         if (this.droppedCount > 0) {
@@ -225,7 +233,7 @@ export class WinstonHttpTransport extends Transport implements OnModuleDestroy {
    */
   private async send(
     batch: LogInfo[],
-  ): Promise<{ ok: number; failed: number }> {
+  ): Promise<{ ok: number; failed: number; error?: string }> {
     try {
       await this.cb.execute(() =>
         this.axiosInstance.post(this.url, {
@@ -234,9 +242,9 @@ export class WinstonHttpTransport extends Transport implements OnModuleDestroy {
         }),
       );
       return { ok: batch.length, failed: 0 };
-    } catch {
+    } catch (err) {
       // Falla real o circuito abierto (CircuitBreakerOpenError): batch no enviado.
-      return { ok: 0, failed: batch.length };
+      return { ok: 0, failed: batch.length, error: describeSendError(err) };
     }
   }
 
