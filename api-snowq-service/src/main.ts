@@ -65,6 +65,16 @@ async function bootstrap() {
   app.useLogger(app.get(LoggerService));
   const logger = new Logger('Bootstrap');
 
+  // En staging/prod Apache termina TLS y reenvía HTTP a localhost:3090.
+  // "trust proxy" permite leer X-Forwarded-Proto / X-Real-IP correctamente.
+  // NO se agrega acá el rechazo 426 "solo HTTPS" (patrón de
+  // api-middleware-service, corregido en abac-microservice): api-gateway le
+  // pega directo a SNOWQ_URL (ej: http://api-snowq-service:3090) para crear/
+  // actualizar/cerrar tickets de ServiceNow, sin pasar por el proxy público.
+  if (env !== 'development') {
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  }
+
   // Habilitar CORS para el dashboard
   app.enableCors({
     origin: ['http://localhost:3091', 'http://127.0.0.1:3091'],
