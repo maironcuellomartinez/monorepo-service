@@ -23,6 +23,17 @@ export interface LogInfo {
 
 export type LogInfoLevel = 'info' | 'error' | 'warn' | 'debug' | 'verbose';
 
+/** Contexts del logger interno de Nest (boot: InstanceLoader, RoutesResolver, RouterExplorer, etc.) — puro ruido de arranque, nunca se envían por HTTP. */
+const NEST_INTERNAL_CONTEXTS = new Set([
+  'NestFactory',
+  'InstanceLoader',
+  'RoutesResolver',
+  'RouterExplorer',
+  'NestApplication',
+  'NestMicroservice',
+  'WebSocketsController',
+]);
+
 /** Describe por qué falló un envío HTTP: código de red, status, o mensaje crudo. */
 function describeSendError(err: unknown): string {
   const e = err as { code?: string; message?: string; response?: { status?: number } };
@@ -148,7 +159,7 @@ export class WinstonHttpTransport extends Transport implements OnModuleDestroy {
    * @param callback Callback a ejecutar después de enviar el log.
    */
   log(info: LogInfo, callback: () => void): void {
-    if (!this.enabled || !this.shouldSend(info.level)) {
+    if (!this.enabled || (info.context && NEST_INTERNAL_CONTEXTS.has(info.context)) || !this.shouldSend(info.level)) {
       callback();
       return;
     }
