@@ -2,7 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Like, In, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
 // import { AuditLog, AuditAction, EntityType } from '../entities/audit-log.entity';
-import { LoggerService } from '../../observability';
+import { LoggerService, CorrelationIdService } from '../../observability';
 import { AuditAction, AuditLog, EntityType } from 'src/entities';
 
 export interface AuditFilter {
@@ -41,6 +41,7 @@ export class AuditService {
         @InjectRepository(AuditLog)
         private auditLogRepository: Repository<AuditLog>,
         private logger: LoggerService,
+        private correlationIdService: CorrelationIdService,
     ) { }
 
     /**
@@ -98,7 +99,11 @@ export class AuditService {
         try {
             const log = new AuditLog();
             log.action = action;
-            const logUpdated = { ...log, ...params };
+            const logUpdated = {
+                ...log,
+                ...params,
+                correlationId: params.correlationId ?? this.correlationIdService.getCorrelationId(),
+            };
             const savedLog = await this.auditLogRepository.save(logUpdated);
 
             this.logger.debug('Evento de auditoría registrado', 'AUDIT', {

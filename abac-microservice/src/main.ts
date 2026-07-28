@@ -5,9 +5,6 @@ import * as path from 'path';
 const env = process.env.NODE_ENV ?? 'development';
 dotenv.config({ path: path.resolve(process.cwd(), `.env.${env}`) });
 
-import { initOpenTelemetry } from './observability/services/telemetry/otel.sdk';
-import { registerOtelShutdownHooks } from './observability/services/telemetry/otel.shutdown';
-
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -49,13 +46,9 @@ async function bootstrap() {
         process.exit(1);
     }
 
-    // Debe inicializarse ANTES de NestFactory para que los instrumentos OTel
-    // estén activos desde el primer módulo que se registre.
-    await initOpenTelemetry();
-    registerOtelShutdownHooks();
-
     const app = await NestFactory.create(AppModule, { bufferLogs: true });
     app.useLogger(app.get(LoggerService));
+    app.enableShutdownHooks();
     const logger = new Logger('Bootstrap');
 
     // CORS: abierto en development, restringido a orígenes explícitos en staging/production
