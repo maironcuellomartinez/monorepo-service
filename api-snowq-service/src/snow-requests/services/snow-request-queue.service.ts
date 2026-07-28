@@ -44,6 +44,14 @@ export class SnowRequestQueueService implements OnModuleInit {
     private readonly metrics = ObsMetricsClient.getInstance();
     private readonly tracing = TracingClient.getInstance();
 
+    // Pico de tamaño/pendientes desde el último reporte — un poll puntual cada 15s
+    // sobre snowQueue.size/.pending casi siempre lee 0 (el backlog dura milisegundos,
+    // muy por debajo del intervalo de muestreo). Se trackea el máximo visto entre
+    // reportes enganchando los eventos 'add'/'active' de p-queue (se disparan justo
+    // cuando .size/.pending cambian), no un valor puntual al momento del poll.
+    private peakSize = 0;
+    private peakPending = 0;
+
     private static readonly TYPE_BASE: Partial<Record<RequestType, number>> = {
         [RequestType.INCIDENT]:            400,
         [RequestType.CHANGE_REQUEST]:      300,
@@ -64,10 +72,25 @@ export class SnowRequestQueueService implements OnModuleInit {
 
     onModuleInit() {
         this.logger.log('Cola global hacia ServiceNow inicializada [concurrency=5, orden: incident > change_request > resto]');
-        // Gauge periódico del tamaño de la cola
+
+        this.snowQueue.on('add', () => this.trackQueuePeaks());
+        this.snowQueue.on('active', () => this.trackQueuePeaks());
+
+        // Gauges periódicos: pico de backlog y de concurrencia real desde el último reporte.
         setInterval(() => {
-            this.metrics.gauge('snow_queue_size', this.snowQueue.size, { concurrency: '5' }).catch(() => { });
+            this.metrics.gauge('snow_queue_size', this.peakSize, { concurrency: '5' }).catch(() => { });
+            this.metrics.gauge('snow_queue_pending', this.peakPending, { concurrency: '5' }).catch(() => { });
+            // No resetear a 0: si el backlog sigue activo al momento del reporte, la
+            // próxima ventana debe partir de ahí, no esconder una racha sostenida.
+            this.peakSize = this.snowQueue.size;
+            this.peakPending = this.snowQueue.pending;
         }, 15_000);
+    }
+
+    /** Actualiza el pico de size/pending visto desde el último reporte. */
+    private trackQueuePeaks(): void {
+        if (this.snowQueue.size > this.peakSize) this.peakSize = this.snowQueue.size;
+        if (this.snowQueue.pending > this.peakPending) this.peakPending = this.snowQueue.pending;
     }
 
     // Usado por el worker (modo asíncrono DB-backed) — fire-and-forget
