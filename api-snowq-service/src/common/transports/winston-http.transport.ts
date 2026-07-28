@@ -16,6 +16,17 @@ export interface LogInfo {
     [key: string]: any;
 }
 
+/** Contexts del logger interno de Nest (boot: InstanceLoader, RoutesResolver, RouterExplorer, etc.) — puro ruido de arranque, nunca se envían por HTTP. */
+const NEST_INTERNAL_CONTEXTS = new Set([
+    'NestFactory',
+    'InstanceLoader',
+    'RoutesResolver',
+    'RouterExplorer',
+    'NestApplication',
+    'NestMicroservice',
+    'WebSocketsController',
+]);
+
 /**
  * Circuit breaker mínimo inline.
  * CLOSED → (5 fallos consecutivos) → OPEN → (30s) → CLOSED
@@ -130,7 +141,7 @@ export class WinstonHttpTransport extends Transport {
     }
 
     log(info: LogInfo, callback: () => void): void {
-        if (!this.shouldSend(info.level)) {
+        if ((info.context && NEST_INTERNAL_CONTEXTS.has(info.context)) || !this.shouldSend(info.level)) {
             callback();
             return;
         }
