@@ -15,7 +15,13 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "pm2:dev": "pm2 start ecosystem.config.js --env development",
+    "pm2:reload:dev": "npm run build && pm2 reload ecosystem.config.js --env development",
+    "pm2:stop": "pm2 stop minerva-app",
+    "pm2:delete": "pm2 delete minerva-app",
+    "pm2:logs": "pm2 logs minerva-app",
+    "pm2:status": "pm2 status minerva-app"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
