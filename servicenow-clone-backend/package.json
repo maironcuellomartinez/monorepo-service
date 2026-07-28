@@ -18,7 +18,13 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "pm2:dev": "pm2 start ecosystem.config.js --env development",
+    "pm2:reload:dev": "npm run build && pm2 reload ecosystem.config.js --env development",
+    "pm2:stop": "pm2 stop servicenow-clone-backend",
+    "pm2:delete": "pm2 delete servicenow-clone-backend",
+    "pm2:logs": "pm2 logs servicenow-clone-backend",
+    "pm2:status": "pm2 status servicenow-clone-backend"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
