@@ -15,6 +15,14 @@ export interface LogInfo {
     [key: string]: any;
 }
 
+/** Describe por qué falló un envío HTTP: código de red, status, o mensaje crudo. */
+function describeSendError(err: unknown): string {
+    const e = err as { code?: string; message?: string; response?: { status?: number } };
+    if (e?.response?.status) return `status=${e.response.status}`;
+    if (e?.code) return e.code;
+    return e?.message ?? String(err);
+}
+
 class TransportCircuitBreaker {
     private failures = 0;
     private openUntil = 0;
@@ -134,8 +142,8 @@ export class WinstonHttpTransport extends Transport {
         const batch = this.buffer.splice(0, this.BATCH_SIZE);
 
         this.send(batch)
-            .then(({ ok, failed }) => {
-                if (failed > 0) this.logger.warn(`Log transport: ${ok} sent, ${failed} dropped`);
+            .then(({ ok, failed, error }) => {
+                if (failed > 0) this.logger.warn(`Log transport: ${ok} sent, ${failed} dropped (${error})`);
                 if (this.droppedCount > 0) {
                     this.logger.warn(`Log transport: ${this.droppedCount} logs dropped (buffer cap)`);
                     this.droppedCount = 0;
@@ -149,15 +157,15 @@ export class WinstonHttpTransport extends Transport {
             .finally(() => { this.flushing = false; });
     }
 
-    private async send(batch: LogInfo[]): Promise<{ ok: number; failed: number }> {
-        if (this.cb.isOpen) return { ok: 0, failed: batch.length };
+    private async send(batch: LogInfo[]): Promise<{ ok: number; failed: number; error?: string }> {
+        if (this.cb.isOpen) return { ok: 0, failed: batch.length, error: 'circuit breaker open' };
         try {
             await this.http.post(this.url, { logs: batch, batchSize: batch.length });
             this.cb.recordSuccess();
             return { ok: batch.length, failed: 0 };
-        } catch {
+        } catch (err) {
             this.cb.recordFailure();
-            return { ok: 0, failed: batch.length };
+            return { ok: 0, failed: batch.length, error: describeSendError(err) };
         }
     }
 

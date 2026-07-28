@@ -4,6 +4,14 @@ import { Agent } from 'http';
 import axios, { AxiosInstance } from 'axios';
 import { CorrelationIdService } from '../correlation-id.service';
 
+/** Describe por qué falló un envío HTTP: código de red, status, o mensaje crudo. */
+function describeSendError(err: unknown): string {
+    const e = err as { code?: string; message?: string; response?: { status?: number } };
+    if (e?.response?.status) return `status=${e.response.status}`;
+    if (e?.code) return e.code;
+    return e?.message ?? String(err);
+}
+
 interface TraceContext {
     traceId: string;
     spanId: string;
@@ -228,8 +236,8 @@ export class TracingService implements OnModuleDestroy {
         this.flushing = true;
         const batch = this.buffer.splice(0, this.BATCH_SIZE);
         this.sendBatch(batch)
-            .then(({ ok, failed }) => {
-                if (failed > 0) this.logger.warn(`Tracing transport: ${ok} sent, ${failed} dropped`);
+            .then(({ ok, failed, error }) => {
+                if (failed > 0) this.logger.warn(`Tracing transport: ${ok} sent, ${failed} dropped (${error})`);
                 if (this.droppedCount > 0) {
                     this.logger.warn(`Tracing transport: ${this.droppedCount} spans dropped (buffer cap)`);
                     this.droppedCount = 0;
@@ -239,15 +247,15 @@ export class TracingService implements OnModuleDestroy {
             .finally(() => { this.flushing = false; });
     }
 
-    private async sendBatch(batch: SpanRecord[]): Promise<{ ok: number; failed: number }> {
-        if (this.cb.isOpen) return { ok: 0, failed: batch.length };
+    private async sendBatch(batch: SpanRecord[]): Promise<{ ok: number; failed: number; error?: string }> {
+        if (this.cb.isOpen) return { ok: 0, failed: batch.length, error: 'circuit breaker open' };
         try {
             await this.http.post(this.url, this.toOtlpEnvelope(batch));
             this.cb.ok();
             return { ok: batch.length, failed: 0 };
-        } catch {
+        } catch (err) {
             this.cb.fail();
-            return { ok: 0, failed: batch.length };
+            return { ok: 0, failed: batch.length, error: describeSendError(err) };
         }
     }
 
