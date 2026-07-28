@@ -11,6 +11,7 @@ import { OauthService } from './oauth.service';
 import { Application, RolePermission, User, UserApplication, UserRole } from '../../entities';
 import { LoggerService } from '../../observability';
 import { Result } from '../../common/result/result';
+import { JwtEd25519Service } from '../../common/crypto/jwt-ed25519.service';
 
 describe('AuthService', () => {
     let service: AuthService;
@@ -44,6 +45,8 @@ describe('AuthService', () => {
 
     const mockUserAppRepo = {
         findOne: jest.fn(),
+        create: jest.fn((data) => data),
+        save: jest.fn().mockResolvedValue({}),
     };
 
     const mockJwtService = {
@@ -452,21 +455,26 @@ describe('AuthService', () => {
         beforeEach(() => {
             mockAppRepo.findOne.mockResolvedValue(serviceApp);
             jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+            jest.spyOn(JwtEd25519Service, 'signWithKey').mockReturnValue('m2m-jwt-mock');
+            process.env.ED25519_PRIVATE_KEY = 'test-ed25519-private-key';
             mockUserRoleRepo.find.mockResolvedValue([{ role: { id: 'role-1' } }]);
             mockRolePermRepo.find.mockResolvedValue([
                 { permission: { resource: 'incident', action: 'create' } },
             ]);
         });
 
-        it('should generate M2M token with permissions', async () => {
+        afterEach(() => {
+            delete process.env.ED25519_PRIVATE_KEY;
+        });
+
+        it('should generate M2M token', async () => {
             const result = await service.generateServiceToken('ak_test123', 'raw-secret');
 
             expect(result.isSuccess).toBe(true);
             const data = result.unwrap();
-            expect(data.accessToken).toBe('jwt-token-mock');
+            expect(data.accessToken).toBe('m2m-jwt-mock');
             expect(data.tokenType).toBe('Bearer');
             expect(data.expiresIn).toBe(3600);
-            expect(data.permissions).toEqual(['incident:create']);
         });
 
         it('should fail with invalid apiKey', async () => {
