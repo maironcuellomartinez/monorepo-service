@@ -15,6 +15,17 @@ export interface LogInfo {
     [key: string]: any;
 }
 
+/** Contexts del logger interno de Nest (boot: InstanceLoader, RoutesResolver, RouterExplorer, etc.) — puro ruido de arranque, nunca se envían por HTTP. */
+const NEST_INTERNAL_CONTEXTS = new Set([
+    'NestFactory',
+    'InstanceLoader',
+    'RoutesResolver',
+    'RouterExplorer',
+    'NestApplication',
+    'NestMicroservice',
+    'WebSocketsController',
+]);
+
 /** Describe por qué falló un envío HTTP: código de red, status, o mensaje crudo. */
 function describeSendError(err: unknown): string {
     const e = err as { code?: string; message?: string; response?: { status?: number } };
@@ -58,7 +69,7 @@ class TransportCircuitBreaker {
  *
  * Env vars:
  *   LOG_TRANSPORT_URL      — default: http://localhost:3099/ingest/logs
- *   LOG_TRANSPORT_LEVEL    — default: info
+ *   LOG_TRANSPORT_LEVEL    — default: warn
  *   LOG_TRANSPORT_BATCH    — default: 50
  *   LOG_TRANSPORT_INTERVAL — default: 2000
  *   SERVICE_NAME           — default: abac-microservice
@@ -89,7 +100,7 @@ export class WinstonHttpTransport extends Transport {
         this.BATCH_SIZE = parseInt(process.env.LOG_TRANSPORT_BATCH ?? '50', 10);
         this.FLUSH_INTERVAL_MS = parseInt(process.env.LOG_TRANSPORT_INTERVAL ?? '2000', 10);
         this.url = process.env.LOG_TRANSPORT_URL ?? 'http://localhost:3099/ingest/logs';
-        this.minLevel = process.env.LOG_TRANSPORT_LEVEL ?? 'info';
+        this.minLevel = process.env.LOG_TRANSPORT_LEVEL ?? 'warn';
 
         this.agent = new Agent({ keepAlive: true, maxSockets: 2, maxFreeSockets: 2 });
         this.http = axios.create({
@@ -106,6 +117,11 @@ export class WinstonHttpTransport extends Transport {
     }
 
     log(info: LogInfo, callback: () => void): void {
+        if (info.context && NEST_INTERNAL_CONTEXTS.has(info.context)) {
+            callback();
+            return;
+        }
+
         const incomingOrder = WinstonHttpTransport.LEVEL_ORDER[info.level] ?? 99;
         const minOrder = WinstonHttpTransport.LEVEL_ORDER[this.minLevel] ?? 2;
 
