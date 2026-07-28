@@ -7,7 +7,6 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { QueryFailedError } from 'typeorm';
 import { describeError } from '../utils/error.util';
 
 @Catch()
@@ -36,16 +35,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
         errorCode = (exceptionResponse as any).errorCode || errorCode;
         validationErrors = (exceptionResponse as any).errors || [];
       }
-    } else if (exception instanceof QueryFailedError) {
-      status = HttpStatus.BAD_REQUEST;
-      message = 'Database query failed';
-      errorCode = 'DATABASE_ERROR';
-
-      // Log detallado del error de base de datos
-      this.logger.error('Database query failed', {
-        correlationId,
-        driverError: exception.driverError?.code ?? exception.driverError,
-      });
     } else if (exception instanceof Error) {
       message = describeError(exception);
 

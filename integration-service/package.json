@@ -51,7 +51,10 @@
   "overrides": {
     "axios": "^1.18.1",
     "@xhmikosr/decompress": "^10.2.1",
-    "handlebars": "^4.7.9"
+    "handlebars": "^4.7.9",
+    "@nestjs/swagger": {
+      "js-yaml": "^5.2.2"
+    }
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
