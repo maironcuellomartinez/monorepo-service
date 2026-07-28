@@ -51,6 +51,35 @@ async function bootstrap() {
     app.enableShutdownHooks();
     const logger = new Logger('Bootstrap');
 
+    // En staging/prod Apache termina TLS y reenvía HTTP a localhost:3005.
+    // "trust proxy" permite leer X-Forwarded-Proto / X-Real-IP correctamente.
+    if (env !== 'development') {
+        app.getHttpAdapter().getInstance().set('trust proxy', 1);
+    }
+
+    // Rechazar requests que no vengan por HTTPS en staging/prod.
+    // Apache inyecta X-Forwarded-Proto: https — si no está presente o es http,
+    // alguien está accediendo directamente al puerto 3005 sin pasar por TLS.
+    // /health y /metrics quedan afuera — igual que ya excluye
+    // CorrelationMiddleware en app.module.ts — porque Prometheus/health checks
+    // internos pueden pegarle directo al puerto sin pasar por Apache.
+    if (env !== 'development') {
+        app.use((req: any, res: any, next: () => void) => {
+            if (req.path.startsWith('/health') || req.path.startsWith('/metrics')) {
+                return next();
+            }
+            const proto = req.headers['x-forwarded-proto'];
+            if (proto !== 'https') {
+                return res.status(426).json({
+                    statusCode: 426,
+                    error: 'Upgrade Required',
+                    message: 'Se requiere HTTPS. Conectate a través del proxy seguro.',
+                });
+            }
+            next();
+        });
+    }
+
     // CORS: abierto en development, restringido a orígenes explícitos en staging/production
     const corsOrigins = process.env.CORS_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean);
     app.enableCors(
