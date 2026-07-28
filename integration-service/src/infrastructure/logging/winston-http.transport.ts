@@ -14,6 +14,17 @@ export interface LogInfo {
     [key: string]: any;
 }
 
+/** Contexts del logger interno de Nest (boot: InstanceLoader, RoutesResolver, RouterExplorer, etc.) — puro ruido de arranque, nunca se envían por HTTP. */
+const NEST_INTERNAL_CONTEXTS = new Set([
+    'NestFactory',
+    'InstanceLoader',
+    'RoutesResolver',
+    'RouterExplorer',
+    'NestApplication',
+    'NestMicroservice',
+    'WebSocketsController',
+]);
+
 class TransportCircuitBreaker {
     private failures = 0;
     private openUntil = 0;
@@ -101,6 +112,11 @@ export class WinstonHttpTransport extends Transport {
     }
 
     log(info: LogInfo, callback: () => void): void {
+        if (info.context && NEST_INTERNAL_CONTEXTS.has(info.context)) {
+            callback();
+            return;
+        }
+
         const levelOrder = WinstonHttpTransport.LEVEL_ORDER[info.level] ?? 99;
         const minOrder = WinstonHttpTransport.LEVEL_ORDER[this.minLevel] ?? 1;
 
