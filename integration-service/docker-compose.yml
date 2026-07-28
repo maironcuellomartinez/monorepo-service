@@ -20,9 +20,6 @@ services:
       NODE_ENV: development
       PORT: "3008"
       HOST: "0.0.0.0"
-      DB_HOST: host.docker.internal
-      DB_PORT: "3306"
-      DB_NAME: integration_db
       SNOWQ_BASE_URL: http://host.docker.internal:3090
       ABAC_URL: http://host.docker.internal:3005
     env_file: .env.development

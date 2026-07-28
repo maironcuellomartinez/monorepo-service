@@ -1,34 +1,17 @@
 import {
     Controller,
     Get,
-    Post,
     Param,
-    Body,
-    Query,
-    HttpCode,
     HttpStatus,
     UseGuards,
     UseInterceptors,
     NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { LoggingInterceptor } from '../../shared/interceptors/logging.interceptor';
 import { InternalTokenGuard } from '../../shared/guards/internal-token.guard';
-import { MinervaConnector, MinervaAssignmentRequest } from '../../infrastructure/external/connectors/minerva.connector';
-import { TracingService } from '../../infrastructure/monitoring/tracing.service';
-
-class AssignDeviceDto implements MinervaAssignmentRequest {
-    serialNumber: string;
-    appointmentId: string;
-    userId: string;
-    userName?: string;
-    cornerId: string;
-}
-
-class ReleaseDeviceDto {
-    reason?: string;
-}
+import { MinervaConnector } from '../../infrastructure/external/connectors/minerva.connector';
 
 @ApiTags('Minerva')
 @ApiBearerAuth()
@@ -38,16 +21,7 @@ class ReleaseDeviceDto {
 export class MinervaController {
     constructor(
         private readonly minervaConnector: MinervaConnector,
-        private readonly tracing: TracingService,
     ) {}
-
-    @Get('devices')
-    @ApiOperation({ summary: 'List available devices by type' })
-    @ApiQuery({ name: 'deviceType', required: true })
-    @ApiResponse({ status: HttpStatus.OK, description: 'Available devices' })
-    async listAvailableDevices(@Query('deviceType') deviceType: string) {
-        return this.minervaConnector.listAvailableDevices(deviceType);
-    }
 
     @Get('devices/:serial')
     @ApiOperation({ summary: 'Get device by serial number' })
@@ -60,36 +34,6 @@ export class MinervaController {
             throw new NotFoundException(`Device ${serial} not found in Minerva`);
         }
         return device;
-    }
-
-    @Post('devices/:serial/assign')
-    @HttpCode(HttpStatus.OK)
-    @ApiOperation({ summary: 'Assign device to a user/appointment' })
-    @ApiParam({ name: 'serial', description: 'Device serial number' })
-    @ApiResponse({ status: HttpStatus.OK, description: 'Device assigned' })
-    async assignDevice(
-        @Param('serial') serial: string,
-        @Body() dto: AssignDeviceDto,
-    ) {
-        return this.tracing.run('integration.controller.minerva.assignDevice', { kind: 'server', attributes: { 'device.serial': serial } }, () => this._assignDevice(serial, dto));
-    }
-
-    private async _assignDevice(serial: string, dto: AssignDeviceDto) {
-        return this.minervaConnector.assignDevice({ ...dto, serialNumber: serial });
-    }
-
-    @Post('devices/:serial/release')
-    @HttpCode(HttpStatus.OK)
-    @ApiOperation({ summary: 'Release a previously assigned device' })
-    @ApiParam({ name: 'serial', description: 'Device serial number' })
-    @ApiResponse({ status: HttpStatus.OK, description: 'Device released' })
-    async releaseDevice(@Param('serial') serial: string) {
-        return this.tracing.run('integration.controller.minerva.releaseDevice', { kind: 'server', attributes: { 'device.serial': serial } }, () => this._releaseDevice(serial));
-    }
-
-    private async _releaseDevice(serial: string) {
-        await this.minervaConnector.releaseDevice(serial);
-        return { serialNumber: serial, released: true };
     }
 
     @Get('users/:userId/devices')

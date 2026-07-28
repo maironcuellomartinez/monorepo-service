@@ -10,7 +10,6 @@ import { DroppointConnector } from './connectors/droppoint.connector';
 
 import { CalendarAdapter } from './adapters/calendar.adapter';
 
-import { ExternalSystemFactory } from './factories/external-system.factory';
 import { ConnectorRegistry } from './registries/connector.registry';
 
 @Global()
@@ -38,8 +37,7 @@ import { ConnectorRegistry } from './registries/connector.registry';
         // Adapters
         CalendarAdapter,
 
-        // Factories & Registries
-        ExternalSystemFactory,
+        // Registries
         ConnectorRegistry,
 
         // Provider para inyección por nombre de sistema
@@ -66,7 +64,6 @@ import { ConnectorRegistry } from './registries/connector.registry';
         MinervaSoapClient,
         MinervaConnector,
         DroppointConnector,
-        ExternalSystemFactory,
         ConnectorRegistry,
         'EXTERNAL_CONNECTORS',
         HttpModule,

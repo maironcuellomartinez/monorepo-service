@@ -22,12 +22,6 @@ export interface SoapDeviceResponse {
   message: string;
 }
 
-export interface SoapStatusResponse {
-  serialNumber: string;
-  status: 'SUCCESS' | 'ERROR';
-  message: string;
-}
-
 /**
  * Cliente SOAP para Minerva (sistema de inventario externo).
  * Carga el WSDL en caliente desde la URL del servidor SOAP al iniciar.
@@ -86,15 +80,4 @@ export class MinervaSoapClient implements OnModuleInit {
     return [];
   }
 
-  async assignDevice(serialNumber: string, usuarioId: string, usuarioNombre?: string): Promise<SoapStatusResponse> {
-    const client = await this.getClient();
-    const [result] = await client.assignDeviceAsync({ serialNumber, usuarioId, usuarioNombre });
-    return result;
-  }
-
-  async releaseDevice(serialNumber: string): Promise<SoapStatusResponse> {
-    const client = await this.getClient();
-    const [result] = await client.releaseDeviceAsync({ serialNumber });
-    return result;
-  }
 }

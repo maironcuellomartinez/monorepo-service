@@ -3,16 +3,6 @@ export const configuration = () => ({
     environment: process.env.NODE_ENV || 'development',
     port: parseInt(process.env.PORT || '3008', 10),
 
-    database: {
-        host: process.env.DB_HOST || 'localhost',
-        port: parseInt(process.env.DB_PORT || '3306', 10),
-        username: process.env.DB_USERNAME || 'root',
-        password: process.env.DB_PASSWORD || 'root',
-        database: process.env.DB_NAME || 'integration_db',
-        synchronize: process.env.NODE_ENV !== 'production',
-        logging: false, //process.env.NODE_ENV === 'development',
-    },
-
     minerva: {
         soapWsdlUrl: process.env.MINERVA_SOAP_WSDL_URL || 'http://localhost:3016/devices?wsdl',
         timeout: parseInt(process.env.MINERVA_TIMEOUT || '10000', 10),

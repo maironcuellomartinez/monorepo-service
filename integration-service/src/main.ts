@@ -30,8 +30,6 @@ function validateConfig(): void {
   const required: Record<string, string> = {
     JWT_SECRET: 'Secret para validar tokens JWT entrantes',
     ABAC_M2M_TOKEN: 'Token M2M para autenticarse ante ABAC',
-    DB_HOST: 'Host de la base de datos',
-    DB_PASSWORD: 'Contraseña de la base de datos',
   };
 
   const invalid = Object.entries(required).filter(
