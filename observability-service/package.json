@@ -31,6 +31,11 @@
     "tweetnacl": "^1.0.3",
     "typeorm": "^0.3.24"
   },
+  "overrides": {
+    "@nestjs/swagger": {
+      "js-yaml": "^5.2.2"
+    }
+  },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
