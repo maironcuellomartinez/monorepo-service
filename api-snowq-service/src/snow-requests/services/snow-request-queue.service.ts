@@ -137,7 +137,7 @@ export class SnowRequestQueueService implements OnModuleInit {
             );
 
             this.logger.log(`Procesado → ${entity.internalNumber} | sys_id=${result.result.sys_id} | tipo=${entity.type} | prioridad=${entity.priority}`, 'SnowRequestQueueService');
-            this.metrics.counter('snow_requests_delivered_total', { type: entity.type, priority: String(entity.priority) }).catch(() => { });
+            this.metrics.counter('snow_requests_delivered_total', { type: entity.type, priority: String(entity.priority) }, entity.correlationId).catch(() => { });
         } catch (error) {
             const message = error?.message ?? String(error);
 
@@ -149,7 +149,7 @@ export class SnowRequestQueueService implements OnModuleInit {
                     `Circuit breaker ABIERTO para ${entity.internalNumber} [tipo=${entity.type}] — ServiceNow no disponible, reintentando con backoff`,
                     'SnowRequestQueueService',
                 );
-                this.metrics.counter('snow_requests_retried_total', { type: entity.type, reason: 'circuit_open' }).catch(() => { });
+                this.metrics.counter('snow_requests_retried_total', { type: entity.type, reason: 'circuit_open' }, entity.correlationId).catch(() => { });
             } else if (error instanceof ServiceNowTemporalError) {
                 // Error transitorio (5xx, 408, 429): respetar Retry-After si está disponible
                 const retryAfterMs = error.retryAfterMs;
@@ -158,7 +158,7 @@ export class SnowRequestQueueService implements OnModuleInit {
                     `Error temporal en ${entity.internalNumber} [tipo=${entity.type}]${retryAfterMs ? ` — Retry-After: ${retryAfterMs}ms` : ''} — reintentando: ${message}`,
                     'SnowRequestQueueService',
                 );
-                this.metrics.counter('snow_requests_retried_total', { type: entity.type, reason: error.statusCode === 429 ? 'rate_limited' : 'temporal_error' }).catch(() => { });
+                this.metrics.counter('snow_requests_retried_total', { type: entity.type, reason: error.statusCode === 429 ? 'rate_limited' : 'temporal_error' }, entity.correlationId).catch(() => { });
             } else {
                 // Error fatal (4xx) o de autenticación (401/403): no tiene sentido reintentar
                 await this.snowRequestService.markAsFailed(entity.correlationId, message);
@@ -167,7 +167,7 @@ export class SnowRequestQueueService implements OnModuleInit {
                     error?.stack ?? '',
                     'SnowRequestQueueService',
                 );
-                this.metrics.counter('snow_requests_failed_total', { type: entity.type }).catch(() => { });
+                this.metrics.counter('snow_requests_failed_total', { type: entity.type }, entity.correlationId).catch(() => { });
             }
         }
     }

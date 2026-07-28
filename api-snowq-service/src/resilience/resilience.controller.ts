@@ -3,6 +3,7 @@ import { M2mJwtGuard } from 'src/common/guards/m2m-jwt.guard';
 import { CircuitBreakerService } from './circuit-breaker/circuit-breaker.service';
 import { BulkheadRegistry } from './bulkhead/bulkhead.registry';
 import { TracingClient } from '../common/tracing.client';
+import { CorrelationIdService } from '../common';
 
 @UseGuards(M2mJwtGuard)
 @Controller('resilience')
@@ -10,6 +11,7 @@ export class ResilienceController {
     constructor(
         private readonly circuitBreakerService: CircuitBreakerService,
         private readonly bulkheadRegistry: BulkheadRegistry,
+        private readonly correlationIdService: CorrelationIdService,
     ) {}
 
     @Get('circuit-breaker/status')
@@ -48,7 +50,7 @@ export class ResilienceController {
     resetCircuitBreakers() {
         return TracingClient.getInstance().run(
             'snowq.controller.resilience.reset',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._reset(),
         );
     }

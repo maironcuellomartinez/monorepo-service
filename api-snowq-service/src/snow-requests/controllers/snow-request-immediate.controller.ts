@@ -12,7 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { BaseSnowRequestDto } from 'src/common';
+import { BaseSnowRequestDto, CorrelationIdService } from 'src/common';
 import { M2mJwtGuard } from 'src/common/guards/m2m-jwt.guard';
 import { RequestType } from 'src/common/enum/request-type.enum';
 import { SnowRequestProcessingService } from '../services/snow-request-processing.service';
@@ -25,6 +25,7 @@ import { TracingClient } from '../../common/tracing.client';
 export class SnowRequestImmediateController {
   constructor(
     private readonly processingService: SnowRequestProcessingService,
+    private readonly correlationIdService: CorrelationIdService,
   ) {}
 
   // =============================================
@@ -35,7 +36,7 @@ export class SnowRequestImmediateController {
   createIncident(@Body() dto: BaseSnowRequestDto) {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.createIncident',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._createIncident(dto),
     );
   }
@@ -60,7 +61,11 @@ export class SnowRequestImmediateController {
   ) {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.closeIncident',
-      { kind: 'server', attributes: { 'sn.sysId': sysId } },
+      {
+        kind: 'server',
+        attributes: { 'sn.sysId': sysId },
+        correlationId: this.correlationIdService.getCorrelationId(),
+      },
       () => this._closeIncident(sysId, body),
     );
   }
@@ -84,7 +89,7 @@ export class SnowRequestImmediateController {
   createChangeRequest(@Body() dto: BaseSnowRequestDto) {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.createChangeRequest',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._createChangeRequest(dto),
     );
   }
@@ -104,7 +109,7 @@ export class SnowRequestImmediateController {
   createProblem(@Body() dto: BaseSnowRequestDto) {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.createProblem',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._createProblem(dto),
     );
   }
@@ -121,7 +126,7 @@ export class SnowRequestImmediateController {
   createServiceCatalog(@Body() dto: BaseSnowRequestDto) {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.createServiceCatalog',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._createServiceCatalog(dto),
     );
   }
@@ -141,7 +146,7 @@ export class SnowRequestImmediateController {
   createKnowledgeArticle(@Body() dto: BaseSnowRequestDto) {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.createKnowledgeArticle',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._createKnowledgeArticle(dto),
     );
   }
@@ -161,7 +166,7 @@ export class SnowRequestImmediateController {
   createReleaseTask(@Body() dto: BaseSnowRequestDto) {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.createReleaseTask',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._createReleaseTask(dto),
     );
   }
@@ -181,7 +186,7 @@ export class SnowRequestImmediateController {
   createConfigurationItem(@Body() dto: BaseSnowRequestDto) {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.createConfigurationItem',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._createConfigurationItem(dto),
     );
   }
@@ -201,7 +206,7 @@ export class SnowRequestImmediateController {
   getCompanies() {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.getCompanies',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this.processingService.getCompanies(),
     );
   }
@@ -222,7 +227,7 @@ export class SnowRequestImmediateController {
   getLocations() {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.getLocations',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this.processingService.getLocations(),
     );
   }
@@ -235,7 +240,7 @@ export class SnowRequestImmediateController {
   getGroups() {
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.getGroups',
-      { kind: 'server' },
+      { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
       () => this.processingService.getGroups(),
     );
   }
@@ -268,7 +273,11 @@ export class SnowRequestImmediateController {
     }
     return TracingClient.getInstance().run(
       'snowq.controller.immediate.updateTicket',
-      { kind: 'server', attributes: { 'sn.table': table, 'sn.sysId': sysId } },
+      {
+        kind: 'server',
+        attributes: { 'sn.table': table, 'sn.sysId': sysId },
+        correlationId: this.correlationIdService.getCorrelationId(),
+      },
       () => this.processingService.updateTicket(requestType, sysId, fields),
     );
   }

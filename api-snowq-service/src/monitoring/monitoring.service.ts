@@ -6,6 +6,7 @@ import { SnowRequestService } from 'src/snow-requests/services/snow-request.serv
 import { ServiceNowClientService } from 'src/servicenow/client/servicenow-client.service';
 import { NagiosNotificationType, NagiosStateType, ThrukAlertDto } from './dto/thruk-alert.dto';
 import { TracingClient } from '../common/tracing.client';
+import { CorrelationIdService } from '../common';
 
 export type MonitoringAction =
     | 'QUEUED'         // nueva alerta encolada
@@ -49,6 +50,7 @@ export class MonitoringService {
     constructor(
         private readonly snowRequestService: SnowRequestService,
         private readonly snowClient: ServiceNowClientService,
+        private readonly correlationIdService: CorrelationIdService,
     ) { }
 
     /**
@@ -67,7 +69,7 @@ export class MonitoringService {
     async handleAlert(dto: ThrukAlertDto): Promise<MonitoringResult> {
         return TracingClient.getInstance().run(
             'snowq.service.monitoring.handleAlert',
-            { kind: 'internal' },
+            { kind: 'internal', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._handleAlert(dto),
         );
     }
@@ -107,7 +109,11 @@ export class MonitoringService {
     async cancelByFingerprint(fingerprint: string): Promise<MonitoringResult> {
         return TracingClient.getInstance().run(
             'snowq.service.monitoring.cancelByFingerprint',
-            { kind: 'internal', attributes: { 'alert.fingerprint': fingerprint } },
+            {
+                kind: 'internal',
+                attributes: { 'alert.fingerprint': fingerprint },
+                correlationId: this.correlationIdService.getCorrelationId(),
+            },
             () => this._cancelByFingerprint(fingerprint),
         );
     }

@@ -7,7 +7,7 @@ import { SnowRequestService } from './snow-request.service';
 import { SnowRequestQueueService } from './snow-request-queue.service';
 import { ServiceNowClientService } from 'src/servicenow/client/servicenow-client.service';
 import { BaseSnowRequestDto } from 'src/common/dto/base-snow-request.dto';
-import { RequestPriority, RequestType, STATUS } from 'src/common';
+import { RequestPriority, RequestType, STATUS, CorrelationIdService } from 'src/common';
 import { SnowRequestEntity } from '../entities/snow-request.entity';
 
 function buildEntity(overrides: Partial<SnowRequestEntity> = {}): SnowRequestEntity {
@@ -77,7 +77,7 @@ describe('SnowRequestProcessingService', () => {
             getTicketState: jest.fn(),
         } as unknown as jest.Mocked<ServiceNowClientService>;
 
-        service = new SnowRequestProcessingService(snowRequestService, queueService, snClient);
+        service = new SnowRequestProcessingService(snowRequestService, queueService, snClient, new CorrelationIdService());
     });
 
     afterEach(() => {

@@ -16,6 +16,7 @@ import { SnowRequestService } from './snow-request.service';
 import { SnowRequestQueueService } from './snow-request-queue.service';
 import { ServiceNowClientService } from 'src/servicenow/client/servicenow-client.service';
 import { TracingClient } from '../../common/tracing.client';
+import { CorrelationIdService } from 'src/common';
 
 export interface EnqueueResult {
   correlationId: string;
@@ -31,6 +32,7 @@ export class SnowRequestProcessingService {
     private readonly snowRequestService: SnowRequestService,
     private readonly queueService: SnowRequestQueueService,
     private readonly snClient: ServiceNowClientService,
+    private readonly correlationIdService: CorrelationIdService,
   ) {}
 
   // =====================
@@ -56,7 +58,11 @@ export class SnowRequestProcessingService {
   ): Promise<EnqueueResult> {
     return TracingClient.getInstance().run(
       'snowq.service.snowRequestProcessing.enqueue',
-      { kind: 'internal', attributes: { 'sn.type': type } },
+      {
+        kind: 'internal',
+        attributes: { 'sn.type': type },
+        correlationId: this.correlationIdService.getCorrelationId(),
+      },
       () => this._enqueue(type, dto),
     );
   }
@@ -123,7 +129,11 @@ export class SnowRequestProcessingService {
   ): Promise<{ sys_id: string; snowNumber: string }> {
     return TracingClient.getInstance().run(
       'snowq.service.snowRequestProcessing.processImmediate',
-      { kind: 'internal', attributes: { 'sn.type': type } },
+      {
+        kind: 'internal',
+        attributes: { 'sn.type': type },
+        correlationId: this.correlationIdService.getCorrelationId(),
+      },
       () => this._processImmediate(type, dto),
     );
   }
@@ -191,7 +201,11 @@ export class SnowRequestProcessingService {
   ): Promise<void> {
     return TracingClient.getInstance().run(
       'snowq.service.snowRequestProcessing.closeIncident',
-      { kind: 'internal', attributes: { 'sn.sysId': sysId } },
+      {
+        kind: 'internal',
+        attributes: { 'sn.sysId': sysId },
+        correlationId: this.correlationIdService.getCorrelationId(),
+      },
       () => this._closeIncident(sysId, closeCode, closeNotes),
     );
   }
@@ -222,7 +236,11 @@ export class SnowRequestProcessingService {
   ): Promise<void> {
     return TracingClient.getInstance().run(
       'snowq.service.snowRequestProcessing.updateTicket',
-      { kind: 'internal', attributes: { 'sn.sysId': sysId, 'sn.type': type } },
+      {
+        kind: 'internal',
+        attributes: { 'sn.sysId': sysId, 'sn.type': type },
+        correlationId: this.correlationIdService.getCorrelationId(),
+      },
       () => this._updateTicket(type, sysId, fields),
     );
   }

@@ -2,7 +2,7 @@ import { MonitoringService } from './monitoring.service';
 import { SnowRequestService } from 'src/snow-requests/services/snow-request.service';
 import { ServiceNowClientService } from 'src/servicenow/client/servicenow-client.service';
 import { NagiosNotificationType, NagiosStateType, ThrukAlertDto } from './dto/thruk-alert.dto';
-import { RequestType, STATUS } from 'src/common';
+import { RequestType, STATUS, CorrelationIdService } from 'src/common';
 import { SnowRequestEntity } from 'src/snow-requests/entities/snow-request.entity';
 
 function buildAlert(overrides: Partial<ThrukAlertDto> = {}): ThrukAlertDto {
@@ -62,7 +62,9 @@ describe('MonitoringService', () => {
             patchToServiceNow: jest.fn(),
         } as unknown as jest.Mocked<ServiceNowClientService>;
 
-        service = new MonitoringService(snowRequestService, snowClient);
+        const correlationIdService = new CorrelationIdService();
+
+        service = new MonitoringService(snowRequestService, snowClient, correlationIdService);
     });
 
     afterEach(() => {

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import {
+  CorrelationIdService,
   RequestType,
   RequestTypeUtils,
   ResponseServiceNowSuccess,
@@ -66,6 +67,7 @@ export class ServiceNowClientService {
     private readonly errorFactory: ServiceNowErrorFactory,
     private readonly tokenService: ServiceNowTokenService,
     private readonly configService: ConfigService,
+    private readonly correlationIdService: CorrelationIdService,
   ) {}
 
   private getBaseUrl(): string {
@@ -108,6 +110,7 @@ export class ServiceNowClientService {
           'snow.type': type,
           'snow.baseUrl': this.getBaseUrl(),
         },
+        correlationId: this.correlationIdService.getCorrelationId(),
       },
       async () => {
         const baseUrl = this.getBaseUrl();
@@ -162,7 +165,11 @@ export class ServiceNowClientService {
   ): Promise<void> {
     return TracingClient.getInstance().run(
       'snowq.client.servicenow.patchToServiceNow',
-      { kind: 'client', attributes: { 'sn.sysId': sysId } },
+      {
+        kind: 'client',
+        attributes: { 'sn.sysId': sysId },
+        correlationId: this.correlationIdService.getCorrelationId(),
+      },
       () => this._patchToServiceNow(type, sysId, body),
     );
   }
@@ -208,7 +215,7 @@ export class ServiceNowClientService {
   async getCompanies(): Promise<Array<{ sys_id: string; name: string }>> {
     return TracingClient.getInstance().run(
       'snowq.client.servicenow.getCompanies',
-      { kind: 'client' },
+      { kind: 'client', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._getCompanies(),
     );
   }
@@ -246,7 +253,7 @@ export class ServiceNowClientService {
   async getLocations(): Promise<Array<{ sys_id: string; name: string }>> {
     return TracingClient.getInstance().run(
       'snowq.client.servicenow.getLocations',
-      { kind: 'client' },
+      { kind: 'client', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._getLocations(),
     );
   }
@@ -284,7 +291,7 @@ export class ServiceNowClientService {
   async getGroups(): Promise<Array<{ sys_id: string; name: string }>> {
     return TracingClient.getInstance().run(
       'snowq.client.servicenow.getGroups',
-      { kind: 'client' },
+      { kind: 'client', correlationId: this.correlationIdService.getCorrelationId() },
       () => this._getGroups(),
     );
   }
@@ -321,7 +328,11 @@ export class ServiceNowClientService {
   ): Promise<{ sys_id: string; name: string } | null> {
     return TracingClient.getInstance().run(
       'snowq.client.servicenow.getGroupBySysId',
-      { kind: 'client', attributes: { 'sn.sysId': sysId } },
+      {
+        kind: 'client',
+        attributes: { 'sn.sysId': sysId },
+        correlationId: this.correlationIdService.getCorrelationId(),
+      },
       () => this._getGroupBySysId(sysId),
     );
   }
@@ -361,7 +372,11 @@ export class ServiceNowClientService {
   ): Promise<{ sys_id: string; name: string } | null> {
     return TracingClient.getInstance().run(
       'snowq.client.servicenow.getCompanyBySysId',
-      { kind: 'client', attributes: { 'sn.sysId': sysId } },
+      {
+        kind: 'client',
+        attributes: { 'sn.sysId': sysId },
+        correlationId: this.correlationIdService.getCorrelationId(),
+      },
       () => this._getCompanyBySysId(sysId),
     );
   }

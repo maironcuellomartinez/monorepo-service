@@ -7,6 +7,7 @@ import { SnowRequestService } from '../services/snow-request.service';
 import { BulkheadInterceptor } from 'src/resilience/bulkhead/bulkhead.interceptor';
 import { DlqFilterDto } from '../dto/dlq-filter.dto';
 import { TracingClient } from '../../common/tracing.client';
+import { CorrelationIdService } from '../../common';
 
 const PRIORITY_LABEL: Record<number, string> = { 4: 'CRITICAL', 3: 'HIGH', 2: 'MEDIUM', 1: 'LOW' };
 const toLabel = (p: number) => PRIORITY_LABEL[p] ?? 'MEDIUM';
@@ -18,6 +19,7 @@ export class SnowRequestQueueController {
     constructor(
         private readonly processingService: SnowRequestProcessingService,
         private readonly snowRequestService: SnowRequestService,
+        private readonly correlationIdService: CorrelationIdService,
     ) { }
 
     // =============================================
@@ -29,7 +31,7 @@ export class SnowRequestQueueController {
     createIncident(@Body() dto: BaseSnowRequestDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.createIncident',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._createIncident(dto),
         );
     }
@@ -47,7 +49,7 @@ export class SnowRequestQueueController {
     createChangeRequest(@Body() dto: BaseSnowRequestDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.createChangeRequest',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._createChangeRequest(dto),
         );
     }
@@ -65,7 +67,7 @@ export class SnowRequestQueueController {
     createProblem(@Body() dto: BaseSnowRequestDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.createProblem',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._createProblem(dto),
         );
     }
@@ -83,7 +85,7 @@ export class SnowRequestQueueController {
     createServiceCatalog(@Body() dto: BaseSnowRequestDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.createServiceCatalog',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._createServiceCatalog(dto),
         );
     }
@@ -101,7 +103,7 @@ export class SnowRequestQueueController {
     createKnowledgeArticle(@Body() dto: BaseSnowRequestDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.createKnowledgeArticle',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._createKnowledgeArticle(dto),
         );
     }
@@ -119,7 +121,7 @@ export class SnowRequestQueueController {
     createReleaseTask(@Body() dto: BaseSnowRequestDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.createReleaseTask',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._createReleaseTask(dto),
         );
     }
@@ -137,7 +139,7 @@ export class SnowRequestQueueController {
     createConfigurationItem(@Body() dto: BaseSnowRequestDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.createConfigurationItem',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._createConfigurationItem(dto),
         );
     }
@@ -237,7 +239,7 @@ export class SnowRequestQueueController {
     async retryAllFailed() {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.retryAllFailed',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._retryAllFailed(),
         );
     }
@@ -257,7 +259,7 @@ export class SnowRequestQueueController {
     async retryFiltered(@Body() filter: DlqFilterDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.retryFiltered',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._retryFiltered(filter),
         );
     }
@@ -276,7 +278,11 @@ export class SnowRequestQueueController {
     async retryFailedRequest(@Param('correlationId') correlationId: string) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.retryFailedRequest',
-            { kind: 'server', attributes: { 'sn.correlationId': correlationId } },
+            {
+                kind: 'server',
+                attributes: { 'sn.correlationId': correlationId },
+                correlationId: this.correlationIdService.getCorrelationId(),
+            },
             () => this._retryFailedRequest(correlationId),
         );
     }
@@ -304,7 +310,7 @@ export class SnowRequestQueueController {
     async discardFiltered(@Body() filter: DlqFilterDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.discardFiltered',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._discardFiltered(filter),
         );
     }
@@ -323,7 +329,11 @@ export class SnowRequestQueueController {
     async discardFailedRequest(@Param('correlationId') correlationId: string) {
         return TracingClient.getInstance().run(
             'snowq.controller.queue.discardFailedRequest',
-            { kind: 'server', attributes: { 'sn.correlationId': correlationId } },
+            {
+                kind: 'server',
+                attributes: { 'sn.correlationId': correlationId },
+                correlationId: this.correlationIdService.getCorrelationId(),
+            },
             () => this._discardFailedRequest(correlationId),
         );
     }

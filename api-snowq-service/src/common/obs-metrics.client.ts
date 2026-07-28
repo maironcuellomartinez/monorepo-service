@@ -7,6 +7,7 @@ export interface MetricPoint {
     value: number;
     type: 'counter' | 'gauge' | 'histogram';
     labels?: Record<string, string>;
+    correlationId?: string;
     timestamp?: string;
     service?: string;
     unit?: string;
@@ -79,15 +80,15 @@ export class ObsMetricsClient {
         }
     }
 
-    counter(name: string, labels?: Record<string, string>): Promise<void> {
-        return this.record({ name, value: 1, type: 'counter', labels });
+    counter(name: string, labels?: Record<string, string>, correlationId?: string): Promise<void> {
+        return this.record({ name, value: 1, type: 'counter', labels, correlationId });
     }
 
-    gauge(name: string, value: number, labels?: Record<string, string>): Promise<void> {
-        return this.record({ name, value, type: 'gauge', labels });
+    gauge(name: string, value: number, labels?: Record<string, string>, correlationId?: string): Promise<void> {
+        return this.record({ name, value, type: 'gauge', labels, correlationId });
     }
 
-    histogram(name: string, value: number, unit = 'ms', labels?: Record<string, string>): Promise<void> {
-        return this.record({ name, value, type: 'histogram', unit, labels });
+    histogram(name: string, value: number, unit = 'ms', labels?: Record<string, string>, correlationId?: string): Promise<void> {
+        return this.record({ name, value, type: 'histogram', unit, labels, correlationId });
     }
 }

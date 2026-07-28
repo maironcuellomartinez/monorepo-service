@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Param, Post } from '@nestjs/com
 import { ThrukAlertDto } from './dto/thruk-alert.dto';
 import { MonitoringService } from './monitoring.service';
 import { TracingClient } from '../common/tracing.client';
+import { CorrelationIdService } from '../common';
 
 /**
  * Controller exclusivo para el flujo de monitoreo Nagios/Thruk.
@@ -20,7 +21,10 @@ import { TracingClient } from '../common/tracing.client';
  */
 @Controller('monitoring')
 export class MonitoringController {
-    constructor(private readonly monitoringService: MonitoringService) { }
+    constructor(
+        private readonly monitoringService: MonitoringService,
+        private readonly correlationIdService: CorrelationIdService,
+    ) { }
 
     /**
      * Punto de entrada único para todas las notificaciones de Thruk.
@@ -36,7 +40,7 @@ export class MonitoringController {
     async handleAlert(@Body() dto: ThrukAlertDto) {
         return TracingClient.getInstance().run(
             'snowq.controller.monitoring.handleAlert',
-            { kind: 'server' },
+            { kind: 'server', correlationId: this.correlationIdService.getCorrelationId() },
             () => this._handleAlert(dto),
         );
     }
@@ -59,7 +63,11 @@ export class MonitoringController {
     async cancelByFingerprint(@Param('fingerprint') fingerprint: string) {
         return TracingClient.getInstance().run(
             'snowq.controller.monitoring.cancelByFingerprint',
-            { kind: 'server', attributes: { 'alert.fingerprint': fingerprint } },
+            {
+                kind: 'server',
+                attributes: { 'alert.fingerprint': fingerprint },
+                correlationId: this.correlationIdService.getCorrelationId(),
+            },
             () => this._cancelByFingerprint(fingerprint),
         );
     }
