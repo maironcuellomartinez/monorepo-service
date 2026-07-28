@@ -67,7 +67,10 @@
     "winston-transport": "^4.9.0"
   },
   "overrides": {
-    "protobufjs": "^7.5.5"
+    "protobufjs": "^7.5.5",
+    "@nestjs/swagger": {
+      "js-yaml": "^5.2.2"
+    }
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
