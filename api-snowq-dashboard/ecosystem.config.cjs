@@ -1,10 +1,10 @@
-// ecosystem.config.js
-// PM2 sirve el build estático (dist/) con 'serve'. El contenido de dist/
-// depende de con qué modo se corrió antes 'npm run build[:staging|:prod]'
-// (Vite hornea las VITE_* env vars en el build, no en runtime) — por eso
-// pm2:staging/pm2:prod primero rebuildean y después arrancan/recargan.
-// Detrás de esto va Apache, que sirve como reverse proxy/TLS termination
-// y resuelve /api → api-snowq-service (mismo patrón que api-middleware-service).
+// ecosystem.config.cjs
+// PM2 sirve el build con `vite preview` (no 'serve') — hereda el proxy /api
+// -> api-snowq-service definido en vite.config.ts. En staging/prod, Apache
+// igual resuelve /api en el mismo dominio antes de llegar acá (mismo patrón
+// que api-middleware-service/dashboard). Requiere 'npm run build[:staging|
+// :prod]' antes de arrancar — vite preview falla sin dist/. Sirve bajo
+// /snowq/ (base fijo en vite.config.ts).
 //
 // Uso:
 //   pm2 start ecosystem.config.cjs --env development
@@ -17,8 +17,8 @@ module.exports = {
     apps: [
         {
             name: 'api-snowq-dashboard',
-            script: 'node_modules/serve/build/main.js',
-            args: '-s dist -l 3091',
+            script: 'node_modules/vite/bin/vite.js',
+            args: 'preview --host --port 3091',
             cwd: __dirname,
             instances: 1,
             exec_mode: 'fork',
