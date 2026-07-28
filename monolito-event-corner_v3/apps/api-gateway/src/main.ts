@@ -51,6 +51,17 @@ async function bootstrap() {
   app.useLogger(app.get(LoggerService));
   const logger = new Logger('Bootstrap');
 
+  // En staging/prod Apache termina TLS y reenvía HTTP a localhost:3000.
+  // "trust proxy" permite leer X-Forwarded-Proto / X-Real-IP correctamente.
+  // NO se agrega acá el rechazo 426 "solo HTTPS" (patrón de
+  // api-middleware-service): monolith le pega directo a API_GATEWAY_URL
+  // (ej: http://api-gateway:3000) para /outbound/servicenow/*, sin pasar
+  // por el proxy público — mismo error ya cometido y corregido en
+  // abac-microservice, no se repite acá.
+  if (env !== 'development') {
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  }
+
   const corsOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',')
         .map((o) => o.trim())
