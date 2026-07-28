@@ -18,7 +18,7 @@ export class ServiceNowBreakerFactory {
     constructor(private readonly circuitBreakerService: CircuitBreakerService) {}
 
     getBreakerForEntity(entity: SnowRequestEntity): CircuitBreaker {
-        if (entity.immediate)               return this.circuitBreakerService.getBreaker('sn:immediate');
+        if (entity.immediate) return this.circuitBreakerService.getBreaker('sn:immediate');
         if (entity.source === 'nagios-thruk') return this.circuitBreakerService.getBreaker('sn:monitoring');
         return this.circuitBreakerService.getBreaker('sn:queue');
     }

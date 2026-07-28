@@ -48,9 +48,11 @@ Nagios/Thruk         ─────┤
       (gate por cliente)  │                │
               │           │       Authorization: Basic | Bearer (OAuth2)
               └─────► SnowRequestWorkerService (poll 500ms) ──┘
+                                                               │       
                                                                ▼
                                         BulkheadRegistry.getForServiceNow()
                                         (8 concurrent / 40 queue / 15s timeout)
+                                                               │
                                                                ▼
                                         ServiceNow REST API (o servicenow-clone-backend en dev)
 ```
