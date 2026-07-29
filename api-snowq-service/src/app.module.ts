@@ -11,13 +11,16 @@ import { CommonModule } from './common/common.module';
 import { CorrelationMiddleware } from './common/middleware/correlation.middleware';
 import { HealthModule } from './health/health.module';
 import { TracingInterceptor } from './common/interceptors/tracing.interceptor';
+import { getSnProxyAgent } from './servicenow/client/sn-proxy-agent';
 
 @Module({
   imports: [
     CommonModule,
     ScheduleModule.forRoot(),
     CircuitBreakerModule, // global — CircuitBreakerService injectable en todos los módulos
-    HttpModule.register({ global: true }),
+    // HttpService acá solo lo usa ServiceNowClientService (único consumidor
+    // en todo el repo) — por eso el proxy va global sin afectar nada más.
+    HttpModule.register({ global: true, httpsAgent: getSnProxyAgent() }),
     BulkheadModule,
     SnowRequestsModule,
     MonitoringModule,

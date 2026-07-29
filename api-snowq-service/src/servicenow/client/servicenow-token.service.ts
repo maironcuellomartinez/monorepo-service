@@ -6,6 +6,7 @@ import * as Jwt from 'jsonwebtoken';
 import { URLSearchParams } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { ServiceNowAuthError } from '../../common';
+import { getSnProxyAgent } from './sn-proxy-agent';
 
 export interface ServiceNowOAuthConfig {
   oauthUrl: string;
@@ -103,7 +104,11 @@ export class ServiceNowTokenService {
         this.config.oauthUrl,
         params.toString(),
         {
-          httpAgent: new https.Agent({ rejectUnauthorized: false }),
+          // oauthUrl es https:// — el axios option correcto es httpsAgent, no
+          // httpAgent (ese solo aplica a requests http://, nunca se usaba acá).
+          httpsAgent:
+            getSnProxyAgent({ rejectUnauthorized: false }) ??
+            new https.Agent({ rejectUnauthorized: false }),
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         },
       );
