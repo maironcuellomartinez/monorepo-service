@@ -6,6 +6,7 @@ import { TokenCredentialAuthenticationProvider } from '@microsoft/microsoft-grap
 import { ClientSecretCredential } from '@azure/identity';
 import { HealthCheckResult, IExternalConnector } from 'src/domain/interfaces/external-connector.interface';
 import { CalendarAdapter } from '../adapters/calendar.adapter';
+import { getIntegrationProxyDispatcher } from './http-proxy-agent';
 
 export interface OutlookEvent {
     id?: string;
@@ -84,9 +85,16 @@ export class OutlookCalendarConnector implements Partial<IExternalConnector> {
                 scopes: ['https://graph.microsoft.com/.default'],
             });
 
+            // @azure/identity (ClientSecretCredential arriba) detecta HTTPS_PROXY
+            // automáticamente para el token — el Graph Client (fetch nativo por
+            // debajo, no axios/node-fetch) no, necesita el dispatcher explícito
+            // acá (agent NO sirve con fetch nativo — ver http-proxy-agent.ts).
             this.graphClient = Client.initWithMiddleware({
                 authProvider,
                 defaultVersion: 'v1.0',
+                fetchOptions: {
+                    dispatcher: getIntegrationProxyDispatcher(),
+                } as RequestInit,
             });
 
             this.logger.log('Outlook Calendar client initialized');
