@@ -15,6 +15,19 @@ export const configuration = () => ({
         timeout: parseInt(process.env.DROPPOINT_TIMEOUT || '10000', 10),
     },
 
+    // outlook-calendar.connector.ts lee estas claves — nunca estuvieron
+    // mapeadas acá, así que el conector jamás pudo inicializarse (siempre
+    // caía en el warn "Outlook Calendar configuration incomplete" y
+    // retornaba temprano, sin importar lo que hubiera en AZURE_TENANT_ID/
+    // CLIENT_ID/CLIENT_SECRET).
+    outlook: {
+        tenantId: process.env.AZURE_TENANT_ID || '',
+        clientId: process.env.AZURE_CLIENT_ID || '',
+        clientSecret: process.env.AZURE_CLIENT_SECRET || '',
+        userId: process.env.OUTLOOK_USER_ID || 'me',
+        timeout: parseInt(process.env.OUTLOOK_TIMEOUT || '10000', 10),
+    },
+
     throttler: {
         ttl: parseInt(process.env.THROTTLER_TTL || '60', 10),
         limit: parseInt(process.env.THROTTLER_LIMIT || '10', 10),
