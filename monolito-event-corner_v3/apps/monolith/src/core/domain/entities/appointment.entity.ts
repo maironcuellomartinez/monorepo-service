@@ -2,7 +2,8 @@
 import { DateRange } from '../value-objects/date-range.value';
 import { AppointmentStatus, TAKEABLE_STATUSES, TERMINAL_STATUSES } from '../enums/appointment-status.enum';
 import { AppointmentOrigin } from '../enums/appointment-origin.enum';
-import { AppointmentKind } from '../enums/appointment-kind.enum';
+import { AppointmentKind, serviceNowTicketTypeFromCategory } from '../enums/appointment-kind.enum';
+import { IssueCategory } from '../enums/issue-category.enum';
 
 import {
   AppointmentNotAvailableError,
@@ -105,8 +106,8 @@ export class Appointment {
   }
 
   // Enriched issue type info (populated from DB relation, not persisted)
-  private _issueTypeInfo: { id: string; name: string } | null = null;
-  setIssueTypeInfo(info: { id: string; name: string } | null) {
+  private _issueTypeInfo: { id: string; name: string; category?: string } | null = null;
+  setIssueTypeInfo(info: { id: string; name: string; category?: string } | null) {
     this._issueTypeInfo = info;
   }
 
@@ -554,6 +555,12 @@ export class Appointment {
       issueId: this._issueId,
       issueTypeId: this._issueTypeId,
       issueType: this._issueTypeInfo ?? undefined,
+      // Clasificación de negocio del ticket SN (incident/sc_req_item/sc_task) —
+      // ver appointment-kind.enum.ts. Solo disponible si el repositorio enriqueció
+      // _issueTypeInfo.category (join a issue_types); si no, undefined.
+      ticketType: this._issueTypeInfo?.category
+        ? serviceNowTicketTypeFromCategory(this._issueTypeInfo.category as IssueCategory)
+        : undefined,
       kind: this._kind,
       customerId: this._customerId,
       customer: this._customerInfo ?? undefined,

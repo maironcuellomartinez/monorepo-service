@@ -1,4 +1,3 @@
-// infrastructure/persistence/typeorm/entities/servicenow-ticket-link.entity.ts
 import { Entity, Column, PrimaryColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { AppointmentEntity } from './appointment.entity';
 

@@ -1,4 +1,3 @@
-// infrastructure/persistence/typeorm/entities/schedule-assignment.entity.ts
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { CornerScheduleEntity } from './corner-schedule.entity';
 import { TechnicianEntity } from './technician.entity';

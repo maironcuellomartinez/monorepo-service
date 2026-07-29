@@ -8,13 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { SlotPicker } from '@/components/slot-picker'
-import { incidentsApi, Incident, IncidentStatus, IncidentTimelineEntry, AvailabilitySlot } from '@/lib/api'
+import { appointmentsApi, Appointment, AppointmentStatus, AppointmentTimelineEntry, AvailabilitySlot } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth'
-import { IncidentStatusBadge } from './incidents-page'
+import { AppointmentStatusBadge, TicketTypeBadge } from './appointments-page'
 import { STATUS_LABELS, TIMELINE_ICON } from './dashboard-page'
 
-const STATUS_ORDER: IncidentStatus[] = [
+const STATUS_ORDER: AppointmentStatus[] = [
   'CREATED',
   'DELIVERED',
   'IN_PROGRESS',
@@ -22,19 +22,19 @@ const STATUS_ORDER: IncidentStatus[] = [
   'VALIDATED',
 ]
 
-export function IncidentDetailPage() {
+export function AppointmentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [incident, setIncident] = useState<Incident | null>(null)
+  const [appointment, setAppointment] = useState<Appointment | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
-  const [timeline, setTimeline] = useState<IncidentTimelineEntry[]>([])
+  const [timeline, setTimeline] = useState<AppointmentTimelineEntry[]>([])
   const [loadingTimeline, setLoadingTimeline] = useState(false)
 
-  // Tomar una incidencia CLOSED la reabre y reprograma en el mismo paso —
+  // Tomar una cita CLOSED la reabre y reprograma en el mismo paso —
   // hace falta elegir un horario nuevo antes de confirmar. CANCELED es
   // terminal y no puede tomarse/reabrirse.
   const [slotPickerOpen, setSlotPickerOpen] = useState(false)
@@ -45,17 +45,17 @@ export function IncidentDetailPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await incidentsApi.getById(id)
-      setIncident(data)
+      const data = await appointmentsApi.getById(id)
+      setAppointment(data)
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setError(msg || 'Error al cargar la incidencia')
+      setError(msg || 'Error al cargar la cita')
     } finally {
       setLoading(false)
     }
 
     setLoadingTimeline(true)
-    incidentsApi.getTimeline(id)
+    appointmentsApi.getTimeline(id)
       .then(setTimeline)
       .catch(() => setTimeline([]))
       .finally(() => setLoadingTimeline(false))
@@ -63,7 +63,7 @@ export function IncidentDetailPage() {
 
   useEffect(() => { load() }, [id])
 
-  const needsNewSlot = !!incident && incident.status === 'CLOSED'
+  const needsNewSlot = !!appointment && appointment.status === 'CLOSED'
 
   const handleTakeClick = () => {
     if (needsNewSlot) {
@@ -74,19 +74,19 @@ export function IncidentDetailPage() {
   }
 
   const handleTake = async () => {
-    if (!incident || !user?.technicianId) return
+    if (!appointment || !user?.technicianId) return
     if (needsNewSlot && !selectedTakeSlot) return
     setActionLoading(true)
     setActionError('')
     try {
-      await incidentsApi.take(incident.id, {
+      await appointmentsApi.take(appointment.id, {
         technicianId: user.technicianId,
         slotIds: needsNewSlot ? selectedTakeSlot!.slotIds : undefined,
       })
       navigate('/dashboard')
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setActionError(msg || 'Error al tomar la incidencia')
+      setActionError(msg || 'Error al tomar la cita')
     } finally {
       setActionLoading(false)
     }
@@ -95,7 +95,7 @@ export function IncidentDetailPage() {
   if (loading) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Detalle Incidencia" />
+        <Header title="Detalle Cita" />
         <div className="flex-1 p-6 space-y-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-32 bg-muted animate-pulse rounded-lg" />
@@ -105,16 +105,16 @@ export function IncidentDetailPage() {
     )
   }
 
-  if (error || !incident) {
+  if (error || !appointment) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Detalle Incidencia" />
+        <Header title="Detalle Cita" />
         <div className="p-6">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error || 'Incidencia no encontrada'}</AlertDescription>
+            <AlertDescription>{error || 'Cita no encontrada'}</AlertDescription>
           </Alert>
-          <Button variant="outline" className="mt-4" onClick={() => navigate('/incidents')}>
+          <Button variant="outline" className="mt-4" onClick={() => navigate('/appointments')}>
             <ArrowLeft className="h-4 w-4" />
             Volver
           </Button>
@@ -123,20 +123,20 @@ export function IncidentDetailPage() {
     )
   }
 
-  const statusIdx = STATUS_ORDER.indexOf(incident.status)
+  const statusIdx = STATUS_ORDER.indexOf(appointment.status)
   // VALIDATED y CANCELED son terminales — no se pueden tomar. CLOSED sí:
   // tomarla la reabre y reprograma en el mismo paso (ver needsNewSlot más
   // arriba), no hace falta un botón "Reabrir" aparte.
   const canTake =
-    !incident.currentTechnicianId &&
+    !appointment.currentTechnicianId &&
     !!user?.technicianId &&
-    incident.status !== 'VALIDATED' &&
-    incident.status !== 'CANCELED'
+    appointment.status !== 'VALIDATED' &&
+    appointment.status !== 'CANCELED'
 
   return (
     <div className="flex flex-col h-full">
-      <Header title={`Incidencia ${incident.servicenowNumber ?? incident.id.slice(0, 8)}`} onRefresh={load} loading={loading}>
-        <Button variant="outline" size="sm" onClick={() => navigate('/incidents')}>
+      <Header title={`Cita ${appointment.servicenowNumber ?? appointment.id.slice(0, 8)}`} onRefresh={load} loading={loading}>
+        <Button variant="outline" size="sm" onClick={() => navigate('/appointments')}>
           <ArrowLeft className="h-4 w-4" />
           Volver
         </Button>
@@ -185,7 +185,7 @@ export function IncidentDetailPage() {
                   )}
                 </div>
               ))}
-              {incident.status === 'REOPENED' && (
+              {appointment.status === 'REOPENED' && (
                 <Badge variant="destructive" className="ml-2">REABIERTA</Badge>
               )}
             </div>
@@ -199,26 +199,27 @@ export function IncidentDetailPage() {
               <CardTitle className="text-base">Información general</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <InfoRow label="ID" value={<code className="font-mono text-xs">{incident.id}</code>} />
-              {incident.issueId != null && (
-                <InfoRow label="Issue ID" value={<code className="font-mono text-xs">{incident.issueId}</code>} />
+              <InfoRow label="ID" value={<code className="font-mono text-xs">{appointment.id}</code>} />
+              {appointment.issueId != null && (
+                <InfoRow label="Issue ID" value={<code className="font-mono text-xs">{appointment.issueId}</code>} />
               )}
-              <InfoRow label="Estado" value={<IncidentStatusBadge status={incident.status} />} />
-              <InfoRow label="Corner" value={incident.corner?.name ?? incident.cornerId} />
-              <InfoRow label="Tipo" value={incident.issueType?.name ?? incident.issueTypeId} />
-              <InfoRow label="Email cliente" value={incident.customer?.email ?? incident.customerId} />
-              {incident.technician && (
-                <InfoRow label="Técnico" value={incident.technician.name} />
+              <InfoRow label="Estado" value={<AppointmentStatusBadge status={appointment.status} />} />
+              <InfoRow label="Tipo de ticket" value={<TicketTypeBadge ticketType={appointment.ticketType} />} />
+              <InfoRow label="Corner" value={appointment.corner?.name ?? appointment.cornerId} />
+              <InfoRow label="Tipo" value={appointment.issueType?.name ?? appointment.issueTypeId} />
+              <InfoRow label="Email cliente" value={appointment.customer?.email ?? appointment.customerId} />
+              {appointment.technician && (
+                <InfoRow label="Técnico" value={appointment.technician.name} />
               )}
-              <InfoRow label="Creada" value={formatDate(incident.createdAt)} />
-              <InfoRow label="Actualizada" value={formatDate(incident.updatedAt)} />
-              {incident.scheduledRange && (
+              <InfoRow label="Creada" value={formatDate(appointment.createdAt)} />
+              <InfoRow label="Actualizada" value={formatDate(appointment.updatedAt)} />
+              {appointment.scheduledRange && (
                 <>
-                  <InfoRow label="Inicio programado" value={formatDate(incident.scheduledRange.start)} />
-                  <InfoRow label="Fin programado" value={formatDate(incident.scheduledRange.end)} />
+                  <InfoRow label="Inicio programado" value={formatDate(appointment.scheduledRange.start)} />
+                  <InfoRow label="Fin programado" value={formatDate(appointment.scheduledRange.end)} />
                 </>
               )}
-              {incident.notes && <InfoRow label="Notas" value={incident.notes} />}
+              {appointment.notes && <InfoRow label="Notas" value={appointment.notes} />}
             </CardContent>
           </Card>
 
@@ -288,20 +289,20 @@ export function IncidentDetailPage() {
             <CardContent className="space-y-3 text-sm">
               <InfoRow
                 label="SN Number"
-                value={incident.servicenowNumber
-                  ? <span className="font-mono font-semibold">{incident.servicenowNumber}</span>
+                value={appointment.servicenowNumber
+                  ? <span className="font-mono font-semibold">{appointment.servicenowNumber}</span>
                   : <span className="text-muted-foreground">Pendiente</span>}
               />
               <InfoRow
                 label="SN ID (sys_id)"
-                value={incident.servicenowId
-                  ? <code className="font-mono text-xs">{incident.servicenowId}</code>
+                value={appointment.servicenowId
+                  ? <code className="font-mono text-xs">{appointment.servicenowId}</code>
                   : <span className="text-muted-foreground">—</span>}
               />
-              {incident.snowqCorrelationId && (
+              {appointment.snowqCorrelationId && (
                 <Alert>
                   <AlertDescription className="text-xs">
-                    Correlation ID pendiente de reconciliar: <code className="font-mono">{incident.snowqCorrelationId}</code>
+                    Correlation ID pendiente de reconciliar: <code className="font-mono">{appointment.snowqCorrelationId}</code>
                   </AlertDescription>
                 </Alert>
               )}
@@ -309,7 +310,7 @@ export function IncidentDetailPage() {
           </Card>
 
           {/* Device info */}
-          {(incident.device || incident.deviceId) && (
+          {(appointment.device || appointment.deviceId) && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
@@ -318,21 +319,21 @@ export function IncidentDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
-                {incident.device ? (
+                {appointment.device ? (
                   <>
-                    <InfoRow label="Serial" value={<code className="font-mono text-xs font-semibold">{incident.device.serialNumber}</code>} />
-                    {incident.device.brand && incident.device.model && (
-                      <InfoRow label="Nombre" value={`${incident.device.brand} ${incident.device.model}`} />
+                    <InfoRow label="Serial" value={<code className="font-mono text-xs font-semibold">{appointment.device.serialNumber}</code>} />
+                    {appointment.device.brand && appointment.device.model && (
+                      <InfoRow label="Nombre" value={`${appointment.device.brand} ${appointment.device.model}`} />
                     )}
-                    {incident.device.brand && !incident.device.model && (
-                      <InfoRow label="Marca" value={incident.device.brand} />
+                    {appointment.device.brand && !appointment.device.model && (
+                      <InfoRow label="Marca" value={appointment.device.brand} />
                     )}
-                    {incident.device.model && !incident.device.brand && (
-                      <InfoRow label="Modelo" value={incident.device.model} />
+                    {appointment.device.model && !appointment.device.brand && (
+                      <InfoRow label="Modelo" value={appointment.device.model} />
                     )}
                   </>
                 ) : (
-                  <InfoRow label="ID" value={<code className="font-mono text-xs">{incident.deviceId}</code>} />
+                  <InfoRow label="ID" value={<code className="font-mono text-xs">{appointment.deviceId}</code>} />
                 )}
               </CardContent>
             </Card>
@@ -354,7 +355,7 @@ export function IncidentDetailPage() {
               )}
 
               <Button onClick={handleTakeClick} disabled={actionLoading}>
-                {actionLoading ? 'Tomando...' : 'Tomar incidencia'}
+                {actionLoading ? 'Tomando...' : 'Tomar cita'}
               </Button>
             </CardContent>
           </Card>
@@ -365,9 +366,9 @@ export function IncidentDetailPage() {
         <Dialog open={slotPickerOpen} onOpenChange={(open) => { if (!open && !actionLoading) { setSlotPickerOpen(false); setSelectedTakeSlot(null); setActionError('') } }}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Reabrir y tomar incidencia</DialogTitle>
+              <DialogTitle>Reabrir y tomar cita</DialogTitle>
               <DialogDescription>
-                Esta incidencia está {incident.status === 'CLOSED' ? 'cerrada' : 'cancelada'} — elegí un horario nuevo para reabrirla y tomarla.
+                Esta cita está {appointment.status === 'CLOSED' ? 'cerrada' : 'cancelada'} — elegí un horario nuevo para reabrirla y tomarla.
               </DialogDescription>
             </DialogHeader>
 
@@ -379,8 +380,8 @@ export function IncidentDetailPage() {
             )}
 
             <SlotPicker
-              cornerId={incident.cornerId}
-              duration={incident.durationMinutes ?? 60}
+              cornerId={appointment.cornerId}
+              duration={appointment.durationMinutes ?? 60}
               selectedSlot={selectedTakeSlot}
               onSelect={setSelectedTakeSlot}
             />

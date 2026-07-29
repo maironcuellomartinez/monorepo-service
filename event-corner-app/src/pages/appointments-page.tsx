@@ -9,12 +9,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { incidentsApi, issueTypesApi, cornersApi, Corner, IssueType, Incident, IncidentStatus, IncidentFilters } from '@/lib/api'
+import { appointmentsApi, issueTypesApi, cornersApi, Corner, IssueType, Appointment, AppointmentStatus, AppointmentFilters, TICKET_TYPE_LABELS } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 
-const STATUS_CONFIG: Record<IncidentStatus, { label: string; className: string }> = {
+const STATUS_CONFIG: Record<AppointmentStatus, { label: string; className: string }> = {
   CREATED:                     { label: 'Creada',               className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
   DELIVERED:                   { label: 'Entregada',            className: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' },
   IN_PROGRESS:                 { label: 'En progreso',          className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' },
@@ -30,14 +30,14 @@ const STATUS_CONFIG: Record<IncidentStatus, { label: string; className: string }
   CANCELED:                    { label: 'Cancelada',            className: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' },
 }
 
-const ALL_STATUSES: IncidentStatus[] = [
+const ALL_STATUSES: AppointmentStatus[] = [
   'CREATED', 'DELIVERED', 'IN_PROGRESS', 'PAUSED',
   'PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART',
   'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY',
   'CLOSED', 'VALIDATED', 'REOPENED', 'CANCELED',
 ]
 
-export function IncidentStatusBadge({ status }: { status: IncidentStatus }) {
+export function AppointmentStatusBadge({ status }: { status: AppointmentStatus }) {
   const config = STATUS_CONFIG[status] ?? { label: status, className: '' }
   return (
     <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold', config.className)}>
@@ -46,12 +46,17 @@ export function IncidentStatusBadge({ status }: { status: IncidentStatus }) {
   )
 }
 
+export function TicketTypeBadge({ ticketType }: { ticketType?: Appointment['ticketType'] }) {
+  if (!ticketType) return <span className="text-xs text-muted-foreground">—</span>
+  return <Badge variant="outline">{TICKET_TYPE_LABELS[ticketType]}</Badge>
+}
+
 const PAGE_SIZE = 20
 
-export function IncidentsPage() {
+export function AppointmentsPage() {
   const navigate = useNavigate()
   const { can } = useAuth()
-  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [appointments, setAppointments] = useState<Appointment[]>([])
   const [total, setTotal] = useState(0)
   const [corners, setCorners] = useState<Corner[]>([])
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
@@ -96,12 +101,12 @@ export function IncidentsPage() {
 
   // Al cambiar de corner se vacía la tabla para mostrar el skeleton inicial
   useEffect(() => {
-    setIncidents([])
+    setAppointments([])
     setTotal(0)
   }, [cornerId])
 
-  const buildParams = useCallback((): IncidentFilters => {
-    const p: IncidentFilters = { page, limit: PAGE_SIZE, availableOnly }
+  const buildParams = useCallback((): AppointmentFilters => {
+    const p: AppointmentFilters = { page, limit: PAGE_SIZE, availableOnly }
     if (cornerId) p.cornerId = cornerId
     if (status) p.status = status
     if (issueTypeId) p.issueTypeId = issueTypeId
@@ -113,9 +118,9 @@ export function IncidentsPage() {
     return p
   }, [page, cornerId, status, issueTypeId, debouncedEmail, debouncedSnNumber, debouncedSerial, dateFrom, dateTo, availableOnly])
 
-  const loadIncidents = useCallback(async () => {
+  const loadAppointments = useCallback(async () => {
     if (!cornerId) {
-      setIncidents([])
+      setAppointments([])
       setTotal(0)
       return
     }
@@ -123,15 +128,15 @@ export function IncidentsPage() {
     setLoading(true)
     setError('')
     try {
-      const result = await incidentsApi.listFiltered(buildParams())
+      const result = await appointmentsApi.listFiltered(buildParams())
       if (id !== requestId.current) return
-      setIncidents(result.data)
+      setAppointments(result.data)
       setTotal(result.total)
     } catch (err: unknown) {
       if (id !== requestId.current) return
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setError(msg || 'Error al cargar incidencias')
-      setIncidents([])
+      setError(msg || 'Error al cargar citas')
+      setAppointments([])
       setTotal(0)
     } finally {
       if (id === requestId.current) setLoading(false)
@@ -139,8 +144,8 @@ export function IncidentsPage() {
   }, [buildParams, cornerId])
 
   useEffect(() => {
-    loadIncidents()
-  }, [loadIncidents])
+    loadAppointments()
+  }, [loadAppointments])
 
   const clearFilters = () => {
     setStatus('')
@@ -158,11 +163,11 @@ export function IncidentsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Incidencias" onRefresh={loadIncidents} loading={loading}>
+      <Header title="Citas" onRefresh={loadAppointments} loading={loading}>
         {can('incident:create') && (
-          <Button onClick={() => navigate('/incidents/new')}>
+          <Button onClick={() => navigate('/appointments/new')}>
             <Plus className="h-4 w-4" />
-            Nueva Incidencia
+            Nueva Cita
           </Button>
         )}
       </Header>
@@ -209,7 +214,7 @@ export function IncidentsPage() {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">Tipo de incidencia</Label>
+              <Label className="text-xs">Tipo de cita</Label>
               <Select value={issueTypeId} onValueChange={(v) => { setIssueTypeId(v === '_all' ? '' : v); setPage(1) }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Todos los tipos" />
@@ -303,7 +308,7 @@ export function IncidentsPage() {
 
             {cornerId && (
               <span className="text-sm text-muted-foreground pb-0.5 ml-auto">
-                {loading ? 'Buscando…' : `${total} incidencia(s)`}
+                {loading ? 'Buscando…' : `${total} cita(s)`}
               </span>
             )}
           </div>
@@ -313,18 +318,18 @@ export function IncidentsPage() {
         {!cornerId ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <AlertCircle className="h-10 w-10 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Selecciona un corner para ver las incidencias</p>
+            <p className="text-muted-foreground">Selecciona un corner para ver las citas</p>
           </div>
-        ) : loading && incidents.length === 0 ? (
+        ) : loading && appointments.length === 0 ? (
           <div className="space-y-2">
             {[1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="h-12 bg-muted animate-pulse rounded" />
             ))}
           </div>
-        ) : incidents.length === 0 ? (
+        ) : appointments.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <AlertCircle className="h-10 w-10 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No se encontraron incidencias con los filtros aplicados</p>
+            <p className="text-muted-foreground">No se encontraron citas con los filtros aplicados</p>
             {hasFilters && (
               <Button variant="outline" className="mt-4" onClick={clearFilters}>
                 <X className="h-4 w-4" />
@@ -340,6 +345,7 @@ export function IncidentsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>ID</TableHead>
+                    <TableHead>Tipo</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Técnico</TableHead>
                     <TableHead>Dispositivo</TableHead>
@@ -350,36 +356,39 @@ export function IncidentsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {incidents.map((incident) => (
+                  {appointments.map((appointment) => (
                     <TableRow
-                      key={incident.id}
+                      key={appointment.id}
                       className="cursor-pointer"
-                      onClick={() => navigate(`/incidents/${incident.id}`)}
+                      onClick={() => navigate(`/appointments/${appointment.id}`)}
                     >
                       <TableCell className="font-mono text-xs">
-                        {incident.id.slice(0, 8)}...
+                        {appointment.id.slice(0, 8)}...
                       </TableCell>
                       <TableCell>
-                        <IncidentStatusBadge status={incident.status} />
+                        <TicketTypeBadge ticketType={appointment.ticketType} />
+                      </TableCell>
+                      <TableCell>
+                        <AppointmentStatusBadge status={appointment.status} />
                       </TableCell>
                       <TableCell className="text-sm">
-                        {incident.technician ? (
-                          <Badge variant="outline">{incident.technician.name}</Badge>
+                        {appointment.technician ? (
+                          <Badge variant="outline">{appointment.technician.name}</Badge>
                         ) : (
                           <span className="text-xs text-muted-foreground">Disponible</span>
                         )}
                       </TableCell>
                       <TableCell className="text-sm font-mono">
-                        {incident.device?.serialNumber ?? '—'}
+                        {appointment.device?.serialNumber ?? '—'}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground max-w-40 truncate">
-                        {incident.customer?.email ?? incident.customerId?.slice(0, 8) ?? '—'}
+                        {appointment.customer?.email ?? appointment.customerId?.slice(0, 8) ?? '—'}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(incident.createdAt)}
+                        {formatDate(appointment.createdAt)}
                       </TableCell>
                       <TableCell className="text-sm font-mono">
-                        {incident.servicenowNumber ?? '—'}
+                        {appointment.servicenowNumber ?? '—'}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -388,7 +397,7 @@ export function IncidentsPage() {
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation()
-                              navigate(`/incidents/${incident.id}`)
+                              navigate(`/appointments/${appointment.id}`)
                             }}
                           >
                             Ver

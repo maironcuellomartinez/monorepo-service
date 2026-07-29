@@ -537,7 +537,11 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
       appointment.setCornerInfo({ id: entity.corner.corner_id, name: entity.corner.name });
     }
     if (entity.issueType) {
-      appointment.setIssueTypeInfo({ id: entity.issueType.issue_type_id, name: entity.issueType.name });
+      appointment.setIssueTypeInfo({
+        id: entity.issueType.issue_type_id,
+        name: entity.issueType.name,
+        category: entity.issueType.category,
+      });
     }
     if (entity.currentTechnician) {
       appointment.setTechnicianInfo({

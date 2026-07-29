@@ -30,10 +30,11 @@ import { issueTypesApi, treesApi, IssueType, IssueTypeTree } from '@/lib/api'
 const DEVICE_TYPES = ['LAPTOP', 'CELULAR', 'TABLET', 'DESKTOP', 'IMPRESORA', 'OTRO']
 
 const CATEGORIES: { value: string; label: string }[] = [
-  { value: 'ISSUE',                label: 'INCIDENT' },
-  { value: 'REQUEST',              label: 'REQUEST' },
-  { value: 'REQUEST-ONBOARDING',   label: 'REQUEST-ONBOARDING' },
-  { value: 'REQUEST-DECOMMISSION', label: 'REQUEST-DECOMISSION' },
+  { value: 'ISSUE',               label: 'Incidencia' },
+  { value: 'CREATE-DELIVERY',     label: 'Entrega' },
+  { value: 'CREATE-COLLECTION',   label: 'Recolección' },
+  { value: 'REQUEST-ONBOARDING',  label: 'Alta (Onboarding)' },
+  { value: 'REQUEST-DECOMISSION', label: 'Baja (Decomisión)' },
 ]
 
 // ── Issue type form ───────────────────────────────────────────────────────────

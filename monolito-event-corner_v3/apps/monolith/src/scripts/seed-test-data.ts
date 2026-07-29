@@ -68,6 +68,10 @@ const IDS = {
         softwareApp:       'it-software-app-00000000001',
         redConectividad:   'it-red-conectividad-000000001',
         accesoSistema:     'it-acceso-sistema-0000000001',
+        entregaEquipo:     'it-entrega-equipo-0000000001',
+        recoleccionEquipo: 'it-recoleccion-equipo-000001',
+        onboardingDigital: 'it-onboarding-digital-000001',
+        decomisionDigital: 'it-decomision-digital-000001',
     },
 
     corners: {
@@ -242,7 +246,7 @@ async function main() {
             {
                 id:              IDS.issueTypes.hardwareGeneral,
                 name:            'Hardware — General',
-                category:        'hardware',
+                category:        'ISSUE',
                 device_type:     'computer',
                 sn_category:     'hardware',
                 sn_close:        'solution_provided',
@@ -255,7 +259,7 @@ async function main() {
             {
                 id:              IDS.issueTypes.hardwareTeclado,
                 name:            'Hardware — Teclado / Mouse',
-                category:        'hardware',
+                category:        'ISSUE',
                 device_type:     'peripheral',
                 sn_category:     'hardware',
                 sn_close:        'solution_provided',
@@ -268,7 +272,7 @@ async function main() {
             {
                 id:              IDS.issueTypes.softwareSistema,
                 name:            'Software — Sistema Operativo',
-                category:        'software',
+                category:        'ISSUE',
                 device_type:     'computer',
                 sn_category:     'software',
                 sn_close:        'solution_provided',
@@ -281,7 +285,7 @@ async function main() {
             {
                 id:              IDS.issueTypes.softwareApp,
                 name:            'Software — Aplicación Corporativa',
-                category:        'software',
+                category:        'ISSUE',
                 device_type:     null,
                 sn_category:     'software',
                 sn_close:        'solution_provided',
@@ -294,7 +298,7 @@ async function main() {
             {
                 id:              IDS.issueTypes.redConectividad,
                 name:            'Red — Sin Conectividad',
-                category:        'network',
+                category:        'ISSUE',
                 device_type:     null,
                 sn_category:     'network',
                 sn_close:        'solution_provided',
@@ -307,7 +311,7 @@ async function main() {
             {
                 id:              IDS.issueTypes.accesoSistema,
                 name:            'Acceso — Contraseña / Bloqueo',
-                category:        'access',
+                category:        'ISSUE',
                 device_type:     null,
                 sn_category:     'access',
                 sn_close:        'solution_provided',
@@ -316,6 +320,61 @@ async function main() {
                 close_min:       5,
                 position:        6,
                 icon:            'lock',
+            },
+            {
+                id:              IDS.issueTypes.entregaEquipo,
+                name:            'Portátil de préstamo (portátil)',
+                category:        'CREATE-DELIVERY',
+                device_type:     'computer',
+                sn_category:     null, // sin configurar todavía en producción real (confirmado por el negocio)
+                sn_close:        'device_delivered',
+                work_min:        15,
+                spare_min:       0,
+                close_min:       0,
+                position:        7,
+                icon:            'delivery',
+            },
+            {
+                id:              IDS.issueTypes.recoleccionEquipo,
+                name:            'Recolección de portátil (portátil)',
+                category:        'CREATE-COLLECTION',
+                device_type:     'computer',
+                sn_category:     null, // sin configurar todavía en producción real (confirmado por el negocio)
+                sn_close:        'device_collected',
+                work_min:        15,
+                spare_min:       0,
+                close_min:       0,
+                position:        8,
+                icon:            'collection',
+            },
+            {
+                id:              IDS.issueTypes.onboardingDigital,
+                name:            'Onboarding digital (portátil)',
+                category:        'REQUEST-ONBOARDING',
+                device_type:     'computer',
+                // Placeholder de sys_id de catalog item de SN (32 hex) — formato real
+                // visto en producción como "request" + sys_id en un campo multilínea;
+                // delimitador exacto sin confirmar, ver Fase 2 (parseCatalogItemSysId).
+                sn_category:     'a0f180ebdbfc1450f1024dc2ba9619cc',
+                sn_close:        'device_replacement',
+                work_min:        40,
+                spare_min:       0,
+                close_min:       0,
+                position:        9,
+                icon:            'onboarding',
+            },
+            {
+                id:              IDS.issueTypes.decomisionDigital,
+                name:            'Decomisión digital (portátil)',
+                category:        'REQUEST-DECOMISSION',
+                device_type:     'computer',
+                sn_category:     'e66bf31bdbbc1450f1024dc2ba961908',
+                sn_close:        'device_replacement',
+                work_min:        15,
+                spare_min:       0,
+                close_min:       0,
+                position:        10,
+                icon:            'decomission',
             },
         ];
         for (const it of issueTypes) {

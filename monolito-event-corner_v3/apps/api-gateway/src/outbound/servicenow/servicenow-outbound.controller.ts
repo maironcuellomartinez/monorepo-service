@@ -124,6 +124,9 @@ export class ServiceNowOutboundController {
         company: payload.company,
         location: payload.location,
         externalId: payload.externalId,
+        // sys_id del catalog item a ordenar — snowq lo reenvía como `cat_item`
+        // en el POST a sc_req_item (ver request-type.enum.ts SERVICE_CATALOG).
+        cat_item: payload.cat_item,
       },
     };
   }

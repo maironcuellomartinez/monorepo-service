@@ -7,6 +7,7 @@ import { ClientModule } from './client/client.module';
 import { OutboundGatewayModule } from './outbound/outbound-gateway.module';
 import { AuthModule } from './auth/auth.module';
 import { IncidentsController } from './inbound/incidents/incidents.controller';
+import { AppointmentsController } from './inbound/appointments/appointments.controller';
 import { CornersController } from './inbound/corners/corners.controller';
 import { AvailabilityController } from './inbound/availability/availability.controller';
 import { IssueTypesController } from './inbound/admin/issue-types.controller';
@@ -51,6 +52,7 @@ import { HealthModule } from './health/health.module';
     AuthController,
     AbacController,
     IncidentsController,
+    AppointmentsController,
     CornersController,
     AvailabilityController,
     IssueTypesController,

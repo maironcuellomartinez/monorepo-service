@@ -29,8 +29,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
-  cornersApi, availabilityApi, usersApi, issueTypesApi, incidentsApi, devicesApi,
-  Corner, AvailabilitySlot, MonolithUser, IssueType, Incident, DeviceSummary,
+  cornersApi, availabilityApi, usersApi, issueTypesApi, appointmentsApi, devicesApi,
+  Corner, AvailabilitySlot, MonolithUser, IssueType, Appointment, DeviceSummary,
 } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -94,17 +94,17 @@ function SlotEventCard({ event }: { event: SlotEvent }) {
   )
 }
 
-// ─── Create Incident Modal ───────────────────────────────────────────────────
+// ─── Create Appointment Modal ───────────────────────────────────────────────────
 
-interface CreateIncidentModalProps {
+interface CreateAppointmentModalProps {
   open: boolean
   onClose: () => void
   corner: Corner | undefined
   slot: AvailabilitySlot
-  onCreated: (incident: Incident) => void
+  onCreated: (incident: Appointment) => void
 }
 
-function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateIncidentModalProps) {
+function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: CreateAppointmentModalProps) {
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [selectedUser, setSelectedUser] = useState<MonolithUser | null>(null)
@@ -244,7 +244,7 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
     setSubmitting(true)
     setError('')
     try {
-      const incident = await incidentsApi.create({
+      const incident = await appointmentsApi.create({
         cornerId: corner!.id,
         issueTypeId: selectedIssueTypeId,
         customerId: selectedUser.id,
@@ -501,12 +501,12 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
 // ─── Success Modal ────────────────────────────────────────────────────────────
 
 interface SuccessModalProps {
-  incident: Incident
+  incident: Appointment
   onClose: () => void
-  onViewIncident: () => void
+  onViewAppointment: () => void
 }
 
-function SuccessModal({ incident, onClose, onViewIncident }: SuccessModalProps) {
+function SuccessModal({ incident, onClose, onViewAppointment }: SuccessModalProps) {
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
@@ -542,7 +542,7 @@ function SuccessModal({ incident, onClose, onViewIncident }: SuccessModalProps) 
             <Button variant="outline" className="flex-1" onClick={onClose}>
               Cerrar
             </Button>
-            <Button className="flex-1" onClick={onViewIncident}>
+            <Button className="flex-1" onClick={onViewAppointment}>
               Ver incidencia
             </Button>
           </div>
@@ -568,7 +568,7 @@ export function AvailabilityPage() {
 
   // Modal state
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
-  const [createdIncident, setCreatedIncident] = useState<Incident | null>(null)
+  const [createdAppointment, setCreatedAppointment] = useState<Appointment | null>(null)
 
   // ── Load corners and auto-select first ──────────────────────────────
   useEffect(() => {
@@ -825,28 +825,28 @@ export function AvailabilityPage() {
         )}
       </div>
 
-      {/* Create Incident Modal */}
+      {/* Create Appointment Modal */}
       {selectedSlot && (
-        <CreateIncidentModal
+        <CreateAppointmentModal
           open={!!selectedSlot}
           onClose={() => setSelectedSlot(null)}
           corner={corner}
           slot={selectedSlot}
           onCreated={(incident) => {
             setSelectedSlot(null)
-            setCreatedIncident(incident)
+            setCreatedAppointment(incident)
           }}
         />
       )}
 
       {/* Success Modal */}
-      {createdIncident && (
+      {createdAppointment && (
         <SuccessModal
-          incident={createdIncident}
-          onClose={() => setCreatedIncident(null)}
-          onViewIncident={() => {
-            setCreatedIncident(null)
-            navigate(`/incidents/${createdIncident.id}`)
+          incident={createdAppointment}
+          onClose={() => setCreatedAppointment(null)}
+          onViewAppointment={() => {
+            setCreatedAppointment(null)
+            navigate(`/appointments/${createdAppointment.id}`)
           }}
         />
       )}

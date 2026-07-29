@@ -1,4 +1,3 @@
-// infrastructure/persistence/typeorm/entities/appointment-timeline.entity.ts
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { AppointmentEntity } from './appointment.entity';
 import { TechnicianEntity } from './technician.entity';
@@ -15,12 +14,9 @@ export class AppointmentTimelineEntity {
     technician_id: string;
 
     // Ya ancho desde el inicio (40) — no repetir el bug de incident_timeline,
-    // que arrancó en varchar(20) y tuvo que ensancharse en una migración aparte
-    // (ver 1785000000000-WidenIncidentTimelineActionType).
     @Column({ length: 40 })
     action_type: string;
 
-    // Ancho a 50 (no 20 como incident_timeline en origen): estados como
     // 'PENDING_REPLACEMENT_DELIVERY' (28 chars) ya existen en AppointmentStatus.
     @Column({ type: 'varchar', length: 50, nullable: true })
     from_status: string;

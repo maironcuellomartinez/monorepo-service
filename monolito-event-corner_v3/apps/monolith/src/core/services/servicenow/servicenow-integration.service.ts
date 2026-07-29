@@ -14,6 +14,7 @@ import { Corner } from '../../domain/entities/corner.entity';
 import { IssueTypeNotFoundError } from '../../domain/errors/servicenow.errors';
 import { ServiceNowId } from '../../domain/value-objects/servicenow-id.value';
 import { ServiceNowNumber } from '../../domain/value-objects/servicenow-number.value';
+import { parseCatalogItemSysId } from '../../domain/value-objects/servicenow-category.value';
 import { CompanyId, IssueTypeId } from '@app/shared/types/branded-ids';
 import { Result } from '@app/result';
 
@@ -227,21 +228,28 @@ export class ServiceNowIntegrationService {
               process.env.SN_DEFAULT_TECHNICIAN ??
               undefined,
           })
-        : await this.snClient.createRequest({
-            company: snowCompanySysId,
-            category: issueType.servicenowCategory?.value ?? '',
-            assignment_group: assignmentGroup,
-            location: corner.servicenowLocation ?? '',
-            short_description: `Solicitud: ${issueType.name}`,
-            description:
-              appointment.metadata?.notes ?? 'Solicitud creada por técnico',
-            caller_id:
-              callerPrincipalName ??
-              String(appointment.createdByTechnicianId ?? appointment.customerId),
-            requested_for:
-              requestedForOrCreatorEmail ?? String(appointment.customerId),
-            externalId,
-          });
+        : await (() => {
+            const catItem = parseCatalogItemSysId(issueType.servicenowCategory?.value);
+            this.logger.debug(
+              `[appointment:${appointment.id}] cat_item ${catItem ? `resuelto: ${catItem}` : `no encontrado en servicenowCategory="${issueType.servicenowCategory?.value ?? ''}"`}`,
+            );
+            return this.snClient.createRequest({
+              company: snowCompanySysId,
+              category: issueType.servicenowCategory?.value ?? '',
+              assignment_group: assignmentGroup,
+              location: corner.servicenowLocation ?? '',
+              short_description: `Solicitud: ${issueType.name}`,
+              description:
+                appointment.metadata?.notes ?? 'Solicitud creada por técnico',
+              caller_id:
+                callerPrincipalName ??
+                String(appointment.createdByTechnicianId ?? appointment.customerId),
+              requested_for:
+                requestedForOrCreatorEmail ?? String(appointment.customerId),
+              externalId,
+              cat_item: catItem ?? undefined,
+            });
+          })();
 
     if (snResult.isFailure) {
       this.logger.error(
@@ -361,17 +369,24 @@ export class ServiceNowIntegrationService {
             externalId,
             assigned_to: process.env.SN_DEFAULT_TECHNICIAN ?? undefined,
           })
-        : await this.snClient.enqueueRequest({
-            company: snowCompanySysId,
-            category: issueType.servicenowCategory?.value ?? '',
-            assignment_group: assignmentGroup,
-            location: corner.servicenowLocation ?? '',
-            short_description: `Solicitud: ${issueType.name}`,
-            description: appointment.metadata?.notes ?? 'Solicitud creada por técnico',
-            caller_id: String(appointment.createdByTechnicianId ?? appointment.customerId),
-            requested_for: String(appointment.customerId),
-            externalId,
-          });
+        : await (() => {
+            const catItem = parseCatalogItemSysId(issueType.servicenowCategory?.value);
+            this.logger.debug(
+              `[appointment:${appointment.id}] re-enqueue cat_item ${catItem ? `resuelto: ${catItem}` : `no encontrado en servicenowCategory="${issueType.servicenowCategory?.value ?? ''}"`}`,
+            );
+            return this.snClient.enqueueRequest({
+              company: snowCompanySysId,
+              category: issueType.servicenowCategory?.value ?? '',
+              assignment_group: assignmentGroup,
+              location: corner.servicenowLocation ?? '',
+              short_description: `Solicitud: ${issueType.name}`,
+              description: appointment.metadata?.notes ?? 'Solicitud creada por técnico',
+              caller_id: String(appointment.createdByTechnicianId ?? appointment.customerId),
+              requested_for: String(appointment.customerId),
+              externalId,
+              cat_item: catItem ?? undefined,
+            });
+          })();
 
     if (enqueueResult.isFailure) {
       this.logger.error(

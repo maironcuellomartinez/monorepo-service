@@ -3,7 +3,6 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   AlertCircle,
-  ClipboardList,
   MapPin,
   Calendar,
   Tag,
@@ -26,7 +25,7 @@ import { Button } from '@/components/ui/button'
  *
  * Lógica de visibilidad por rol:
  *  - Dashboard              → todos
- *  - Incidencias / Requests → solo técnicos/admins/managers (staffOnly)
+ *  - Citas                  → solo técnicos/admins/managers (staffOnly)
  *  - Disponibilidad         → solo técnicos/admins/managers (staffOnly)
  *  - Corners                → admin y manager (schedule:create) — el CRUD de Corner
  *                             en sí queda gateado adentro de CornersPage (admin-only)
@@ -36,9 +35,8 @@ import { Button } from '@/components/ui/button'
  */
 const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; permission?: string | string[]; staffOnly?: boolean }[] = [
   { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/incidents',    icon: AlertCircle,     label: 'Incidencias',         permission: 'incident:list',         staffOnly: true },
-  { to: '/incidents/batch', icon: PackagePlus, label: 'Lote Incidencias',    permission: 'incident:list',         staffOnly: true },
-  { to: '/requests',     icon: ClipboardList,   label: 'Requests',            permission: 'request:list',          staffOnly: true },
+  { to: '/appointments', icon: AlertCircle,     label: 'Citas',               permission: 'incident:list',         staffOnly: true },
+  { to: '/appointments/batch', icon: PackagePlus, label: 'Lote de Citas',    permission: 'incident:list',         staffOnly: true },
   { to: '/corners',      icon: MapPin,          label: 'Corners',             permission: 'schedule:create' },
   { to: '/users',        icon: Users,           label: 'Usuarios',            permission: ['user:list', 'technician:list'] },
   { to: '/availability', icon: Calendar,        label: 'Disponibilidad',      permission: 'availability:read',     staffOnly: true },

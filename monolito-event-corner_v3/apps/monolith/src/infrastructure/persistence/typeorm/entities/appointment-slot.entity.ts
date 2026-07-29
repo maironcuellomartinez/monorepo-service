@@ -1,4 +1,3 @@
-// infrastructure/persistence/typeorm/entities/appointment-slot.entity.ts
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { AppointmentEntity } from './appointment.entity';
 import { CornerSlotEntity } from './corner-slot.entity';

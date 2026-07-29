@@ -210,9 +210,12 @@ export const availabilityApi = {
       .then((r) => r.data),
 }
 
-// ─── Incidents ────────────────────────────────────────────────────────────────
+// ─── Appointments (Citas) ───────────────────────────────────────────────────
+// Unifica lo que antes eran "Incidents" y "Requests" en un solo concepto:
+// una Cita puede corresponder a una Incidencia o a una Tarea en ServiceNow,
+// según `ticketType` (derivado server-side del IssueType elegido).
 
-export type IncidentStatus =
+export type AppointmentStatus =
   | 'CREATED'
   | 'DELIVERED'
   | 'IN_PROGRESS'
@@ -227,10 +230,20 @@ export type IncidentStatus =
   | 'REOPENED'
   | 'CANCELED'
 
-export interface Incident {
+/** Tipo de ticket SN que corresponde a esta cita — ver appointment-kind.enum.ts (backend). */
+export type TicketType = 'incident' | 'sc_req_item' | 'sc_task'
+
+export const TICKET_TYPE_LABELS: Record<TicketType, string> = {
+  incident: 'Incidencia',
+  sc_req_item: 'Solicitud',
+  sc_task: 'Tarea',
+}
+
+export interface Appointment {
   id: string
   issueId: number | null
-  status: IncidentStatus
+  status: AppointmentStatus
+  ticketType?: TicketType
   customerId: string
   customer?: { id: string; email: string; name?: string }
   cornerId: string
@@ -253,7 +266,7 @@ export interface Incident {
   updatedAt: string
 }
 
-export interface IncidentFilters {
+export interface AppointmentFilters {
   cornerId?: string
   status?: string
   issueTypeId?: string
@@ -265,35 +278,35 @@ export interface IncidentFilters {
   dateTo?: string
   page?: number
   limit?: number
-  /** Si es true, oculta incidencias que ya tienen técnico asignado */
+  /** Si es true, oculta citas que ya tienen técnico asignado */
   availableOnly?: boolean
 }
 
-export interface PaginatedIncidents {
-  data: Incident[]
+export interface PaginatedAppointments {
+  data: Appointment[]
   total: number
   page: number
   limit: number
 }
 
-export const incidentsApi = {
+export const appointmentsApi = {
   list: (params?: { cornerId?: string; status?: string }) =>
     apiClient
-      .get<Incident[]>('/api/incidents/available', { params })
+      .get<Appointment[]>('/api/appointments/available', { params })
       .then((r) => r.data),
-  listFiltered: (params?: IncidentFilters) => {
+  listFiltered: (params?: AppointmentFilters) => {
     const p = params ? { ...params, availableOnly: params.availableOnly ? 'true' : undefined } : undefined
-    return apiClient.get<PaginatedIncidents>('/api/incidents', { params: p }).then((r) => r.data)
+    return apiClient.get<PaginatedAppointments>('/api/appointments', { params: p }).then((r) => r.data)
   },
   mine: () =>
     apiClient
-      .get<PaginatedIncidents>('/api/incidents/mine')
+      .get<PaginatedAppointments>('/api/appointments/mine')
       .then((r) => r.data),
   byTechnician: (technicianId: string) =>
     apiClient
-      .get<Incident[]>(`/api/incidents/technician/${technicianId}`)
+      .get<Appointment[]>(`/api/appointments/technician/${technicianId}`)
       .then((r) => r.data),
-  getById: (id: string) => apiClient.get<Incident>(`/api/incidents/${id}`).then((r) => r.data),
+  getById: (id: string) => apiClient.get<Appointment>(`/api/appointments/${id}`).then((r) => r.data),
   create: (dto: {
     cornerId: string
     issueTypeId: string
@@ -305,32 +318,32 @@ export const incidentsApi = {
     device?: { serialNumber: string }
     notes?: string
   }) =>
-    apiClient.post<Incident>('/api/incidents', dto).then((r) => r.data),
-  changeStatus: (id: string, dto: { technicianId: string; newStatus: IncidentStatus; comment?: string }) =>
-    apiClient.patch<Incident>(`/api/incidents/${id}/status`, dto).then((r) => r.data),
+    apiClient.post<Appointment>('/api/appointments', dto).then((r) => r.data),
+  changeStatus: (id: string, dto: { technicianId: string; newStatus: AppointmentStatus; comment?: string }) =>
+    apiClient.patch<Appointment>(`/api/appointments/${id}/status`, dto).then((r) => r.data),
   cancel: (id: string, customerId: string, reason?: string) =>
-    apiClient.patch<Incident>(`/api/incidents/${id}/cancel`, { customerId, reason }).then((r) => r.data),
+    apiClient.patch<Appointment>(`/api/appointments/${id}/cancel`, { customerId, reason }).then((r) => r.data),
   take: (id: string, dto: { technicianId: string; slotIds?: string[] }) =>
-    apiClient.patch<Incident>(`/api/incidents/${id}/take`, dto).then((r) => r.data),
+    apiClient.patch<Appointment>(`/api/appointments/${id}/take`, dto).then((r) => r.data),
   release: (id: string, technicianId: string, reason?: string) =>
-    apiClient.patch<Incident>(`/api/incidents/${id}/release`, { technicianId, reason }).then((r) => r.data),
+    apiClient.patch<Appointment>(`/api/appointments/${id}/release`, { technicianId, reason }).then((r) => r.data),
   reschedule: (id: string, dto: { technicianId: string; slotIds: string[] }) =>
-    apiClient.patch<Incident>(`/api/incidents/${id}/reschedule`, dto).then((r) => r.data),
+    apiClient.patch<Appointment>(`/api/appointments/${id}/reschedule`, dto).then((r) => r.data),
   setEstimatedClose: (id: string, dto: { technicianId: string; estimatedCloseAt: string }) =>
-    apiClient.patch<Incident>(`/api/incidents/${id}/estimated-close`, dto).then((r) => r.data),
+    apiClient.patch<Appointment>(`/api/appointments/${id}/estimated-close`, dto).then((r) => r.data),
   deliver: (id: string, dto: { notes?: string }) =>
-    apiClient.patch<Incident>(`/api/incidents/${id}/deliver`, dto).then((r) => r.data),
+    apiClient.patch<Appointment>(`/api/appointments/${id}/deliver`, dto).then((r) => r.data),
   validate: (id: string, customerId: string) =>
-    apiClient.patch<Incident>(`/api/incidents/${id}/validate`, { customerId }).then((r) => r.data),
+    apiClient.patch<Appointment>(`/api/appointments/${id}/validate`, { customerId }).then((r) => r.data),
   reopen: (id: string, customerId: string, dto?: { reason?: string }) =>
-    apiClient.patch<Incident>(`/api/incidents/${id}/reopen`, { customerId, ...dto }).then((r) => r.data),
+    apiClient.patch<Appointment>(`/api/appointments/${id}/reopen`, { customerId, ...dto }).then((r) => r.data),
   getTimeline: (id: string) =>
-    apiClient.get<IncidentTimelineEntry[]>(`/api/incidents/${id}/timeline`).then((r) => r.data),
+    apiClient.get<AppointmentTimelineEntry[]>(`/api/appointments/${id}/timeline`).then((r) => r.data),
   addNote: (id: string, dto: { technicianId?: string; comment: string }) =>
-    apiClient.post(`/api/incidents/${id}/notes`, dto).then((r) => r.data),
+    apiClient.post(`/api/appointments/${id}/notes`, dto).then((r) => r.data),
 }
 
-export interface IncidentTimelineEntry {
+export interface AppointmentTimelineEntry {
   activityId: string
   incidentId: string
   technicianId: string | null
@@ -340,42 +353,6 @@ export interface IncidentTimelineEntry {
   toStatus: string | null
   comment: string | null
   createdAt: string
-}
-
-// ─── Requests ─────────────────────────────────────────────────────────────────
-
-export type RequestStatus = 'CREATED' | 'IN_PROGRESS' | 'CLOSED' | 'CANCELLED'
-
-export interface ServiceRequest {
-  id: string
-  status: RequestStatus
-  customerId: string
-  customer?: { id: string; email: string; name?: string }
-  cornerId: string
-  corner?: Corner
-  issueTypeId: string
-  issueType?: IssueType
-  technicianId?: string
-  technician?: Technician
-  deviceId?: string
-  notes?: string
-  servicenowId?: string
-  servicenowNumber?: string
-  snowqCorrelationId?: string
-  scheduledRange?: { start: string; end: string }
-  createdAt: string
-  updatedAt: string
-}
-
-export const requestsApi = {
-  list: (params?: { customerId?: string; technicianId?: string }) =>
-    apiClient.get<ServiceRequest[]>('/api/requests', { params }).then((r) => r.data),
-  getById: (id: string) =>
-    apiClient.get<ServiceRequest>(`/api/requests/${id}`).then((r) => r.data),
-  create: (dto: Partial<ServiceRequest>) =>
-    apiClient.post<ServiceRequest>('/api/requests', dto).then((r) => r.data),
-  changeStatus: (id: string, dto: { status: RequestStatus; reason?: string }) =>
-    apiClient.patch<ServiceRequest>(`/api/requests/${id}/status`, dto).then((r) => r.data),
 }
 
 // ─── Issue Types ──────────────────────────────────────────────────────────────
@@ -534,10 +511,10 @@ export interface MonolithUser {
 }
 
 export const usersApi = {
-  /** Lista usuarios activos CON empresa — para incident creation picker */
-  list: () => apiClient.get<MonolithUser[]>('/api/incidents/users').then((r) => r.data),
-  /** Busca usuarios activos CON empresa por nombre/email/UPN — para incident creation picker */
-  search: (q: string) => apiClient.get<MonolithUser[]>('/api/incidents/users/search', { params: { q } }).then((r) => r.data),
+  /** Lista usuarios activos CON empresa — para appointment creation picker */
+  list: () => apiClient.get<MonolithUser[]>('/api/appointments/users').then((r) => r.data),
+  /** Busca usuarios activos CON empresa por nombre/email/UPN — para appointment creation picker */
+  search: (q: string) => apiClient.get<MonolithUser[]>('/api/appointments/users/search', { params: { q } }).then((r) => r.data),
   /** Lista TODOS los usuarios activos (admin) */
   listAll: () => apiClient.get<MonolithUser[]>('/api/admin/users').then((r) => r.data),
   /** Busca usuarios por nombre/email/UPN (admin) */

@@ -33,6 +33,14 @@ export interface ServiceNowRequestPayload {
   requested_for?: string;
   /** ID del request en el monolito — usado por snowq para deduplicar reintentos/re-encolados. */
   externalId?: string;
+  /**
+   * sys_id del catalog item de ServiceNow a ordenar (campo `cat_item` de
+   * sc_req_item). Necesario para que el workflow propio del catalog item
+   * dispare la generación de sc_task — sin esto, el RITM se crea "vacío",
+   * sin vincularse al flujo de fulfillment real. Extraído de
+   * `IssueType.servicenowCategory` vía `parseCatalogItemSysId()`.
+   */
+  cat_item?: string;
 }
 
 export interface ServiceNowTicketResult {

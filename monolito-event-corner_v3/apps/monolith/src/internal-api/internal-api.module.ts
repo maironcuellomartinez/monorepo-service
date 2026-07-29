@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { InternalTokenGuard } from './guards/internal-token.guard';
 import { InternalIncidentsController } from './incidents/internal-incidents.controller';
+import { InternalAppointmentsController } from './appointments/internal-appointments.controller';
 import { InternalCornersController } from './corners/internal-corners.controller';
 import { InternalAvailabilityController } from './availability/internal-availability.controller';
 import { InternalRequestsController } from './requests/internal-requests.controller';
@@ -28,6 +29,7 @@ import { BatchDraftService } from '../core/services/batch-draft/batch-draft.serv
 @Module({
   imports: [TypeOrmModule.forFeature([BatchDraftEntity, BatchDraftItemEntity])],
   controllers: [
+    InternalAppointmentsController,
     InternalIncidentsController,
     InternalCornersController,
     InternalAvailabilityController,

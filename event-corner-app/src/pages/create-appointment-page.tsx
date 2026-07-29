@@ -12,9 +12,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import {
-  cornersApi, issueTypesApi, availabilityApi, incidentsApi,
+  cornersApi, issueTypesApi, availabilityApi, appointmentsApi,
   usersApi, devicesApi,
-  Corner, IssueType, AvailabilitySlot, Incident, MonolithUser, DeviceSummary,
+  Corner, IssueType, AvailabilitySlot, Appointment, MonolithUser, DeviceSummary,
 } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth'
@@ -30,7 +30,7 @@ const STEPS = [
   { n: 6, label: 'Confirmar' },
 ] as const
 
-export function CreateIncidentPage() {
+export function CreateAppointmentPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { user: authUser } = useAuth()
@@ -50,7 +50,7 @@ export function CreateIncidentPage() {
   // Selections
   const [selectedCornerId, setSelectedCornerId] = useState(searchParams.get('cornerId') ?? '')
   const [selectedUser, setSelectedUser] = useState<MonolithUser | null>(() => {
-    // Pre-fill user from auth context when the employee clicks "Crear Incidencia" on a device
+    // Pre-fill user from auth context when the employee clicks "Crear Cita" on a device
     if (presetCustomerId && authUser) {
       return {
         id: presetCustomerId,
@@ -81,10 +81,15 @@ export function CreateIncidentPage() {
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [createdIncident, setCreatedIncident] = useState<Incident | null>(null)
+  const [createdAppointment, setCreatedAppointment] = useState<Appointment | null>(null)
 
   useEffect(() => {
-    Promise.all([cornersApi.list(), issueTypesApi.list({ category: 'ISSUE' })]).then(([c, it]) => {
+    // Lista completa sin filtrar por categoría — igual que el formulario real
+    // de producción, donde el empleado elige un único tipo de cita de una
+    // lista plana (Incidencia/Entrega/Recolección/Onboarding/Decomisión) sin
+    // distinguir "incidencia" de "solicitud" — esa clasificación la resuelve
+    // el backend a partir del IssueType elegido.
+    Promise.all([cornersApi.list(), issueTypesApi.list()]).then(([c, it]) => {
       setCorners(c)
       setIssueTypes(it)
     })
@@ -136,7 +141,7 @@ export function CreateIncidentPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceType])
 
-  // La duración de la cita la define el tipo de incidencia elegido en el paso 4
+  // La duración de la cita la define el tipo elegido en el paso 4
   const duration = issueTypes.find((it) => it.id === selectedIssueTypeId)?.workMinutes ?? 60
 
   const checkAvailability = async () => {
@@ -171,7 +176,7 @@ export function CreateIncidentPage() {
     setLoading(true)
     setError('')
     try {
-      const incident = await incidentsApi.create({
+      const appointment = await appointmentsApi.create({
         cornerId: selectedCornerId,
         issueTypeId: selectedIssueTypeId,
         customerId: selectedUser.id,
@@ -182,10 +187,10 @@ export function CreateIncidentPage() {
         notes: [description.trim(), notes.trim()].filter(Boolean).join('\n\n') || undefined,
         device: { serialNumber: serial },
       })
-      setCreatedIncident(incident)
+      setCreatedAppointment(appointment)
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setError(msg || 'Error al crear la incidencia')
+      setError(msg || 'Error al crear la cita')
     } finally {
       setLoading(false)
     }
@@ -210,52 +215,52 @@ export function CreateIncidentPage() {
     )
   })
 
-  if (createdIncident) {
+  if (createdAppointment) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Nueva Incidencia" />
+        <Header title="Nueva Cita" />
         <div className="flex-1 p-6 flex items-center justify-center">
           <Card className="max-w-lg w-full">
             <CardHeader className="text-center">
               <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-2" />
-              <CardTitle>Incidencia creada</CardTitle>
+              <CardTitle>Cita creada</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="bg-muted rounded-lg p-4 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">ID:</span>
-                  <code className="font-mono text-xs">{createdIncident.id}</code>
+                  <code className="font-mono text-xs">{createdAppointment.id}</code>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Estado:</span>
-                  <Badge>{createdIncident.status}</Badge>
+                  <Badge>{createdAppointment.status}</Badge>
                 </div>
-                {createdIncident.snowqCorrelationId && (
+                {createdAppointment.snowqCorrelationId && (
                   <div className="flex justify-between gap-4">
                     <span className="text-muted-foreground shrink-0">Correlation ID:</span>
-                    <code className="font-mono text-xs break-all text-right">{createdIncident.snowqCorrelationId}</code>
+                    <code className="font-mono text-xs break-all text-right">{createdAppointment.snowqCorrelationId}</code>
                   </div>
                 )}
-                {createdIncident.servicenowNumber && (
+                {createdAppointment.servicenowNumber && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">SN Number:</span>
-                    <code className="font-mono text-xs">{createdIncident.servicenowNumber}</code>
+                    <code className="font-mono text-xs">{createdAppointment.servicenowNumber}</code>
                   </div>
                 )}
               </div>
-              {createdIncident.snowqCorrelationId && (
+              {createdAppointment.snowqCorrelationId && (
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    La incidencia fue encolada en ServiceNow. El número SN se asignará cuando se procese.
+                    La cita fue encolada en ServiceNow. El número SN se asignará cuando se procese.
                   </AlertDescription>
                 </Alert>
               )}
               <div className="flex gap-2">
-                <Button className="flex-1" onClick={() => navigate(`/incidents/${createdIncident.id}`)}>
-                  Ver incidencia
+                <Button className="flex-1" onClick={() => navigate(`/appointments/${createdAppointment.id}`)}>
+                  Ver cita
                 </Button>
-                <Button variant="outline" className="flex-1" onClick={() => navigate('/incidents')}>
+                <Button variant="outline" className="flex-1" onClick={() => navigate('/appointments')}>
                   Volver al listado
                 </Button>
               </div>
@@ -268,7 +273,7 @@ export function CreateIncidentPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Nueva Incidencia" />
+      <Header title="Nueva Cita" />
 
       <div className="flex-1 p-6 overflow-auto">
         {/* Stepper */}
@@ -414,7 +419,7 @@ export function CreateIncidentPage() {
                     <p className="font-medium">{selectedUser.fullName ?? selectedUser.email}</p>
                     <p className="text-xs opacity-70">{selectedUser.email}</p>
                     {!selectedUser.companyId && (
-                      <p className="text-xs mt-1 font-medium">Este usuario no tiene empresa asignada y no puede crear incidencias.</p>
+                      <p className="text-xs mt-1 font-medium">Este usuario no tiene empresa asignada y no puede crear citas.</p>
                     )}
                   </div>
                 )}
@@ -555,7 +560,7 @@ export function CreateIncidentPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Tipo de incidencia</Label>
+                  <Label>Tipo de cita</Label>
                   <Select
                     value={selectedIssueTypeId}
                     onValueChange={(v) => {
@@ -591,13 +596,13 @@ export function CreateIncidentPage() {
                 )}
                 <div className="space-y-2">
                   <Label htmlFor="description">
-                    Descripción del problema <span className="text-destructive">*</span>
+                    Descripción <span className="text-destructive">*</span>
                   </Label>
                   <Textarea
                     id="description"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Describí el problema con detalle: síntomas, cuándo ocurre, qué impacto tiene..."
+                    placeholder="Describí el motivo de la cita con detalle..."
                     rows={4}
                   />
                 </div>
@@ -743,7 +748,7 @@ export function CreateIncidentPage() {
                     <ArrowLeft className="h-4 w-4" /> Atrás
                   </Button>
                   <Button className="flex-1" onClick={handleSubmit} disabled={loading}>
-                    {loading ? 'Creando...' : 'Crear incidencia'}
+                    {loading ? 'Creando...' : 'Crear cita'}
                     <CheckCircle2 className="h-4 w-4" />
                   </Button>
                 </div>

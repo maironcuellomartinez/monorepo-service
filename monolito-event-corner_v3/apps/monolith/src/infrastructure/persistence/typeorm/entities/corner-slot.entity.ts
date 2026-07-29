@@ -1,4 +1,3 @@
-// infrastructure/persistence/typeorm/entities/corner-slot.entity.ts
 import {
   Entity,
   Column,
