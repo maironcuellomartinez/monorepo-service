@@ -2,8 +2,6 @@
 import { Entity, Column, PrimaryColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { CornerEntity } from './corner.entity';
 import { ScheduleAssignmentEntity } from './schedule-assignment.entity';
-import { IncidentEntity } from './incident.entity';
-import { RequestEntity } from './request.entity';
 
 /**
  * Entidad que representa un técnico en la tabla technicians.
@@ -83,16 +81,4 @@ export class TechnicianEntity {
      */
     @OneToMany(() => ScheduleAssignmentEntity, assignment => assignment.technician)
     scheduleAssignments: ScheduleAssignmentEntity[];
-
-    /**
-     * Relación One technician a muchos incidents
-     */
-    @OneToMany(() => IncidentEntity, incident => incident.currentTechnician)
-    incidents: IncidentEntity[];
-
-    /**
-     * Relación One technician a muchos requests
-     */
-    @OneToMany(() => RequestEntity, request => request.technician)
-    requests: RequestEntity[];
 }

@@ -8,12 +8,12 @@ import {
 import { ICornerRepository } from '../../ports/outgoing/repositories/corner-repository.port';
 import { ISlotRepository } from '../../ports/outgoing/repositories/slot-repository.port';
 import { ITechnicianRepository } from '../../ports/outgoing/repositories/technician-repository.port';
-import { IIncidentRepository } from '../../ports/outgoing/repositories/incident-repository.port';
+import { IAppointmentRepository } from '../../ports/outgoing/repositories/appointment-repository.port';
 import { ICache } from '../../ports/outgoing/cache/cache.port';
-import { IncidentStatus } from '../../domain/enums/incident-status.enum';
+import { AppointmentStatus } from '../../domain/enums/appointment-status.enum';
 import { Slot } from '../../domain/entities/slot.entity';
 import { SlotStatus } from '../../domain/enums/slot-status.enum';
-import { Incident } from '../../domain/entities/incident.entity';
+import { Appointment } from '../../domain/entities/appointment.entity';
 import { Result } from '@app/result';
 import { CornerId } from '@app/shared/types/branded-ids';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
@@ -24,7 +24,7 @@ export class AvailabilityService implements IAvailabilityService {
     private cornerRepo: ICornerRepository,
     private slotRepo: ISlotRepository,
     private technicianRepo: ITechnicianRepository,
-    private incidentRepo: IIncidentRepository,
+    private appointmentRepo: IAppointmentRepository,
     private cache: ICache,
   ) {}
 
@@ -63,40 +63,40 @@ export class AvailabilityService implements IAvailabilityService {
     const corner = cornerResult.unwrap();
     const timezone = corner?.timezone ?? 'UTC';
 
-    // Obtener incidencias activas del corner en esa fecha
+    // Obtener citas activas del corner en esa fecha
     const startOfDay = this.startOfDay(date, timezone);
     const endOfDay = this.endOfDay(date, timezone);
-    const incidentResult = await this.incidentRepo.findByDateRange(
+    const appointmentResult = await this.appointmentRepo.findByDateRange(
       cornerId as unknown as CornerId,
       startOfDay,
       endOfDay,
     );
-    if (incidentResult.isFailure)
-      return Result.err(incidentResult.unwrapError());
+    if (appointmentResult.isFailure)
+      return Result.err(appointmentResult.unwrapError());
 
-    const activeIncidents = incidentResult
+    const activeAppointments = appointmentResult
       .unwrap()
       .filter(
         (i) =>
-          i.status === IncidentStatus.IN_PROGRESS ||
-          i.status === IncidentStatus.DELIVERED ||
-          i.status === IncidentStatus.PENDING_THIRD_PARTY ||
-          i.status === IncidentStatus.PENDING_USER ||
-          i.status === IncidentStatus.PENDING_SPARE_PART,
+          i.status === AppointmentStatus.IN_PROGRESS ||
+          i.status === AppointmentStatus.DELIVERED ||
+          i.status === AppointmentStatus.PENDING_THIRD_PARTY ||
+          i.status === AppointmentStatus.PENDING_USER ||
+          i.status === AppointmentStatus.PENDING_SPARE_PART,
       );
 
     const dtos: TechnicianAvailabilityDto[] = technicians.map((tech) => {
-      const currentIncident = activeIncidents.find(
+      const currentAppointment = activeAppointments.find(
         (i) => i.currentTechnicianId?.toString() === tech.id.toString(),
       );
 
-      if (currentIncident) {
+      if (currentAppointment) {
         return {
           technicianId: tech.id.toString(),
           name: tech.name,
           available: false,
-          occupiedUntil: currentIncident.scheduledRange.end,
-          currentIncidentId: currentIncident.id.toString(),
+          occupiedUntil: currentAppointment.scheduledRange.end,
+          currentIncidentId: currentAppointment.id.toString(),
         };
       }
 
@@ -168,18 +168,18 @@ export class AvailabilityService implements IAvailabilityService {
     const timezone = corner.timezone;
     const startOfDay = this.startOfDay(query.date, timezone);
     const endOfDay = this.endOfDay(query.date, timezone);
-    const incidentResult = await this.incidentRepo.findByDateRange(
+    const appointmentResult = await this.appointmentRepo.findByDateRange(
       query.cornerId as unknown as CornerId,
       startOfDay,
       endOfDay,
     );
-    if (incidentResult.isFailure) return incidentResult.unwrapError();
-    const incidents = incidentResult
+    if (appointmentResult.isFailure) return appointmentResult.unwrapError();
+    const appointments = appointmentResult
       .unwrap()
       .filter(
         (i) =>
-          i.status !== IncidentStatus.CANCELED &&
-          i.status !== IncidentStatus.CLOSED,
+          i.status !== AppointmentStatus.CANCELED &&
+          i.status !== AppointmentStatus.CLOSED,
       );
 
     // 4. Construir ventanas de tiempo deslizantes con los slots disponibles
@@ -215,7 +215,7 @@ export class AvailabilityService implements IAvailabilityService {
       // Calcular disponibilidad de técnicos en esta ventana
       const techAvailability = this.getTechAvailabilityForWindow(
         technicians,
-        incidents,
+        appointments,
         windowStart,
         windowEnd,
       );
@@ -247,7 +247,7 @@ export class AvailabilityService implements IAvailabilityService {
 
   private getTechAvailabilityForWindow(
     technicians: any[],
-    incidents: Incident[],
+    appointments: Appointment[],
     windowStart: Date,
     windowEnd: Date,
   ): SlotAvailabilityDto['technicians'] {
@@ -255,7 +255,7 @@ export class AvailabilityService implements IAvailabilityService {
     const availableNames: string[] = [];
 
     for (const tech of technicians) {
-      const conflict = incidents.find((i) => {
+      const conflict = appointments.find((i) => {
         if (i.currentTechnicianId?.toString() !== tech.id.toString())
           return false;
         // Hay conflicto si el incident se solapa con la ventana

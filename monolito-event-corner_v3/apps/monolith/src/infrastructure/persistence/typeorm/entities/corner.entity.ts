@@ -2,7 +2,6 @@ import { Entity, Column, PrimaryColumn, OneToMany } from 'typeorm';
 import { CornerScheduleEntity } from './corner-schedule.entity';
 import { TechnicianEntity } from './technician.entity';
 import { LockerEntity } from './locker.entity';
-import { IncidentEntity } from './incident.entity';
 
 @Entity('corners')
 export class CornerEntity {
@@ -65,8 +64,4 @@ export class CornerEntity {
     // Relacion Un corner a muchos lockers
     @OneToMany(() => LockerEntity, locker => locker.corner)
     lockers: LockerEntity[];
-
-    // Relacion Un corner a muchos incidents
-    @OneToMany(() => IncidentEntity, incident => incident.corner)
-    incidents: IncidentEntity[];
 }

@@ -6,15 +6,14 @@
  * conozca los contratos de los servicios del monolito.
  *
  * Uso:
- * import { IIncidentService, INCIDENT_SERVICE } from 'monolito-event-corner/core/ports';
+ * import { IAppointmentService, APPOINTMENT_SERVICE } from 'monolito-event-corner/core/ports';
  */
 
 // ==================== PUERTOS DE ENTRADA (Casos de Uso) ====================
 
 // Servicios principales
-export { IIncidentService, CreateIncidentCommand, DeliverIncidentCommand, TakeIncidentCommand, ReleaseIncidentCommand, ChangeIncidentStatusCommand, BatchStatusChangeItem, BatchChangeResult } from './incoming/incident/incident-service.port';
+export { IAppointmentService, CreateAppointmentCommand, DeliverAppointmentCommand, TakeAppointmentCommand, ReleaseAppointmentCommand, ChangeAppointmentStatusCommand, BatchStatusChangeItem, BatchChangeResult } from './incoming/appointment/appointment-service.port';
 export { IAvailabilityService, AvailabilityQuery, SlotAvailabilityDto, TechnicianAvailabilityDto } from './incoming/availability/availability-service.port';
-export { IRequestService } from './incoming/request/request-service.port';
 export { ICornerService } from './incoming/corner/corner-service.port';
 export { IScheduleService } from './incoming/schedule/schedule-service.port';
 export { ITechnicianService } from './incoming/technician/technician-service.port';
@@ -34,9 +33,8 @@ export { IServiceNowProfileService } from './incoming/servicenow/profile-service
 
 export {
     // Servicios principales
-    INCIDENT_SERVICE,
+    APPOINTMENT_SERVICE,
     AVAILABILITY_SERVICE,
-    REQUEST_SERVICE,
     CORNER_SERVICE,
     SCHEDULE_SERVICE,
     TECHNICIAN_SERVICE,
@@ -61,11 +59,10 @@ export {
     SCHEDULE_REPOSITORY,
     TECHNICIAN_REPOSITORY,
     SLOT_REPOSITORY,
-    INCIDENT_REPOSITORY,
+    APPOINTMENT_REPOSITORY,
     USER_REPOSITORY,
     DEVICE_REPOSITORY,
     LOCKER_REPOSITORY,
-    REQUEST_REPOSITORY,
 } from './outgoing/repositories/tokens';
 
 // Interfaces de repositorios (para referencia)
@@ -76,11 +73,10 @@ export { ICornerRepository } from './outgoing/repositories/corner-repository.por
 export { IScheduleRepository } from './outgoing/repositories/schedule-repository.port';
 export { ITechnicianRepository } from './outgoing/repositories/technician-repository.port';
 export { ISlotRepository } from './outgoing/repositories/slot-repository.port';
-export { IIncidentRepository } from './outgoing/repositories/incident-repository.port';
+export { IAppointmentRepository } from './outgoing/repositories/appointment-repository.port';
 export { IUserRepository } from './outgoing/repositories/user-repository.port';
 export { IDeviceRepository } from './outgoing/repositories/device-repository.port';
 export { ILockerRepository } from './outgoing/repositories/locker-repository.port';
-export { IRequestRepository } from './outgoing/repositories/request-repository.port';
 
 // Event Bus
 export { IEventBus } from './outgoing/event-bus/event-bus.port';

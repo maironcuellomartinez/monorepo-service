@@ -6,7 +6,7 @@ class DeviceDto {
     @IsString() @IsNotEmpty()
     serialNumber: string;
 }
-import { IncidentStatus } from '../../../core/domain/enums/incident-status.enum';
+import { AppointmentStatus as IncidentStatus } from '../../../core/domain/enums/appointment-status.enum';
 
 export class CreateIncidentDto {
     @ApiProperty({ example: 'uuid-issue-type', description: 'ID del tipo de incidencia' })

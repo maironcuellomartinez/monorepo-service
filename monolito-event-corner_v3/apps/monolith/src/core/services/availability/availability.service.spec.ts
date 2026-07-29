@@ -2,8 +2,8 @@
 import { AvailabilityService } from './availability.service';
 import { AvailabilityQuery } from '../../ports/incoming/availability/availability-service.port';
 import { Result } from '@app/result';
-import { IncidentStatus } from '../../domain/enums/incident-status.enum';
-import { CornerId, TechnicianId, IncidentId, SlotId } from '@app/shared/types/branded-ids';
+import { AppointmentStatus } from '../../domain/enums/appointment-status.enum';
+import { CornerId, TechnicianId, AppointmentId, SlotId } from '@app/shared/types/branded-ids';
 import { DateRange } from '../../domain/value-objects/date-range.value';
 
 // ─── Factories de mocks ───────────────────────────────────────────────────────
@@ -40,9 +40,9 @@ function makeTechnician(id: string) {
     return { id: TechnicianId(id), name: `Tech ${id}` } as any;
 }
 
-function makeIncident(techId: string, start: Date, end: Date, status = IncidentStatus.IN_PROGRESS) {
+function makeAppointment(techId: string, start: Date, end: Date, status = AppointmentStatus.IN_PROGRESS) {
     return {
-        id: IncidentId(`inc-${techId}`),
+        id: AppointmentId(`inc-${techId}`),
         status,
         currentTechnicianId: TechnicianId(techId),
         scheduledRange: DateRange.reconstitute(start, end),
@@ -69,7 +69,7 @@ function buildMocks(overrides?: {
         findConsecutiveSlots: jest.fn().mockResolvedValue(Result.ok(slots)),
     };
     const technicianRepo = { findByCorner: jest.fn().mockResolvedValue(Result.ok(technicians)) };
-    const incidentRepo = { findByDateRange: jest.fn().mockResolvedValue(Result.ok(incidents)) };
+    const appointmentRepo = { findByDateRange: jest.fn().mockResolvedValue(Result.ok(incidents)) };
     const cache = {
         get: jest.fn().mockResolvedValue(
             overrides?.cacheValue !== undefined
@@ -83,11 +83,11 @@ function buildMocks(overrides?: {
         cornerRepo as any,
         slotRepo as any,
         technicianRepo as any,
-        incidentRepo as any,
+        appointmentRepo as any,
         cache as any,
     );
 
-    return { service, cornerRepo, slotRepo, technicianRepo, incidentRepo, cache };
+    return { service, cornerRepo, slotRepo, technicianRepo, appointmentRepo, cache };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ describe('AvailabilityService.getAvailability()', () => {
         const cornerRepo = { findById: jest.fn().mockResolvedValue(Result.ok(null)) };
         const slotRepo = { findByCornerAndDate: jest.fn() };
         const technicianRepo = { findByCorner: jest.fn() };
-        const incidentRepo = { findByDateRange: jest.fn() };
+        const appointmentRepo = { findByDateRange: jest.fn() };
         const cache = {
             get: jest.fn().mockResolvedValue(Result.ok(null)),
             set: jest.fn(),
@@ -138,7 +138,7 @@ describe('AvailabilityService.getAvailability()', () => {
             cornerRepo as any,
             slotRepo as any,
             technicianRepo as any,
-            incidentRepo as any,
+            appointmentRepo as any,
             cache as any,
         );
 
@@ -238,7 +238,7 @@ describe('AvailabilityService — disponibilidad de técnicos', () => {
 
         const technicians = [makeTechnician('tech-1')];
         const incidents = [
-            makeIncident('tech-1', windowStart, windowEnd), // ocupa toda la ventana
+            makeAppointment('tech-1', windowStart, windowEnd), // ocupa toda la ventana
         ];
 
         const { service } = buildMocks({ slots, technicians, incidents });
@@ -257,7 +257,7 @@ describe('AvailabilityService — disponibilidad de técnicos', () => {
 
         const technicians = [makeTechnician('tech-1'), makeTechnician('tech-2')];
         const incidents = [
-            makeIncident('tech-1', windowStart, windowEnd), // solo tech-1 ocupado
+            makeAppointment('tech-1', windowStart, windowEnd), // solo tech-1 ocupado
         ];
 
         const { service } = buildMocks({ slots, technicians, incidents });
@@ -276,8 +276,8 @@ describe('AvailabilityService — disponibilidad de técnicos', () => {
 
         const technicians = [makeTechnician('tech-1')];
         const incidents = [
-            makeIncident('tech-1', windowStart, windowEnd, IncidentStatus.CANCELED),
-            makeIncident('tech-1', windowStart, windowEnd, IncidentStatus.CLOSED),
+            makeAppointment('tech-1', windowStart, windowEnd, AppointmentStatus.CANCELED),
+            makeAppointment('tech-1', windowStart, windowEnd, AppointmentStatus.CLOSED),
         ];
 
         const { service } = buildMocks({ slots, technicians, incidents });
@@ -291,7 +291,7 @@ describe('AvailabilityService — disponibilidad de técnicos', () => {
 
 describe('AvailabilityService.getTechniciansAvailability()', () => {
     it('retorna técnico libre si no tiene incidencia activa', async () => {
-        const { service, technicianRepo, incidentRepo } = buildMocks({
+        const { service, technicianRepo, appointmentRepo } = buildMocks({
             technicians: [makeTechnician('tech-1')],
             incidents: [],
         });
@@ -307,7 +307,7 @@ describe('AvailabilityService.getTechniciansAvailability()', () => {
     it('retorna técnico ocupado si tiene incidencia IN_PROGRESS', async () => {
         const now = new Date();
         const end = new Date(now.getTime() + 30 * 60_000);
-        const incidents = [makeIncident('tech-1', now, end, IncidentStatus.IN_PROGRESS)];
+        const incidents = [makeAppointment('tech-1', now, end, AppointmentStatus.IN_PROGRESS)];
 
         const { service } = buildMocks({
             technicians: [makeTechnician('tech-1')],

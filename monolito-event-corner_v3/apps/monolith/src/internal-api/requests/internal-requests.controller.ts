@@ -1,22 +1,40 @@
 // internal-api/requests/internal-requests.controller.ts
-import { Controller, Get, Post, Patch, Body, Param, Query, Inject, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, Inject, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam,
     ApiBearerAuth } from '@nestjs/swagger';
-import { REQUEST_SERVICE } from '@app/core/ports/incoming/service-tokens';
-import { IRequestService } from '@app/core/ports/incoming/request/request-service.port';
-import { REQUEST_REPOSITORY, IRequestRepository } from '@app/core/ports/outgoing/repositories/request-repository.port';
+import { APPOINTMENT_SERVICE } from '@app/core/ports/incoming/service-tokens';
+import { IAppointmentService } from '@app/core/ports/incoming/appointment/appointment-service.port';
+import { APPOINTMENT_REPOSITORY, IAppointmentRepository } from '@app/core/ports/outgoing/repositories/appointment-repository.port';
+import { SLOT_REPOSITORY } from '@app/core/ports/outgoing/repositories/tokens';
+import { ISlotRepository } from '@app/core/ports/outgoing/repositories/slot-repository.port';
+import { ISSUE_TYPE_REPOSITORY } from '@app/core/ports/outgoing/repositories/tokens';
+import { IIssueTypeRepository } from '@app/core/ports/outgoing/repositories/issue-type-repository.port';
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
-import { RequestId, TechnicianId, UserId, IssueTypeId, CornerId, CompanyId } from '@app/shared/types/branded-ids';
+import { AppointmentStatus } from '@app/core/domain/enums/appointment-status.enum';
+import { AppointmentId, CustomerId, TechnicianId, UserId, IssueTypeId, CornerId, CompanyId } from '@app/shared/types/branded-ids';
 import { CreateRequestDto, UpdateRequestStatusDto, ListRequestsQueryDto } from './dto/requests.dto';
 import { TracingService } from '@app/observability';
 
+/**
+ * Fachada delgada sobre IAppointmentService: rutas/DTOs byte-idénticos a los
+ * de antes (paridad con RequestService), fijando implícitamente
+ * createdByTechnicianId (siempre requerido acá, paridad con Request de hoy).
+ *
+ * Diferencia real de comportamiento (necesaria, no cosmética): Appointment
+ * exige >=1 slot real reservado (cierra el double-booking que Request tenía
+ * hoy al no reservar ninguno) — CreateRequestDto sigue enviando `scheduledAt`
+ * puntual (mismo contrato), y acá se resuelve a slots reales vía
+ * findConsecutiveSlots antes de crear la cita.
+ */
 @ApiTags('Requests')
 @ApiBearerAuth()
 @Controller('internal/requests')
 export class InternalRequestsController {
     constructor(
-        @Inject(REQUEST_SERVICE) private readonly service: IRequestService,
-        @Inject(REQUEST_REPOSITORY) private readonly repository: IRequestRepository,
+        @Inject(APPOINTMENT_SERVICE) private readonly service: IAppointmentService,
+        @Inject(APPOINTMENT_REPOSITORY) private readonly repository: IAppointmentRepository,
+        @Inject(SLOT_REPOSITORY) private readonly slotRepo: ISlotRepository,
+        @Inject(ISSUE_TYPE_REPOSITORY) private readonly issueTypeRepo: IIssueTypeRepository,
         private readonly tracing: TracingService,
     ) { }
 
@@ -30,15 +48,31 @@ export class InternalRequestsController {
     }
 
     private async _create(body: CreateRequestDto) {
-        return unwrapOrThrow(await this.service.createRequest({
-            issueTypeId: IssueTypeId(body.issueTypeId),
-            technicianId: TechnicianId(body.technicianId),
+        const issueTypeId = IssueTypeId(body.issueTypeId);
+        const issueType = unwrapOrThrow(await this.issueTypeRepo.findById(issueTypeId));
+        if (!issueType) throw new BadRequestException(`Issue type ${body.issueTypeId} not found`);
+
+        const startTime = new Date(body.scheduledAt);
+        const durationMinutes = issueType.getTotalDurationMinutes();
+        const slots = unwrapOrThrow(
+            await this.slotRepo.findConsecutiveSlots(body.cornerId, startTime, durationMinutes),
+        );
+        if (slots.length === 0) {
+            throw new BadRequestException(
+                `No hay slots disponibles en el corner ${body.cornerId} a partir de ${startTime.toISOString()}`,
+            );
+        }
+
+        return unwrapOrThrow(await this.service.createAppointment({
+            issueTypeId,
             customerId: UserId(body.customerId),
             cornerId: CornerId(body.cornerId),
-            companyId: CompanyId(body.companyId),
-            scheduledAt: new Date(body.scheduledAt),
-            notes: body.notes,
+            slotIds: slots.map((s) => s.id),
+            origin: 'TECH_APP',
             device: body.device,
+            notes: body.notes,
+            createdByTechnicianId: TechnicianId(body.technicianId),
+            companyId: CompanyId(body.companyId),
         }));
     }
 
@@ -52,7 +86,7 @@ export class InternalRequestsController {
             technicianId: query.technicianId as any,
             companyId:    query.companyId    as any,
             issueTypeId:  query.issueTypeId  as any,
-            status:       query.status ? query.status.split(',').map(s => s.trim()) : undefined,
+            status:       query.status ? (query.status.split(',').map(s => s.trim()) as AppointmentStatus[]) : undefined,
             fromDate:     query.dateFrom ? new Date(query.dateFrom) : undefined,
             toDate:       query.dateTo   ? new Date(query.dateTo)   : undefined,
             page:         query.page,
@@ -76,7 +110,7 @@ export class InternalRequestsController {
     @ApiResponse({ status: 200, description: 'Detalle de la solicitud' })
     @ApiResponse({ status: 404, description: 'No encontrada' })
     async getOne(@Param('id') id: string) {
-        return unwrapOrThrow(await this.service.getRequest(RequestId(id)));
+        return unwrapOrThrow(await this.service.getAppointment(AppointmentId(id)));
     }
 
     @Get('technician/:technicianId')
@@ -84,7 +118,7 @@ export class InternalRequestsController {
     @ApiParam({ name: 'technicianId', example: 'uuid-technician' })
     @ApiResponse({ status: 200, description: 'Lista de solicitudes del técnico' })
     async getByTechnician(@Param('technicianId') techId: string) {
-        return unwrapOrThrow(await this.service.getRequestsByTechnician(TechnicianId(techId)));
+        return unwrapOrThrow(await this.service.getTechnicianAppointments(TechnicianId(techId)));
     }
 
     @Get('customer/:customerId')
@@ -92,7 +126,7 @@ export class InternalRequestsController {
     @ApiParam({ name: 'customerId', example: 'uuid-customer' })
     @ApiResponse({ status: 200, description: 'Lista de solicitudes del cliente' })
     async getByCustomer(@Param('customerId') customerId: string) {
-        return unwrapOrThrow(await this.service.getRequestsByCustomer(UserId(customerId)));
+        return unwrapOrThrow(await this.service.getCustomerAppointments(CustomerId(customerId)));
     }
 
     @Patch(':id/status')
@@ -104,10 +138,10 @@ export class InternalRequestsController {
     }
 
     private async _updateStatus(id: string, body: UpdateRequestStatusDto) {
-        return unwrapOrThrow(await this.service.updateRequestStatus({
-            requestId: RequestId(id),
+        return unwrapOrThrow(await this.service.changeStatus({
+            appointmentId: AppointmentId(id),
             technicianId: TechnicianId(body.technicianId),
-            newStatus: body.newStatus,
+            newStatus: body.newStatus as unknown as AppointmentStatus,
             comment: body.comment,
         }));
     }

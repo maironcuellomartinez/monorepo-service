@@ -7,7 +7,7 @@ import { ServiceNowProfileEntity } from '../entities/servicenow-profile.entity';
 import { ServiceNowProfile } from '../../../../core/domain/entities/servicenow-profile.entity';
 import { ServiceNowProfileId } from '../../../../core/domain/value-objects/ids';
 import { ServiceNowId } from '../../../../core/domain/value-objects/servicenow-id.value';
-import { ServiceNowProfileAlreadyExistsError } from '../../../../core/domain/errors/incident.errors';
+import { ServiceNowProfileAlreadyExistsError } from '../../../../core/domain/errors/servicenow.errors';
 import { Result } from '@app/result';
 
 // MySQL: código de error del driver para violación de unique index (mysql2 copia

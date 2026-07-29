@@ -209,6 +209,96 @@ async function createIncident(token, { cornerId, issueTypeId, customerId, window
     return post('/api/incidents', dto, token);
 }
 
+// ─── Create Request ───────────────────────────────────────────────────────────
+
+async function createRequest(token, { cornerId, issueTypeId, customerId, technicianId, companyId, window, notes, serialNumber }) {
+    const dto = {
+        cornerId,
+        issueTypeId,
+        customerId,
+        technicianId,
+        companyId,
+        scheduledAt: window.startTime,
+        notes,
+        device: { serialNumber: serialNumber ?? 'SIM-0000000' },
+    };
+    return post('/api/requests', dto, token);
+}
+
+// ─── Command: requests ────────────────────────────────────────────────────────
+// Cubre el camino de citas kind=REQUEST — hasta el remodelado de dominio
+// Appointment, este comando no existía (solo `incidents` estaba simulado) y
+// era el único camino que ganaba comportamiento nuevo real (reserva de slot,
+// sync-back) sin ninguna cobertura de simulador.
+
+async function cmdRequests(args) {
+    const email        = requireArg(args, 'email');
+    const customerId   = requireArg(args, 'customer-id');
+    const technicianId = requireArg(args, 'technician-id');
+    const companyId    = requireArg(args, 'company-id');
+    const devOid       = args['dev-oid'] ?? null;
+    const bearerToken  = args['token'] ?? null;
+    const count        = parseInt(args.count    ?? '1');
+    const date         = args.date              ?? new Date().toISOString().substring(0, 10);
+    const duration     = parseInt(args.duration ?? '30');
+    const parallel     = !!args.parallel;
+    const serialNumber = args['serial-number']  ?? null;
+    const notes        = args.notes ?? 'Solicitud creada por gateway-simulator';
+
+    printHeader(`REQUESTS via api-gateway — count=${count}  date=${date}  parallel=${parallel}`);
+
+    const token = bearerToken ?? await login(email, null, devOid);
+
+    const cornerId    = await discoverCorner(token, args['corner-id']);
+    const issueTypeId = await discoverIssueType(token, args['issue-type-id']);
+    const windows     = await discoverAvailableSlots(token, cornerId, date, duration);
+
+    console.log('');
+
+    const results = { ok: 0, error: 0 };
+    const createdIds = [];
+
+    const doCreate = async (i) => {
+        const window = windows[i % windows.length];
+        const res = await createRequest(token, { cornerId, issueTypeId, customerId, technicianId, companyId, window, notes, serialNumber });
+
+        if (res.status === 201) {
+            const b = res.body;
+            ok(`Solicitud #${i + 1}`, b?.id ?? '?');
+            info('status', b?.status ?? '?');
+            info('scheduledAt', window.startTime);
+            if (res.correlationId) {
+                console.log(`${C.bold}${C.magenta}    correlationId: ${res.correlationId}${C.reset}  ← usar para buscar en observability-dashboard`);
+            }
+            results.ok++;
+            if (b?.id) createdIds.push(b.id);
+        } else {
+            fail(`Solicitud #${i + 1}`, `HTTP ${res.status}: ${JSON.stringify(res.body)}`);
+            results.error++;
+        }
+    };
+
+    if (parallel) {
+        await Promise.allSettled(Array.from({ length: count }, (_, i) => doCreate(i)));
+    } else {
+        for (let i = 0; i < count; i++) {
+            await doCreate(i);
+            if (i < count - 1) await sleep(200);
+        }
+    }
+
+    console.log(
+        `\n${C.bold}  Resultado — ` +
+        `${C.green}ok=${results.ok}${C.reset}${C.bold}  ` +
+        `${results.error > 0 ? C.red : C.dim}error=${results.error}${C.reset}`
+    );
+
+    if (createdIds.length > 0) {
+        console.log(`\n${C.gray}  IDs creados:${C.reset}`);
+        createdIds.forEach(id => console.log(`${C.gray}    ${id}${C.reset}`));
+    }
+}
+
 // ─── Command: incidents ───────────────────────────────────────────────────────
 
 async function cmdIncidents(args) {
@@ -317,6 +407,13 @@ Uso: node gateway-simulator.js <comando> [opciones]
 
 Comandos:
   incidents   Crea incidencias reales a través del api-gateway (login + discovery + create)
+  requests    Crea solicitudes reales a través del api-gateway (login + discovery + create)
+
+Opciones de requests (además de --email/--dev-oid/--token/--customer-id):
+  --technician-id   UUID del técnico creador                        (requerido)
+  --company-id      UUID de la empresa del cliente                  (requerido)
+  --notes           Notas de la solicitud (opcional)
+  --duration        Duración en minutos              (default: 30)
 
 Opciones de incidents:
   --email           Email del usuario                             (requerido)
@@ -350,6 +447,9 @@ Nota: obtén el customer-id con GET /api/auth/me tras el login (campo monolithUs
     switch (command) {
         case 'incidents':
             await cmdIncidents(args);
+            break;
+        case 'requests':
+            await cmdRequests(args);
             break;
         default:
             console.error(`${C.red}Comando desconocido: ${command}${C.reset}`);

@@ -2,45 +2,44 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { CorrelationIdService, TracingService } from '@app/observability';
-import { IIncidentRepository } from '../../core/ports/outgoing/repositories/incident-repository.port';
-import { IRequestRepository } from '../../core/ports/outgoing/repositories/request-repository.port';
+import { IAppointmentRepository } from '../../core/ports/outgoing/repositories/appointment-repository.port';
+import { ITicketLinkRepository } from '../../core/ports/outgoing/repositories/servicenow-ticket-link-repository.port';
 import {
   IServiceNowClient,
   SnowqStatusResult,
 } from '../../core/ports/outgoing/servicenow/servicenow-client.port';
 import {
-  INCIDENT_REPOSITORY,
-  REQUEST_REPOSITORY,
+  APPOINTMENT_REPOSITORY,
+  SERVICENOW_TICKET_LINK_REPOSITORY,
 } from '../../core/ports/outgoing/repositories/tokens';
 import { SERVICENOW_CLIENT } from '../../core/ports/outgoing/infrastructure-tokens';
 import { ServiceNowId } from '../../core/domain/value-objects/servicenow-id.value';
 import { ServiceNowNumber } from '../../core/domain/value-objects/servicenow-number.value';
 import { ServiceNowIntegrationService } from '../../core/services/servicenow/servicenow-integration.service';
 import { SERVICENOW_INTEGRATION_SERVICE } from '../../core/ports/incoming/service-tokens';
-import { IncidentStatus } from '../../core/domain/enums/incident-status.enum';
+import { AppointmentStatus } from '../../core/domain/enums/appointment-status.enum';
 
 const RECONCILE_INTERVAL_MS = 30_000;
 
 /**
  * Job que reconcilia tickets encolados en modo async (api-snowq-service).
  *
- * Cada 30 s consulta el estado de los correlationIds pendientes.
- * Cuando el estado es DELIVERED, actualiza servicenow_id / servicenow_number
- * en el agregado de dominio y limpia el snowq_correlation_id.
- * Cuando el estado es FAILED, descarta el correlationId (log de error).
- *
- * Variable de entorno:
- *   API_GATEWAY_URL   Base URL del gateway (reconcile va por /outbound/servicenow/reconcile/*)
+ * Cada 30 s consulta el estado de los correlationIds pendientes en
+ * `servicenow_ticket_links` (cualquier tipo — incident/sc_req_item/sc_task).
+ * DELIVERED → resuelve sysId/number en el link. FAILED fatal / correlationId
+ * ya no existe en snowq → se abandona el link (status=ABANDONED, queda de
+ * auditoría) para que SnowOrphanRecoveryJob cree uno nuevo — generaliza lo
+ * que antes eran reconcileIncidents()/reconcileRequests() casi-duplicados.
  */
 @Injectable()
 export class MonolithReconcilerJob {
   private readonly logger = new Logger(MonolithReconcilerJob.name);
 
   constructor(
-    @Inject(INCIDENT_REPOSITORY)
-    private readonly incidentRepo: IIncidentRepository,
-    @Inject(REQUEST_REPOSITORY)
-    private readonly requestRepo: IRequestRepository,
+    @Inject(APPOINTMENT_REPOSITORY)
+    private readonly appointmentRepo: IAppointmentRepository,
+    @Inject(SERVICENOW_TICKET_LINK_REPOSITORY)
+    private readonly ticketLinkRepo: ITicketLinkRepository,
     @Inject(SERVICENOW_INTEGRATION_SERVICE)
     private readonly snService: ServiceNowIntegrationService,
     @Inject(SERVICENOW_CLIENT) private readonly snClient: IServiceNowClient,
@@ -59,40 +58,38 @@ export class MonolithReconcilerJob {
 
   private async _reconcile(): Promise<void> {
     this.logger.debug('ReconcilerJob: iniciando ciclo de reconciliación');
-    await Promise.all([this.reconcileIncidents(), this.reconcileRequests()]);
+    await this.reconcileTicketLinks();
   }
 
   // ──────────────────────────────────────────────────────────────────────────
 
-  private async reconcileIncidents(): Promise<void> {
-    const result = await this.incidentRepo.findPendingSnowqReconciliation();
+  private async reconcileTicketLinks(): Promise<void> {
+    const result = await this.ticketLinkRepo.findPendingSnowqReconciliation();
     if (result.isFailure) {
       this.logger.error(
-        `ReconcilerJob: failed to fetch pending incidents: ${result.unwrapError().message}`,
+        `ReconcilerJob: failed to fetch pending ticket links: ${result.unwrapError().message}`,
       );
       return;
     }
 
-    const incidents = result.unwrap();
-    if (incidents.length === 0) return;
+    const links = result.unwrap();
+    if (links.length === 0) return;
     this.logger.log(
-      `ReconcilerJob: reconciliando ${incidents.length} incident(s) pendiente(s)`,
+      `ReconcilerJob: reconciliando ${links.length} ticket link(s) pendiente(s)`,
     );
 
-    for (const incident of incidents) {
-      const correlationId = incident.snowqCorrelationId!;
+    for (const link of links) {
+      const correlationId = link.snowqCorrelationId!;
       await this.correlation.run(
         async () => {
           const query = await this.querySnowq(correlationId);
           if (query.kind === 'transient_error') return; // reintenta próximo ciclo
           if (query.kind === 'not_found') {
-            // correlationId ya no existe en snowq (404 real, no error de red) — pollearlo
-            // para siempre no sirve. Limpiar para que SnowOrphanRecoveryJob lo re-encole.
             this.logger.warn(
-              `ReconcilerJob: incident ${incident.id} | correlationId ${correlationId} ya no existe en snowq — limpiando para recuperación por huérfanos`,
+              `ReconcilerJob: link ${link.id} (${link.type}) | correlationId ${correlationId} ya no existe en snowq — abandonando para recuperación por huérfanos`,
             );
-            incident.setSnowqCorrelationId(null);
-            await this.incidentRepo.update(incident);
+            link.abandon();
+            await this.ticketLinkRepo.update(link);
             return;
           }
           const status = query.status;
@@ -106,74 +103,66 @@ export class MonolithReconcilerJob {
             const numResult = ServiceNowNumber.create(status.snowNumber);
             if (sysIdResult.isFailure || numResult.isFailure) return;
 
-            incident.updateServiceNowInfo(
-              sysIdResult.unwrap(),
-              numResult.unwrap(),
-            );
-            incident.setSnowqCorrelationId(null);
-
-            const updateResult = await this.incidentRepo.update(incident);
+            link.reconcileDelivered(sysIdResult.unwrap(), numResult.unwrap());
+            const updateResult = await this.ticketLinkRepo.update(link);
             if (updateResult.isFailure) {
               this.logger.error(
-                `ReconcilerJob: failed to update incident ${incident.id}: ${updateResult.unwrapError().message}`,
+                `ReconcilerJob: failed to update link ${link.id}: ${updateResult.unwrapError().message}`,
               );
               return;
             }
 
             this.logger.log(
-              `ReconcilerJob: reconciled incident ${incident.id} → ${status.snowNumber} (${status.sysId})`,
+              `ReconcilerJob: reconciled link ${link.id} (${link.type}) → ${status.snowNumber} (${status.sysId})`,
             );
 
-            // Si el incidente ya fue cerrado mientras SN estaba en modo deferred,
-            // cerrar el ticket ahora que tenemos el sysId
-            if (incident.status === IncidentStatus.CLOSED) {
-              const closeResult = await this.snService.closeIncidentTicket(
-                status.sysId,
+            // Si la cita ya fue cerrada mientras SN estaba en modo deferred,
+            // cerrar el ticket ahora que tenemos el sysId.
+            const appointmentResult = await this.appointmentRepo.findById(link.appointmentId);
+            const appointment = appointmentResult.isSuccess ? appointmentResult.unwrap() : null;
+            if (appointment?.status === AppointmentStatus.CLOSED) {
+              const closeResult = await this.snService.closeTicket(
+                link,
                 'resolved',
                 'Cerrado en modo diferido — reconciliado por ReconcilerJob',
               );
               if (closeResult.isFailure) {
                 this.logger.error(
-                  `ReconcilerJob: failed to close deferred incident ${incident.id} in SN: ${closeResult.unwrapError().message}`,
+                  `ReconcilerJob: failed to close deferred link ${link.id}: ${closeResult.unwrapError().message}`,
                 );
               } else {
                 this.logger.log(
-                  `ReconcilerJob: deferred close applied for incident ${incident.id} → sysId: ${status.sysId}`,
+                  `ReconcilerJob: deferred close applied for link ${link.id} → sysId: ${status.sysId}`,
                 );
               }
             }
           } else if (status.status === 'FAILED') {
             if (this.isFatalError(status.lastError)) {
-              // Error fatal (auth, 401/403): reintentar no sirve — alertar y limpiar.
               this.logger.error(
-                `ReconcilerJob: incident ${incident.id} | correlationId ${correlationId} FAILED con error FATAL — no se reintentará. lastError=${status.lastError}`,
+                `ReconcilerJob: link ${link.id} (${link.type}) | correlationId ${correlationId} FAILED con error FATAL — no se reintentará. lastError=${status.lastError}`,
               );
-              incident.setSnowqCorrelationId(null);
-              await this.incidentRepo.update(incident);
+              link.abandon();
+              await this.ticketLinkRepo.update(link);
             } else {
-              // Error temporal (SN caído): snowq agotó sus reintentos internos.
-              // Resetear retryCount=0 en snowq → QUEUED. Mismo correlationId.
               this.logger.warn(
-                `ReconcilerJob: incident ${incident.id} | correlationId ${correlationId} FAILED (temporal) — reintentando en snowq`,
+                `ReconcilerJob: link ${link.id} (${link.type}) | correlationId ${correlationId} FAILED (temporal) — reintentando en snowq`,
               );
-              const retryResult =
-                await this.snClient.retrySnowqEntry(correlationId);
+              const retryResult = await this.snClient.retrySnowqEntry(correlationId);
               if (retryResult.isFailure) {
-                // snowq no disponible: limpiamos para que el orphan job lo recupere.
                 this.logger.error(
-                  `ReconcilerJob: incident ${incident.id} — retry en snowq falló (${retryResult.unwrapError().message}), clearing correlationId`,
+                  `ReconcilerJob: link ${link.id} — retry en snowq falló (${retryResult.unwrapError().message}), abandonando`,
                 );
-                incident.setSnowqCorrelationId(null);
-                await this.incidentRepo.update(incident);
+                link.abandon();
+                await this.ticketLinkRepo.update(link);
               } else {
                 this.logger.log(
-                  `ReconcilerJob: incident ${incident.id} | correlationId ${correlationId} → re-encolado en snowq (QUEUED)`,
+                  `ReconcilerJob: link ${link.id} (${link.type}) | correlationId ${correlationId} → re-encolado en snowq (QUEUED)`,
                 );
               }
             }
           } else {
             this.logger.debug(
-              `ReconcilerJob: incident ${incident.id} | status=${status.status} — esperando próximo ciclo`,
+              `ReconcilerJob: link ${link.id} (${link.type}) | status=${status.status} — esperando próximo ciclo`,
             );
           }
         },
@@ -181,107 +170,8 @@ export class MonolithReconcilerJob {
           correlationId,
           labels: {
             job: 'reconciler',
-            entityType: 'incident',
-            incidentId: incident.id,
-          },
-        },
-      );
-    }
-  }
-
-  private async reconcileRequests(): Promise<void> {
-    const result = await this.requestRepo.findPendingSnowqReconciliation();
-    if (result.isFailure) {
-      this.logger.error(
-        `ReconcilerJob: failed to fetch pending requests: ${result.unwrapError().message}`,
-      );
-      return;
-    }
-
-    const requests = result.unwrap();
-    if (requests.length === 0) return;
-    this.logger.log(
-      `ReconcilerJob: reconciliando ${requests.length} request(s) pendiente(s)`,
-    );
-
-    for (const request of requests) {
-      const correlationId = request.snowqCorrelationId!;
-      await this.correlation.run(
-        async () => {
-          const query = await this.querySnowq(correlationId);
-          if (query.kind === 'transient_error') return; // reintenta próximo ciclo
-          if (query.kind === 'not_found') {
-            this.logger.warn(
-              `ReconcilerJob: request ${request.id} | correlationId ${correlationId} ya no existe en snowq — limpiando para recuperación por huérfanos`,
-            );
-            request.setSnowqCorrelationId(null);
-            await this.requestRepo.update(request);
-            return;
-          }
-          const status = query.status;
-
-          if (
-            status.status === 'DELIVERED' &&
-            status.sysId &&
-            status.snowNumber
-          ) {
-            const sysIdResult = ServiceNowId.create(status.sysId);
-            const numResult = ServiceNowNumber.create(status.snowNumber);
-            if (sysIdResult.isFailure || numResult.isFailure) return;
-
-            request.updateServiceNowInfo(
-              sysIdResult.unwrap(),
-              numResult.unwrap(),
-            );
-            request.setSnowqCorrelationId(null);
-
-            const updateResult = await this.requestRepo.update(request);
-            if (updateResult.isFailure) {
-              this.logger.error(
-                `ReconcilerJob: failed to update request ${request.id}: ${updateResult.unwrapError().message}`,
-              );
-            } else {
-              this.logger.log(
-                `ReconcilerJob: reconciled request ${request.id} → ${status.snowNumber} (${status.sysId})`,
-              );
-            }
-          } else if (status.status === 'FAILED') {
-            if (this.isFatalError(status.lastError)) {
-              this.logger.error(
-                `ReconcilerJob: request ${request.id} | correlationId ${correlationId} FAILED con error FATAL — no se reintentará. lastError=${status.lastError}`,
-              );
-              request.setSnowqCorrelationId(null);
-              await this.requestRepo.update(request);
-            } else {
-              this.logger.warn(
-                `ReconcilerJob: request ${request.id} | correlationId ${correlationId} FAILED (temporal) — reintentando en snowq`,
-              );
-              const retryResult =
-                await this.snClient.retrySnowqEntry(correlationId);
-              if (retryResult.isFailure) {
-                this.logger.error(
-                  `ReconcilerJob: request ${request.id} — retry en snowq falló (${retryResult.unwrapError().message}), clearing correlationId`,
-                );
-                request.setSnowqCorrelationId(null);
-                await this.requestRepo.update(request);
-              } else {
-                this.logger.log(
-                  `ReconcilerJob: request ${request.id} | correlationId ${correlationId} → re-encolado en snowq (QUEUED)`,
-                );
-              }
-            }
-          } else {
-            this.logger.debug(
-              `ReconcilerJob: request ${request.id} | status=${status.status} — esperando próximo ciclo`,
-            );
-          }
-        },
-        {
-          correlationId,
-          labels: {
-            job: 'reconciler',
-            entityType: 'request',
-            requestId: request.id,
+            entityType: link.type,
+            appointmentId: link.appointmentId,
           },
         },
       );
@@ -294,10 +184,6 @@ export class MonolithReconcilerJob {
    * o payload inválido — reintentar el mismo payload malo agota los reintentos
    * en un loop indefinido, ver ServiceNowErrorFactory en api-snowq-service que
    * clasifica 400/404/422 como fatales del lado del cliente HTTP).
-   *
-   * Errores fatales reconocidos: 400, 401, 403, 404, 422, Unauthorized, Forbidden,
-   * invalid credentials, Bad Request, validation.
-   * Errores temporales: 5xx, 408, 429, timeout, connection refused, circuit breaker.
    */
   private isFatalError(lastError?: string | null): boolean {
     if (!lastError) return false;
@@ -321,8 +207,7 @@ export class MonolithReconcilerJob {
   /**
    * Distingue "correlationId no existe en snowq" (404 real → not_found, señal
    * terminal) de "no se pudo consultar" (error de red/infra → transient_error,
-   * reintentar el próximo ciclo). Colapsarlos en un solo `null` hacía que un
-   * correlationId huérfano se polleara cada 30s para siempre.
+   * reintentar el próximo ciclo).
    */
   private async querySnowq(
     correlationId: string,

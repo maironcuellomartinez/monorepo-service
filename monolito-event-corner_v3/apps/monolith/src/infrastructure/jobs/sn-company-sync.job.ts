@@ -6,7 +6,7 @@ import { IServiceNowProfileService } from '../../core/ports/incoming/servicenow/
 import { SERVICENOW_PROFILE_SERVICE } from '../../core/ports/incoming/service-tokens';
 import { IServiceNowClient } from '../../core/ports/outgoing/servicenow/servicenow-client.port';
 import { SERVICENOW_CLIENT } from '../../core/ports/outgoing/infrastructure-tokens';
-import { ServiceNowProfileAlreadyExistsError } from '../../core/domain/errors/incident.errors';
+import { ServiceNowProfileAlreadyExistsError } from '../../core/domain/errors/servicenow.errors';
 
 const DEFAULT_CRON = '0 2 * * *'; // 2 AM todos los días
 

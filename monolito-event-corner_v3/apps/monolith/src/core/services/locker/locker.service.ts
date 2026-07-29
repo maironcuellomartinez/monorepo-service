@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ILockerService, CreateLockerCommand } from '../../ports/incoming/locker/locker-service.port';
 import { ILockerRepository } from '../../ports/outgoing/repositories/locker-repository.port';
 import { ICornerRepository } from '../../ports/outgoing/repositories/corner-repository.port';
-import { IIncidentRepository } from '../../ports/outgoing/repositories/incident-repository.port';
+import { IAppointmentRepository } from '../../ports/outgoing/repositories/appointment-repository.port';
 import { Result } from '@app/result';
 import { Locker } from '../../domain/entities/locker.entity';
 import { LockerId, CornerId, IncidentId } from '../../domain/value-objects/ids';
@@ -16,7 +16,7 @@ export class LockerService implements ILockerService {
     constructor(
         private readonly lockerRepo: ILockerRepository,
         private readonly cornerRepo: ICornerRepository,
-        private readonly incidentRepo: IIncidentRepository,
+        private readonly appointmentRepo: IAppointmentRepository,
         private readonly tracing: TracingService,
     ) { }
 
@@ -90,29 +90,29 @@ export class LockerService implements ILockerService {
         const locker = lockerResult.unwrap();
         if (!locker) return Result.err(new Error(`Locker ${lockerId} not found`));
 
-        const incidentResult = await this.incidentRepo.findById(incidentId);
-        if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
-        const incident = incidentResult.unwrap();
-        if (!incident) return Result.err(new Error(`Incident ${incidentId} not found`));
+        const appointmentResult = await this.appointmentRepo.findById(incidentId.toString());
+        if (appointmentResult.isFailure) return Result.err(appointmentResult.unwrapError());
+        const appointment = appointmentResult.unwrap();
+        if (!appointment) return Result.err(new Error(`Appointment ${incidentId} not found`));
 
-        if (locker.cornerId.toString() !== incident.cornerId.toString()) {
-            return Result.err(new Error('Locker does not belong to the incident corner'));
+        if (locker.cornerId.toString() !== appointment.cornerId.toString()) {
+            return Result.err(new Error('Locker does not belong to the appointment corner'));
         }
 
         // Marcar locker como ocupado
         const occupyResult = locker.occupy();
         if (occupyResult.isFailure) return Result.err(occupyResult.unwrapError());
 
-        // Registrar locker en la incidencia
-        const assignResult = incident.assignLocker(lockerId);
+        // Registrar locker en la cita
+        const assignResult = appointment.assignLocker(lockerId);
         if (assignResult.isFailure) return Result.err(assignResult.unwrapError());
 
         // Persistir ambos
         const lockerUpdate = await this.lockerRepo.update(locker);
         if (lockerUpdate.isFailure) return Result.err(lockerUpdate.unwrapError());
 
-        const incidentSave = await this.incidentRepo.save(incident);
-        if (incidentSave.isFailure) return Result.err(incidentSave.unwrapError());
+        const appointmentSave = await this.appointmentRepo.save(appointment);
+        if (appointmentSave.isFailure) return Result.err(appointmentSave.unwrapError());
 
         return Result.ok(undefined);
     }
@@ -131,14 +131,14 @@ export class LockerService implements ILockerService {
         const locker = lockerResult.unwrap();
         if (!locker) return Result.err(new Error(`Locker ${lockerId} not found`));
 
-        const incidentResult = await this.incidentRepo.findById(incidentId);
-        if (incidentResult.isFailure) return Result.err(incidentResult.unwrapError());
-        const incident = incidentResult.unwrap();
-        if (!incident) return Result.err(new Error(`Incident ${incidentId} not found`));
+        const appointmentResult = await this.appointmentRepo.findById(incidentId.toString());
+        if (appointmentResult.isFailure) return Result.err(appointmentResult.unwrapError());
+        const appointment = appointmentResult.unwrap();
+        if (!appointment) return Result.err(new Error(`Appointment ${incidentId} not found`));
 
-        // Liberar locker en la incidencia
-        const releaseFromIncident = incident.releaseLocker();
-        if (releaseFromIncident.isFailure) return Result.err(releaseFromIncident.unwrapError());
+        // Liberar locker en la cita
+        const releaseFromAppointment = appointment.releaseLocker();
+        if (releaseFromAppointment.isFailure) return Result.err(releaseFromAppointment.unwrapError());
 
         // Liberar el locker (status → AVAILABLE)
         const releaseResult = locker.release();
@@ -147,8 +147,8 @@ export class LockerService implements ILockerService {
         const lockerUpdate = await this.lockerRepo.update(locker);
         if (lockerUpdate.isFailure) return Result.err(lockerUpdate.unwrapError());
 
-        const incidentSave = await this.incidentRepo.save(incident);
-        if (incidentSave.isFailure) return Result.err(incidentSave.unwrapError());
+        const appointmentSave = await this.appointmentRepo.save(appointment);
+        if (appointmentSave.isFailure) return Result.err(appointmentSave.unwrapError());
 
         return Result.ok(undefined);
     }

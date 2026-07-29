@@ -3,7 +3,6 @@ import { Entity, Column, PrimaryColumn, ManyToOne, JoinColumn, OneToMany, Index 
 import { IssueTypeTreeEntity } from './issue-type-tree.entity';
 import { ServiceNowProfileEntity } from './servicenow-profile.entity';
 import { UserEntity } from './user.entity';
-import { RequestEntity } from './request.entity';
 
 @Entity('companies')
 @Index('idx_companies_tree_id', ['tree_id'])
@@ -40,7 +39,4 @@ export class CompanyEntity {
 
     @OneToMany(() => UserEntity, user => user.company)
     users: UserEntity[];
-
-    @OneToMany(() => RequestEntity, request => request.company)
-    requests: RequestEntity[];
 }

@@ -3,9 +3,8 @@ import { Global, Module } from '@nestjs/common';
 import { LoggerService, TracingService } from '@app/observability';
 
 import { IssueTypeService } from './admin/issue-type.service';
-import { IncidentService } from './incident/incident.service';
+import { AppointmentService } from './appointment/appointment.service';
 import { AvailabilityService } from './availability/availability.service';
-import { RequestService } from './request/request.service';
 import { CornerService } from './corner/corner.service';
 import { ScheduleService } from './schedule/schedule.service';
 import { TechnicianService } from './technician/technician.service';
@@ -21,7 +20,7 @@ import { ServiceNowGroupService } from './servicenow/servicenow-group.service';
 import {
     ISSUE_TYPE_REPOSITORY,
     ISSUE_TYPE_TREE_REPOSITORY,
-    INCIDENT_REPOSITORY,
+    APPOINTMENT_REPOSITORY,
     SLOT_REPOSITORY,
     TECHNICIAN_REPOSITORY,
     CORNER_REPOSITORY,
@@ -31,16 +30,14 @@ import {
     USER_REPOSITORY,
     COMPANY_REPOSITORY,
     SERVICE_NOW_PROFILE_REPOSITORY,
-    REQUEST_REPOSITORY,
     CORNER_ISSUE_CONFIG_REPOSITORY,
     SERVICENOW_GROUP_REPOSITORY,
 } from '../ports/outgoing/repositories/tokens';
 
 import {
     ISSUE_TYPE_SERVICE,
-    INCIDENT_SERVICE,
+    APPOINTMENT_SERVICE,
     AVAILABILITY_SERVICE,
-    REQUEST_SERVICE,
     CORNER_SERVICE,
     SCHEDULE_SERVICE,
     TECHNICIAN_SERVICE,
@@ -65,22 +62,16 @@ import { EVENT_BUS, CACHE, SERVICENOW_CLIENT, EXTERNAL_INVENTORY_SERVICE, HOLIDA
             inject: [ISSUE_TYPE_REPOSITORY, ISSUE_TYPE_TREE_REPOSITORY, EVENT_BUS, TracingService],
         },
         {
-            provide: INCIDENT_SERVICE,
-            useFactory: (incidentRepo, slotRepo, technicianRepo, cornerRepo, userRepo, companyRepo, issueTypeRepo, eventBus, cache, logger, tracing, deviceService) =>
-                new IncidentService(incidentRepo, slotRepo, technicianRepo, cornerRepo, userRepo, companyRepo, issueTypeRepo, eventBus, cache, logger, tracing, deviceService),
-            inject: [INCIDENT_REPOSITORY, SLOT_REPOSITORY, TECHNICIAN_REPOSITORY, CORNER_REPOSITORY, USER_REPOSITORY, COMPANY_REPOSITORY, ISSUE_TYPE_REPOSITORY, EVENT_BUS, CACHE, LoggerService, TracingService, DEVICE_SERVICE],
+            provide: APPOINTMENT_SERVICE,
+            useFactory: (appointmentRepo, slotRepo, technicianRepo, cornerRepo, userRepo, companyRepo, issueTypeRepo, eventBus, cache, logger, tracing, deviceService) =>
+                new AppointmentService(appointmentRepo, slotRepo, technicianRepo, cornerRepo, userRepo, companyRepo, issueTypeRepo, eventBus, cache, logger, tracing, deviceService),
+            inject: [APPOINTMENT_REPOSITORY, SLOT_REPOSITORY, TECHNICIAN_REPOSITORY, CORNER_REPOSITORY, USER_REPOSITORY, COMPANY_REPOSITORY, ISSUE_TYPE_REPOSITORY, EVENT_BUS, CACHE, LoggerService, TracingService, DEVICE_SERVICE],
         },
         {
             provide: AVAILABILITY_SERVICE,
-            useFactory: (cornerRepo, slotRepo, technicianRepo, incidentRepo, cache) =>
-                new AvailabilityService(cornerRepo, slotRepo, technicianRepo, incidentRepo, cache),
-            inject: [CORNER_REPOSITORY, SLOT_REPOSITORY, TECHNICIAN_REPOSITORY, INCIDENT_REPOSITORY, CACHE],
-        },
-        {
-            provide: REQUEST_SERVICE,
-            useFactory: (requestRepo, technicianRepo, userRepo, cornerRepo, companyRepo, issueTypeRepo, eventBus, deviceService, tracing) =>
-                new RequestService(requestRepo, technicianRepo, userRepo, cornerRepo, companyRepo, issueTypeRepo, eventBus, deviceService, tracing),
-            inject: [REQUEST_REPOSITORY, TECHNICIAN_REPOSITORY, USER_REPOSITORY, CORNER_REPOSITORY, COMPANY_REPOSITORY, ISSUE_TYPE_REPOSITORY, EVENT_BUS, DEVICE_SERVICE, TracingService],
+            useFactory: (cornerRepo, slotRepo, technicianRepo, appointmentRepo, cache) =>
+                new AvailabilityService(cornerRepo, slotRepo, technicianRepo, appointmentRepo, cache),
+            inject: [CORNER_REPOSITORY, SLOT_REPOSITORY, TECHNICIAN_REPOSITORY, APPOINTMENT_REPOSITORY, CACHE],
         },
         {
             provide: CORNER_SERVICE,
@@ -102,14 +93,14 @@ import { EVENT_BUS, CACHE, SERVICENOW_CLIENT, EXTERNAL_INVENTORY_SERVICE, HOLIDA
         },
         {
             provide: LOCKER_SERVICE,
-            useFactory: (lockerRepo, cornerRepo, incidentRepo, tracing) =>
-                new LockerService(lockerRepo, cornerRepo, incidentRepo, tracing),
-            inject: [LOCKER_REPOSITORY, CORNER_REPOSITORY, INCIDENT_REPOSITORY, TracingService],
+            useFactory: (lockerRepo, cornerRepo, appointmentRepo, tracing) =>
+                new LockerService(lockerRepo, cornerRepo, appointmentRepo, tracing),
+            inject: [LOCKER_REPOSITORY, CORNER_REPOSITORY, APPOINTMENT_REPOSITORY, TracingService],
         },
         {
             provide: DEVICE_SERVICE,
-            useFactory: (deviceRepo, inventoryService, incidentRepo, tracing) => new DeviceService(deviceRepo, inventoryService, incidentRepo, tracing),
-            inject: [DEVICE_REPOSITORY, EXTERNAL_INVENTORY_SERVICE, INCIDENT_REPOSITORY, TracingService],
+            useFactory: (deviceRepo, inventoryService, appointmentRepo, tracing) => new DeviceService(deviceRepo, inventoryService, appointmentRepo, tracing),
+            inject: [DEVICE_REPOSITORY, EXTERNAL_INVENTORY_SERVICE, APPOINTMENT_REPOSITORY, TracingService],
         },
         {
             provide: USER_SERVICE,
@@ -146,9 +137,8 @@ import { EVENT_BUS, CACHE, SERVICENOW_CLIENT, EXTERNAL_INVENTORY_SERVICE, HOLIDA
     ],
     exports: [
         ISSUE_TYPE_SERVICE,
-        INCIDENT_SERVICE,
+        APPOINTMENT_SERVICE,
         AVAILABILITY_SERVICE,
-        REQUEST_SERVICE,
         CORNER_SERVICE,
         SCHEDULE_SERVICE,
         TECHNICIAN_SERVICE,

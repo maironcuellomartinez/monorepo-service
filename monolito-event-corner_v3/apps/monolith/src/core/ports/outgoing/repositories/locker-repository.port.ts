@@ -1,6 +1,6 @@
 import { Result } from '@app/result';
 import { LOCKER_REPOSITORY } from './tokens';
-import { LockerStatus } from '@app/shared/types/incident-types';
+import { LockerStatus } from '@app/core/domain/enums/locker-status.enum';
 import { Locker } from '@app/core/domain/entities/locker.entity';
 import { CornerId, LockerId } from '@app/shared/types/branded-ids';
 

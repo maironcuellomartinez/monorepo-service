@@ -5,9 +5,8 @@
  */
 
 // Servicios principales
-export const INCIDENT_SERVICE = Symbol('IIncidentService');
 export const AVAILABILITY_SERVICE = Symbol('IAvailabilityService');
-export const REQUEST_SERVICE = Symbol('IRequestService');
+export const APPOINTMENT_SERVICE = Symbol('IAppointmentService');
 export const CORNER_SERVICE = Symbol('ICornerService');
 export const SCHEDULE_SERVICE = Symbol('IScheduleService');
 export const TECHNICIAN_SERVICE = Symbol('ITechnicianService');

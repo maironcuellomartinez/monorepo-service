@@ -2,11 +2,11 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, Inject, HttpCode, HttpStatus, BadRequestException, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
-import { IncidentId, TechnicianId, CornerId, CustomerId, SlotId } from '@app/shared/types/branded-ids';
-import { INCIDENT_SERVICE } from '../../core/ports';
-import { IIncidentService } from '../../core/ports';
-import { INCIDENT_REPOSITORY, IIncidentRepository } from '../../core/ports/outgoing/repositories/incident-repository.port';
-import { IncidentStatus } from '../../core/domain/enums/incident-status.enum';
+import { AppointmentId, TechnicianId, CornerId, CustomerId, SlotId } from '@app/shared/types/branded-ids';
+import { APPOINTMENT_SERVICE } from '../../core/ports/incoming/service-tokens';
+import { IAppointmentService } from '../../core/ports/incoming/appointment/appointment-service.port';
+import { APPOINTMENT_REPOSITORY, IAppointmentRepository } from '../../core/ports/outgoing/repositories/appointment-repository.port';
+import { AppointmentStatus } from '../../core/domain/enums/appointment-status.enum';
 import {
     CreateIncidentDto,
     DeliverIncidentDto,
@@ -23,6 +23,11 @@ import {
 } from './dto/incidents.dto';
 import { TracingService } from '@app/observability';
 
+/**
+ * Fachada delgada sobre IAppointmentService: rutas/DTOs byte-idénticos a los
+ * de antes (paridad con IncidentService), fijando implícitamente kind=ISSUE
+ * (se deriva de IssueType.category, no requiere un parámetro explícito).
+ */
 @ApiTags('Incidents')
 @ApiBearerAuth()
 @Controller('internal/incidents')
@@ -30,8 +35,8 @@ export class InternalIncidentsController {
     private readonly logger = new Logger(InternalIncidentsController.name);
 
     constructor(
-        @Inject(INCIDENT_SERVICE) private readonly service: IIncidentService,
-        @Inject(INCIDENT_REPOSITORY) private readonly repository: IIncidentRepository,
+        @Inject(APPOINTMENT_SERVICE) private readonly service: IAppointmentService,
+        @Inject(APPOINTMENT_REPOSITORY) private readonly repository: IAppointmentRepository,
         private readonly tracing: TracingService,
     ) { }
 
@@ -45,7 +50,7 @@ export class InternalIncidentsController {
     }
 
     private async _create(body: CreateIncidentDto) {
-        return unwrapOrThrow(await this.service.createIncident(body as any));
+        return unwrapOrThrow(await this.service.createAppointment(body as any));
     }
 
     @Get('available')
@@ -53,7 +58,7 @@ export class InternalIncidentsController {
     @ApiQuery({ name: 'cornerId', required: true, example: 'uuid-corner' })
     @ApiResponse({ status: 200, description: 'Lista de incidencias disponibles' })
     async getAvailable(@Query('cornerId') cornerId: string) {
-        return unwrapOrThrow(await this.service.getAvailableIncidents(CornerId(cornerId)));
+        return unwrapOrThrow(await this.service.getAvailableAppointments(CornerId(cornerId)));
     }
 
     @Get('technician/:technicianId')
@@ -61,7 +66,7 @@ export class InternalIncidentsController {
     @ApiParam({ name: 'technicianId', example: 'uuid-technician' })
     @ApiResponse({ status: 200, description: 'Lista de incidencias del técnico' })
     async getByTechnician(@Param('technicianId') techId: string) {
-        return unwrapOrThrow(await this.service.getTechnicianIncidents(TechnicianId(techId)));
+        return unwrapOrThrow(await this.service.getTechnicianAppointments(TechnicianId(techId)));
     }
 
     @Get()
@@ -77,7 +82,7 @@ export class InternalIncidentsController {
             customerEmail: query.customerEmail,
             servicenowNumber: query.servicenowNumber,
             deviceSerial: query.deviceSerial,
-            status: query.status ? (query.status.split(',').map(s => s.trim()) as IncidentStatus[]) : undefined,
+            status: query.status ? (query.status.split(',').map(s => s.trim()) as AppointmentStatus[]) : undefined,
             fromDate: query.dateFrom ? new Date(query.dateFrom) : undefined,
             toDate: query.dateTo ? new Date(query.dateTo) : undefined,
             page: query.page,
@@ -101,7 +106,7 @@ export class InternalIncidentsController {
     @ApiResponse({ status: 200, description: 'Detalle de la incidencia' })
     @ApiResponse({ status: 404, description: 'No encontrada' })
     async getOne(@Param('id') id: string) {
-        return unwrapOrThrow(await this.service.getIncident(IncidentId(id)));
+        return unwrapOrThrow(await this.service.getAppointment(AppointmentId(id)));
     }
 
     @Patch(':id/deliver')
@@ -113,8 +118,8 @@ export class InternalIncidentsController {
     }
 
     private async _deliver(id: string, dto: DeliverIncidentDto) {
-        return unwrapOrThrow(await this.service.deliverIncident({
-            incidentId: IncidentId(id),
+        return unwrapOrThrow(await this.service.deliverAppointment({
+            appointmentId: AppointmentId(id),
             technicianId: TechnicianId(dto.technicianId),
         }));
     }
@@ -128,8 +133,8 @@ export class InternalIncidentsController {
     }
 
     private async _take(id: string, dto: TakeIncidentDto) {
-        return unwrapOrThrow(await this.service.takeIncident({
-            incidentId: IncidentId(id),
+        return unwrapOrThrow(await this.service.takeAppointment({
+            appointmentId: AppointmentId(id),
             technicianId: TechnicianId(dto.technicianId),
             slotIds: dto.slotIds?.map((s) => SlotId(s)),
         }));
@@ -144,8 +149,8 @@ export class InternalIncidentsController {
     }
 
     private async _release(id: string, dto: ReleaseIncidentDto) {
-        return unwrapOrThrow(await this.service.releaseIncident({
-            incidentId: IncidentId(id),
+        return unwrapOrThrow(await this.service.releaseAppointment({
+            appointmentId: AppointmentId(id),
             technicianId: TechnicianId(dto.technicianId),
             reason: dto.reason,
         }));
@@ -161,8 +166,8 @@ export class InternalIncidentsController {
     }
 
     private async _reschedule(id: string, dto: RescheduleIncidentDto) {
-        return unwrapOrThrow(await this.service.rescheduleIncident({
-            incidentId: IncidentId(id),
+        return unwrapOrThrow(await this.service.rescheduleAppointment({
+            appointmentId: AppointmentId(id),
             technicianId: TechnicianId(dto.technicianId),
             slotIds: dto.slotIds.map((s) => SlotId(s)),
         }));
@@ -178,7 +183,7 @@ export class InternalIncidentsController {
 
     private async _setEstimatedClose(id: string, dto: SetEstimatedCloseDto) {
         return unwrapOrThrow(await this.service.setEstimatedClose({
-            incidentId: IncidentId(id),
+            appointmentId: AppointmentId(id),
             technicianId: TechnicianId(dto.technicianId),
             estimatedCloseAt: new Date(dto.estimatedCloseAt),
         }));
@@ -195,9 +200,9 @@ export class InternalIncidentsController {
 
     private async _changeStatus(id: string, dto: ChangeStatusDto) {
         return unwrapOrThrow(await this.service.changeStatus({
-            incidentId: IncidentId(id),
+            appointmentId: AppointmentId(id),
             technicianId: TechnicianId(dto.technicianId),
-            newStatus: dto.newStatus,
+            newStatus: dto.newStatus as unknown as AppointmentStatus,
             comment: dto.comment,
             closeCategory: dto.closeCategory,
         }));
@@ -219,7 +224,15 @@ export class InternalIncidentsController {
     }
 
     private async _batchChangeStatus(body: BatchStatusChangeDto) {
-        return unwrapOrThrow(await this.service.batchChangeStatus(body.items as any));
+        const items = body.items.map((item) => ({
+            appointmentId: item.incidentId,
+            targetStatus: item.targetStatus as unknown as AppointmentStatus,
+            technicianId: item.technicianId,
+            comment: item.comment,
+            closeCategory: item.closeCategory,
+            reason: item.reason,
+        }));
+        return unwrapOrThrow(await this.service.batchChangeStatus(items));
     }
 
     @Patch(':id/validate')
@@ -231,8 +244,8 @@ export class InternalIncidentsController {
     }
 
     private async _validate(id: string, dto: ValidateIncidentDto) {
-        return unwrapOrThrow(await this.service.validateIncident({
-            incidentId: IncidentId(id),
+        return unwrapOrThrow(await this.service.validateAppointment({
+            appointmentId: AppointmentId(id),
             customerId: CustomerId(dto.customerId),
         }));
     }
@@ -246,8 +259,8 @@ export class InternalIncidentsController {
     }
 
     private async _reopen(id: string, dto: ReopenIncidentDto) {
-        return unwrapOrThrow(await this.service.reopenIncident({
-            incidentId: IncidentId(id),
+        return unwrapOrThrow(await this.service.reopenAppointment({
+            appointmentId: AppointmentId(id),
             customerId: CustomerId(dto.customerId),
             reason: dto.reason,
         }));
@@ -258,7 +271,7 @@ export class InternalIncidentsController {
     @ApiParam({ name: 'id', example: 'uuid-incident' })
     @ApiResponse({ status: 200, description: 'Timeline de la incidencia' })
     async getTimeline(@Param('id') id: string) {
-        return unwrapOrThrow(await this.repository.getTimeline(IncidentId(id)));
+        return unwrapOrThrow(await this.repository.getTimeline(AppointmentId(id)));
     }
 
     @Post(':id/notes')
@@ -277,7 +290,7 @@ export class InternalIncidentsController {
         if (!body.comment?.trim()) throw new BadRequestException('comment is required');
         return unwrapOrThrow(
             await this.repository.addNote(
-                IncidentId(id),
+                AppointmentId(id),
                 body.technicianId ? TechnicianId(body.technicianId) : null,
                 body.comment.trim(),
             ),
@@ -294,8 +307,8 @@ export class InternalIncidentsController {
     }
 
     private async _cancel(id: string, dto: CancelIncidentDto) {
-        return unwrapOrThrow(await this.service.cancelIncident({
-            incidentId: IncidentId(id),
+        return unwrapOrThrow(await this.service.cancelAppointment({
+            appointmentId: AppointmentId(id),
             customerId: CustomerId(dto.customerId),
             reason: dto.reason,
         }));

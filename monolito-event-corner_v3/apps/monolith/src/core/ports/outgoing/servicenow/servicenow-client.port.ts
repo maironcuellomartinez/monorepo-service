@@ -113,15 +113,18 @@ export interface IServiceNowClient {
     fields: Record<string, any>,
   ): Promise<Result<void>>;
 
-  /** Cierra un ticket de incident con categoría y notas de cierre */
-  closeIncident(
+  /**
+   * Cierra un ticket con categoría y notas de cierre. `table` es polimórfico
+   * (incident | sc_req_item | sc_task) — hoy solo `incident` está cableado de
+   * punta a punta contra api-snowq-service; los otros devuelven error hasta
+   * que ese servicio agregue las rutas correspondientes (ver Fase 4 del plan).
+   */
+  closeTicket(
+    table: string,
     sysId: string,
     closeCategory: string,
     closeNotes?: string,
   ): Promise<Result<void>>;
-
-  /** Consulta el estado actual de un incident en ServiceNow. Retorna el state code ('1','2','6','7') o null si no existe. */
-  queryIncidentState(sysId: string): Promise<Result<string | null>>;
 
   /** Lista el catálogo de empresas de ServiceNow (usado por SnCompanySyncJob) */
   getCompanies(): Promise<Result<Array<{ sys_id: string; name: string }>>>;

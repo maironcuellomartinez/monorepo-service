@@ -7,14 +7,14 @@ import { SLOT_REPOSITORY } from '../../ports/outgoing/repositories/tokens';
 import { CACHE } from '../../ports/outgoing/infrastructure-tokens';
 import { ICache } from '../../ports/outgoing/cache/cache.port';
 import { IDeviceRepository } from '../../ports/outgoing/repositories/device-repository.port';
-import { IIncidentRepository } from '../../ports/outgoing/repositories/incident-repository.port';
+import { IAppointmentRepository } from '../../ports/outgoing/repositories/appointment-repository.port';
 import {
   DEVICE_REPOSITORY,
-  INCIDENT_REPOSITORY,
+  APPOINTMENT_REPOSITORY,
 } from '../../ports/outgoing/repositories/tokens';
-import { DeviceHasActiveIncidentError } from '../../domain/errors/incident.errors';
-import { INCIDENT_SERVICE } from '../../ports/incoming/service-tokens';
-import { IIncidentService } from '../../ports/incoming/incident/incident-service.port';
+import { DeviceHasActiveAppointmentError } from '../../domain/errors/appointment.errors';
+import { APPOINTMENT_SERVICE } from '../../ports/incoming/service-tokens';
+import { IAppointmentService } from '../../ports/incoming/appointment/appointment-service.port';
 import { TracingService } from '@app/observability';
 import { TypeOrmBatchDraftRepository } from '../../../infrastructure/persistence/typeorm/repositories/batch-draft.repository';
 import {
@@ -37,10 +37,10 @@ export class BatchDraftService {
     @Inject(SLOT_REPOSITORY) private readonly slotRepo: ISlotRepository,
     @Inject(CACHE) private readonly cache: ICache,
     @Inject(DEVICE_REPOSITORY) private readonly deviceRepo: IDeviceRepository,
-    @Inject(INCIDENT_REPOSITORY)
-    private readonly incidentRepo: IIncidentRepository,
-    @Inject(INCIDENT_SERVICE)
-    private readonly incidentService: IIncidentService,
+    @Inject(APPOINTMENT_REPOSITORY)
+    private readonly appointmentRepo: IAppointmentRepository,
+    @Inject(APPOINTMENT_SERVICE)
+    private readonly appointmentService: IAppointmentService,
     private readonly tracing: TracingService,
   ) {}
 
@@ -81,16 +81,14 @@ export class BatchDraftService {
     const device = deviceResult.unwrap();
     if (!device) return Result.ok(undefined);
 
-    const activeResult = await this.incidentRepo.findActiveByDeviceId(
+    const activeResult = await this.appointmentRepo.findActiveByDeviceId(
       device.id.toString(),
     );
     if (activeResult.isFailure) return Result.err(activeResult.unwrapError());
     const active = activeResult.unwrap();
     if (active.length > 0) {
-      const ref =
-        active[0].servicenowNumber?.value ??
-        `${active[0].id.toString().slice(0, 8)}...`;
-      return Result.err(new DeviceHasActiveIncidentError(serialNumber, ref));
+      const ref = `${active[0].id.toString().slice(0, 8)}...`;
+      return Result.err(new DeviceHasActiveAppointmentError(serialNumber, ref));
     }
     return Result.ok(undefined);
   }
@@ -365,7 +363,7 @@ export class BatchDraftService {
       }
 
       try {
-        const incidentResult = await this.incidentService.createIncident({
+        const appointmentResult = await this.appointmentService.createAppointment({
           issueTypeId: item.issueTypeId as any,
           customerId: item.customerId as any,
           cornerId: item.cornerId as any,
@@ -378,20 +376,20 @@ export class BatchDraftService {
           heldByUserId: userId,
         });
 
-        if (incidentResult.isFailure) {
-          const msg = incidentResult.unwrapError().message;
+        if (appointmentResult.isFailure) {
+          const msg = appointmentResult.unwrapError().message;
           await this.repo.updateItem(item.id, {
             status: 'error',
             lastError: msg,
           });
           results.push({ localId: item.localId, status: 'error', error: msg });
         } else {
-          const incident = incidentResult.unwrap();
+          const appointment = appointmentResult.unwrap();
           await this.repo.removeItem(item.id);
           results.push({
             localId: item.localId,
             status: 'success',
-            incidentId: incident.id.toString(),
+            incidentId: appointment.id.toString(),
           });
         }
       } catch (err: any) {

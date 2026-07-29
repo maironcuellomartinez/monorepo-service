@@ -1,29 +1,29 @@
 // infrastructure/jobs/snow-orphan-recovery.job.ts
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { IIncidentRepository } from '../../core/ports/outgoing/repositories/incident-repository.port';
+import { IAppointmentRepository } from '../../core/ports/outgoing/repositories/appointment-repository.port';
+import { ITicketLinkRepository } from '../../core/ports/outgoing/repositories/servicenow-ticket-link-repository.port';
 import { IUserRepository } from '../../core/ports/outgoing/repositories/user-repository.port';
 import { ICompanyRepository } from '../../core/ports/outgoing/repositories/company-repository.port';
 import { ServiceNowIntegrationService } from '../../core/services/servicenow/servicenow-integration.service';
-import { INCIDENT_REPOSITORY, USER_REPOSITORY, COMPANY_REPOSITORY } from '../../core/ports/outgoing/repositories/tokens';
+import {
+  APPOINTMENT_REPOSITORY,
+  SERVICENOW_TICKET_LINK_REPOSITORY,
+  USER_REPOSITORY,
+  COMPANY_REPOSITORY,
+} from '../../core/ports/outgoing/repositories/tokens';
 import { SERVICENOW_INTEGRATION_SERVICE } from '../../core/ports/incoming/service-tokens';
+import { AppointmentKind } from '../../core/domain/enums/appointment-kind.enum';
+import { ServiceNowTicketLink } from '../../core/domain/entities/servicenow-ticket-link.entity';
 
 /**
- * Job de recuperación para incidencias huérfanas en ServiceNow.
+ * Job de recuperación para citas huérfanas en ServiceNow.
  *
- * Una incidencia se considera huérfana cuando:
- *  - No tiene servicenow_id (el ticket no fue registrado en SN)
- *  - No tiene snowq_correlation_id (no hay operación async pendiente)
- *  - Está en un estado no terminal (CREATED, DELIVERED, IN_PROGRESS, etc.)
- *  - Fue creada hace más de MIN_AGE_MINUTES minutos (evita colisionar con el
- *    flujo normal de creación que tarda algunos segundos)
- *
- * Causas habituales de incidencias huérfanas:
- *  1. SN/snowq estaba caído cuando se creó la incidencia y el OutboxWorker
- *     agotó sus 5 reintentos (~2.5 min).
- *  2. El ReconcilerJob recibió status FAILED de snowq y limpió el correlationId
- *     sin haber registrado el ticket.
- *  3. Bugs previos (ej. cast inseguro de ServiceNowId) que persistieron null.
+ * Una cita se considera huérfana cuando no tiene ningún ServiceNowTicketLink
+ * PENDING/ACTIVE (ninguno, o todos ABANDONED/CLOSED), está en un estado no
+ * terminal, y fue creada hace más de MIN_AGE_MINUTES minutos. Generaliza lo
+ * que antes era Incident-only (findOrphanedSnowIncidents) a cualquier kind —
+ * las citas REQUEST ganan recuperación de huérfanos por primera vez.
  *
  * Variables de entorno:
  *   SNOW_ORPHAN_RECOVERY_ENABLED   'true' para activar (default: false en dev)
@@ -38,7 +38,8 @@ export class SnowOrphanRecoveryJob {
     private readonly minAgeMinutes: number;
 
     constructor(
-        @Inject(INCIDENT_REPOSITORY) private readonly incidentRepo: IIncidentRepository,
+        @Inject(APPOINTMENT_REPOSITORY) private readonly appointmentRepo: IAppointmentRepository,
+        @Inject(SERVICENOW_TICKET_LINK_REPOSITORY) private readonly ticketLinkRepo: ITicketLinkRepository,
         @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
         @Inject(COMPANY_REPOSITORY) private readonly companyRepo: ICompanyRepository,
         @Inject(SERVICENOW_INTEGRATION_SERVICE) private readonly snService: ServiceNowIntegrationService,
@@ -54,9 +55,9 @@ export class SnowOrphanRecoveryJob {
             return;
         }
 
-        this.logger.log(`SnowOrphanRecoveryJob: buscando incidencias huérfanas (minAge=${this.minAgeMinutes}m)`);
+        this.logger.log(`SnowOrphanRecoveryJob: buscando citas huérfanas (minAge=${this.minAgeMinutes}m)`);
 
-        const result = await this.incidentRepo.findOrphanedSnowIncidents(this.minAgeMinutes);
+        const result = await this.appointmentRepo.findOrphanedTicketAppointments(this.minAgeMinutes);
         if (result.isFailure) {
             this.logger.error(`SnowOrphanRecoveryJob: error buscando huérfanas — ${result.unwrapError().message}`);
             return;
@@ -64,53 +65,63 @@ export class SnowOrphanRecoveryJob {
 
         const orphans = result.unwrap();
         if (orphans.length === 0) {
-            this.logger.debug('SnowOrphanRecoveryJob: sin incidencias huérfanas');
+            this.logger.debug('SnowOrphanRecoveryJob: sin citas huérfanas');
             return;
         }
 
-        this.logger.warn(`SnowOrphanRecoveryJob: encontradas ${orphans.length} incidencia(s) huérfana(s) — re-encolando en snowq`);
+        this.logger.warn(`SnowOrphanRecoveryJob: encontradas ${orphans.length} cita(s) huérfana(s) — re-encolando en snowq`);
 
-        for (const incident of orphans) {
+        for (const appointment of orphans) {
             try {
-                // Resolver empresa del cliente
-                const userResult = await this.userRepo.findById(incident.customerId);
+                const userResult = await this.userRepo.findById(appointment.customerId);
                 if (userResult.isFailure || !userResult.unwrap()) {
-                    this.logger.warn(`SnowOrphanRecoveryJob: incident=${incident.id} — usuario ${incident.customerId} no encontrado, saltando`);
+                    this.logger.warn(`SnowOrphanRecoveryJob: appointment=${appointment.id} — usuario ${appointment.customerId} no encontrado, saltando`);
                     continue;
                 }
                 const user = userResult.unwrap()!;
 
-                if (!user.companyId) {
-                    this.logger.warn(`SnowOrphanRecoveryJob: incident=${incident.id} — usuario sin empresa, saltando`);
+                const companyId = appointment.companyId ?? user.companyId;
+                if (!companyId) {
+                    this.logger.warn(`SnowOrphanRecoveryJob: appointment=${appointment.id} — sin empresa, saltando`);
                     continue;
                 }
 
-                const companyResult = await this.companyRepo.findById(user.companyId);
+                const companyResult = await this.companyRepo.findById(companyId);
                 if (companyResult.isFailure || !companyResult.unwrap()) {
-                    this.logger.warn(`SnowOrphanRecoveryJob: incident=${incident.id} — empresa ${user.companyId} no encontrada, saltando`);
+                    this.logger.warn(`SnowOrphanRecoveryJob: appointment=${appointment.id} — empresa ${companyId} no encontrada, saltando`);
                     continue;
                 }
                 const company = companyResult.unwrap()!;
 
-                // Re-encolar en snowq (async only) — el ReconcilerJob obtendrá sysId+number
-                // No se fuerza creación inmediata para evitar tickets duplicados si SN
-                // ya procesó la solicitud previa pero snowq perdió la respuesta.
-                const enqueueResult = await this.snService.reQueueIncidentTicket(incident, company);
+                const ticketType = appointment.kind === AppointmentKind.ISSUE ? 'incident' : 'sc_req_item';
+                const linkResult = ServiceNowTicketLink.createPending(
+                    crypto.randomUUID(),
+                    appointment.id,
+                    ticketType,
+                    'primary',
+                );
+                if (linkResult.isFailure) {
+                    this.logger.error(`SnowOrphanRecoveryJob: appointment=${appointment.id} — no se pudo crear el link: ${linkResult.unwrapError().message}`);
+                    continue;
+                }
+                const link = linkResult.unwrap();
+
+                // Re-encolar en snowq (async only) — el ReconcilerJob obtendrá sysId+number.
+                const enqueueResult = await this.snService.reQueueTicket(appointment, link, company);
                 if (enqueueResult.isFailure) {
-                    this.logger.error(`SnowOrphanRecoveryJob: incident=${incident.id} — snowq no disponible: ${enqueueResult.unwrapError().message}`);
+                    this.logger.error(`SnowOrphanRecoveryJob: appointment=${appointment.id} — snowq no disponible: ${enqueueResult.unwrapError().message}`);
                     continue;
                 }
 
-                // Persistir el nuevo snowq_correlation_id
-                const updateResult = await this.incidentRepo.update(incident);
-                if (updateResult.isFailure) {
-                    this.logger.error(`SnowOrphanRecoveryJob: incident=${incident.id} — error persistiendo correlationId: ${updateResult.unwrapError().message}`);
+                const saveResult = await this.ticketLinkRepo.save(link);
+                if (saveResult.isFailure) {
+                    this.logger.error(`SnowOrphanRecoveryJob: appointment=${appointment.id} — error persistiendo el link: ${saveResult.unwrapError().message}`);
                     continue;
                 }
 
-                this.logger.log(`SnowOrphanRecoveryJob: incident=${incident.id} — re-encolado en snowq, correlationId=${incident.snowqCorrelationId}`);
+                this.logger.log(`SnowOrphanRecoveryJob: appointment=${appointment.id} — re-encolado en snowq, correlationId=${link.snowqCorrelationId}`);
             } catch (err: unknown) {
-                this.logger.error(`SnowOrphanRecoveryJob: incident=${incident.id} — excepción inesperada: ${(err as Error)?.message ?? String(err)}`);
+                this.logger.error(`SnowOrphanRecoveryJob: appointment=${appointment.id} — excepción inesperada: ${(err as Error)?.message ?? String(err)}`);
             }
         }
     }
