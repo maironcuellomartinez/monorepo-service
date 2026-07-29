@@ -50,18 +50,18 @@ interface Ed25519KeyPair {
 //    employee     → usuario final (crea incidencias / solicitudes)
 
 const ALL_PERMISSIONS: [string, string, string, string, number][] = [
-    // ── Incident ──────────────────────────────────────────────────────────────
-    ['incident', 'create',         'Crear incidencias',                         'incident', 10],
-    ['incident', 'read',           'Ver incidencias',                           'incident',  5],
-    ['incident', 'list',           'Listar incidencias propias',                'incident',  5],
-    ['incident', 'list-all',       'Listar todas las incidencias',              'incident', 15],
-    ['incident', 'deliver',        'Registrar entrega de dispositivo',          'incident', 10],
-    ['incident', 'take',           'Tomar incidencia asignada',                 'incident', 10],
-    ['incident', 'release',        'Liberar incidencia tomada',                 'incident', 10],
-    ['incident', 'change-status',  'Cambiar estado de incidencia',              'incident', 15],
-    ['incident', 'validate',       'Validar cierre de incidencia',              'incident', 20],
-    ['incident', 'reopen',         'Reabrir incidencia cerrada',                'incident', 20],
-    ['incident', 'delete',         'Eliminar incidencia',                       'incident', 40],
+    // ── Appointment (unifica Incident + Request post-remodelado) ────────────────
+    ['appointment', 'create',         'Crear cita',                             'appointment', 10],
+    ['appointment', 'read',           'Ver cita',                               'appointment',  5],
+    ['appointment', 'list',           'Listar citas propias',                   'appointment',  5],
+    ['appointment', 'list-all',       'Listar todas las citas',                 'appointment', 15],
+    ['appointment', 'deliver',        'Registrar entrega de dispositivo',       'appointment', 10],
+    ['appointment', 'take',           'Tomar cita asignada',                    'appointment', 10],
+    ['appointment', 'release',        'Liberar cita tomada',                    'appointment', 10],
+    ['appointment', 'change-status',  'Cambiar estado de cita',                 'appointment', 15],
+    ['appointment', 'validate',       'Validar cierre de cita',                 'appointment', 20],
+    ['appointment', 'reopen',         'Reabrir cita cerrada',                   'appointment', 20],
+    ['appointment', 'delete',         'Eliminar cita',                          'appointment', 40],
 
     // ── Corner ────────────────────────────────────────────────────────────────
     ['corner', 'create',           'Crear corner',                              'corner', 30],
@@ -94,15 +94,6 @@ const ALL_PERMISSIONS: [string, string, string, string, number][] = [
     ['locker', 'delete',           'Eliminar locker',                           'locker', 40],
     ['locker', 'assign',           'Asignar locker a incidencia',               'locker', 15],
     ['locker', 'release',          'Liberar locker de incidencia',              'locker', 15],
-
-    // ── Request ───────────────────────────────────────────────────────────────
-    ['request', 'create',          'Crear solicitud',                           'request', 10],
-    ['request', 'read',            'Ver solicitud',                             'request',  5],
-    ['request', 'list',            'Listar solicitudes propias',                'request',  5],
-    ['request', 'list-all',        'Listar todas las solicitudes',              'request', 15],
-    ['request', 'change-status',   'Cambiar estado de solicitud',               'request', 20],
-    ['request', 'update-status',   'Actualizar estado de solicitud (legacy)',   'request', 20],
-    ['request', 'delete',          'Eliminar solicitud',                        'request', 40],
 
     // ── Issue Type ────────────────────────────────────────────────────────────
     ['issue-type', 'create',       'Crear tipo de incidencia',                  'configuration', 30],
@@ -160,10 +151,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'super-admin': ALL_PERMISSIONS.map(([r, a]) => `${r}:${a}`),
 
     'admin': [
-        // Incidents — visión total + deliver
-        'incident:read', 'incident:list', 'incident:list-all',
-        'incident:deliver', 'incident:change-status',
-        'incident:validate', 'incident:reopen', 'incident:delete',
+        // Appointments — visión total + deliver (unifica incident+request)
+        'appointment:read', 'appointment:list', 'appointment:list-all',
+        'appointment:deliver', 'appointment:change-status',
+        'appointment:validate', 'appointment:reopen', 'appointment:delete',
         // Corners & schedules — configuración completa
         'corner:create', 'corner:read', 'corner:list', 'corner:update', 'corner:delete',
         'corner:manage-schedules',
@@ -173,9 +164,6 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         // Lockers
         'locker:create', 'locker:read', 'locker:list', 'locker:update', 'locker:delete',
         'locker:assign', 'locker:release',
-        // Requests
-        'request:read', 'request:list', 'request:list-all',
-        'request:change-status', 'request:update-status', 'request:delete',
         // Issue types & companies
         'issue-type:create', 'issue-type:read', 'issue-type:list',
         'issue-type:update', 'issue-type:delete',
@@ -195,10 +183,10 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     ],
 
     'manager': [
-        // Incidents — operación completa
-        'incident:create', 'incident:read', 'incident:list', 'incident:list-all',
-        'incident:deliver', 'incident:take', 'incident:release', 'incident:change-status',
-        'incident:validate', 'incident:reopen',
+        // Appointments — operación completa (unifica incident+request)
+        'appointment:create', 'appointment:read', 'appointment:list', 'appointment:list-all',
+        'appointment:deliver', 'appointment:take', 'appointment:release', 'appointment:change-status',
+        'appointment:validate', 'appointment:reopen',
         // Corners — solo lectura; schedules/slots — gestión completa
         'corner:read', 'corner:list',
         'schedule:create', 'schedule:read', 'schedule:list',
@@ -206,9 +194,6 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         'slot:read', 'slot:list', 'slot:expire',
         // Lockers — operación
         'locker:read', 'locker:list', 'locker:assign', 'locker:release',
-        // Requests
-        'request:create', 'request:read', 'request:list', 'request:list-all',
-        'request:change-status', 'request:update-status',
         // Issue types & companies — solo lectura
         'issue-type:read', 'issue-type:list',
         'company:read', 'company:list',
@@ -226,19 +211,16 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     ],
 
     'technician': [
-        // Incidents — operativa completa (crear, ver, listar, entregar, tomar, liberar, cambiar estado, validar, reabrir, eliminar)
-        'incident:create', 'incident:read', 'incident:list', 'incident:list-all',
-        'incident:deliver', 'incident:take', 'incident:release', 'incident:change-status',
-        'incident:validate', 'incident:reopen', 'incident:delete',
+        // Appointments — operativa completa (crear, ver, listar, entregar, tomar, liberar, cambiar estado, validar, reabrir, eliminar)
+        'appointment:create', 'appointment:read', 'appointment:list', 'appointment:list-all',
+        'appointment:deliver', 'appointment:take', 'appointment:release', 'appointment:change-status',
+        'appointment:validate', 'appointment:reopen', 'appointment:delete',
         // Corners & schedules — lectura
         'corner:read', 'corner:list',
         'schedule:read', 'schedule:list',
         'slot:read', 'slot:list',
         // Lockers — operar
         'locker:read', 'locker:assign', 'locker:release',
-        // Requests — gestionar
-        'request:read', 'request:list',
-        'request:change-status',
         // Issue types — lectura
         'issue-type:read', 'issue-type:list',
         // Devices
@@ -249,11 +231,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     ],
 
     'employee': [
-        // Incidents — crear, consultar propias, cancelar (change-status) y cerrar (validate)
-        'incident:create', 'incident:read', 'incident:list',
-        'incident:change-status', 'incident:validate',
-        // Requests — propias
-        'request:create', 'request:read', 'request:list',
+        // Appointments — crear, consultar propias, cancelar (change-status) y cerrar (validate)
+        'appointment:create', 'appointment:read', 'appointment:list',
+        'appointment:change-status', 'appointment:validate',
         // Corners, schedules, slots — lectura para poder reservar
         'corner:read', 'corner:list',
         'schedule:read', 'schedule:list',
@@ -267,12 +247,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 
     'readonly': [
         // Solo lectura en todos los recursos
-        'incident:read', 'incident:list', 'incident:list-all',
+        'appointment:read', 'appointment:list', 'appointment:list-all',
         'corner:read', 'corner:list',
         'schedule:read', 'schedule:list',
         'slot:read', 'slot:list',
         'locker:read', 'locker:list',
-        'request:read', 'request:list', 'request:list-all',
         'issue-type:read', 'issue-type:list',
         'company:read', 'company:list',
         'technician:read', 'technician:list',
@@ -304,13 +283,6 @@ const DENY_POLICY_CONFIGS: {
         permissionKeys: ALL_PERMISSIONS
             .filter(([, action]) => action === 'delete')
             .map(([resource, action]) => `${resource}:${action}`),
-    },
-    {
-        roleName:       'technician',
-        policyName:     'Technician — Deny Eliminación de Solicitudes',
-        description:    'Impide que un técnico elimine solicitudes (requests)',
-        priority:       180,
-        permissionKeys: ['request:delete'],
     },
     {
         roleName:       'manager',

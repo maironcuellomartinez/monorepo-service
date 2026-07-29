@@ -195,6 +195,10 @@ export class ListAppointmentsQueryDto {
     @IsOptional() @IsString()
     customerId?: string;
 
+    @ApiPropertyOptional({ example: 'uuid-company' })
+    @IsOptional() @IsString()
+    companyId?: string;
+
     @ApiPropertyOptional({ example: 'uuid-technician' })
     @IsOptional() @IsString()
     technicianId?: string;

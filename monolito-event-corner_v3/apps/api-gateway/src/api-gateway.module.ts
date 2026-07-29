@@ -6,13 +6,11 @@ import { HttpClientsModule } from './http/http-clients.module';
 import { ClientModule } from './client/client.module';
 import { OutboundGatewayModule } from './outbound/outbound-gateway.module';
 import { AuthModule } from './auth/auth.module';
-import { IncidentsController } from './inbound/incidents/incidents.controller';
 import { AppointmentsController } from './inbound/appointments/appointments.controller';
 import { CornersController } from './inbound/corners/corners.controller';
 import { AvailabilityController } from './inbound/availability/availability.controller';
 import { IssueTypesController } from './inbound/admin/issue-types.controller';
 import { TechniciansController } from './inbound/admin/technicians.controller';
-import { RequestsController } from './inbound/requests/requests.controller';
 import { AuthController } from './inbound/auth/auth.controller';
 import { AbacController } from './inbound/auth/abac.controller';
 import { ExternalRecordsController } from './inbound/external/external-records.controller';
@@ -51,13 +49,11 @@ import { HealthModule } from './health/health.module';
   controllers: [
     AuthController,
     AbacController,
-    IncidentsController,
     AppointmentsController,
     CornersController,
     AvailabilityController,
     IssueTypesController,
     TechniciansController,
-    RequestsController,
     ExternalRecordsController,
     DevicesController,
     AdminUsersController,

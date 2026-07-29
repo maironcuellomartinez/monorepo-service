@@ -34,11 +34,8 @@ import { TracingService } from '@app/observability';
 
 /**
  * Superficie unificada "Cita" para el frontend event-corner-app. Proxy
- * delgado hacia /internal/appointments del monolito — mismo patrón que
- * IncidentsController (que queda sin uso pero no se borra, ver plan de
- * unificación). Permisos ABAC reusados pragmáticamente de `incident:*`
- * (introducir `appointment:*` en abac-microservice es un cambio
- * cross-service fuera de este alcance — TODO deferred cleanup).
+ * delgado hacia /internal/appointments del monolito. Permisos ABAC bajo
+ * el recurso `appointment:*` (abac-microservice/src/scripts/seed-initial-data.ts).
  */
 @ApiTags('Appointments')
 @ApiBearerAuth('jwt')
@@ -50,7 +47,7 @@ export class AppointmentsController {
   ) {}
 
   @Get('users')
-  @Permission('incident', 'create')
+  @Permission('appointment', 'create')
   @Roles('technician', 'admin', 'super-admin')
   @ApiOperation({
     summary: 'Listar usuarios activos — para el picker al crear citas',
@@ -60,7 +57,7 @@ export class AppointmentsController {
   }
 
   @Get('users/search')
-  @Permission('incident', 'create')
+  @Permission('appointment', 'create')
   @Roles('technician', 'admin', 'super-admin')
   @ApiOperation({
     summary: 'Buscar usuarios activos — para el picker al crear citas',
@@ -75,7 +72,7 @@ export class AppointmentsController {
   }
 
   @Get()
-  @Permission('incident', 'list')
+  @Permission('appointment', 'list')
   @ApiOperation({
     summary: 'Listar citas con filtros',
     description: 'Búsqueda paginada con filtros opcionales.',
@@ -135,7 +132,7 @@ export class AppointmentsController {
   }
 
   @Get('mine')
-  @Permission('incident', 'read')
+  @Permission('appointment', 'read')
   @ApiOperation({
     summary: 'Citas del usuario autenticado',
     description:
@@ -152,7 +149,7 @@ export class AppointmentsController {
   }
 
   @Get('available')
-  @Permission('incident', 'list')
+  @Permission('appointment', 'list')
   @ApiOperation({
     summary: 'Citas disponibles para tomar',
     description:
@@ -164,7 +161,7 @@ export class AppointmentsController {
   }
 
   @Get('technician/:technicianId')
-  @Permission('incident', 'list')
+  @Permission('appointment', 'list')
   @ApiOperation({ summary: 'Citas de un técnico' })
   @ApiParam({ name: 'technicianId' })
   async getByTechnician(@Param('technicianId') technicianId: string) {
@@ -172,7 +169,7 @@ export class AppointmentsController {
   }
 
   @Get(':id')
-  @Permission('incident', 'read')
+  @Permission('appointment', 'read')
   @ApiOperation({ summary: 'Obtener cita por ID' })
   @ApiParam({ name: 'id' })
   async getOne(@Param('id') id: string) {
@@ -182,7 +179,7 @@ export class AppointmentsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Roles('employee', 'technician', 'admin', 'super-admin')
-  @Permission('incident', 'create')
+  @Permission('appointment', 'create')
   @ApiOperation({
     summary: 'Crear cita',
     description: 'Estado inicial: CREATED.',
@@ -200,7 +197,7 @@ export class AppointmentsController {
 
   @Patch(':id/deliver')
   @Roles('technician', 'admin', 'super-admin')
-  @Permission('incident', 'deliver')
+  @Permission('appointment', 'deliver')
   @ApiOperation({
     summary: 'Registrar entrega del dispositivo',
     description:
@@ -223,7 +220,7 @@ export class AppointmentsController {
 
   @Patch(':id/take')
   @Roles('technician', 'admin', 'super-admin')
-  @Permission('incident', 'take')
+  @Permission('appointment', 'take')
   @ApiOperation({
     summary: 'Tomar cita',
     description: 'Asigna el técnico sin cambiar el estado.',
@@ -242,7 +239,7 @@ export class AppointmentsController {
 
   @Patch(':id/release')
   @Roles('technician', 'admin', 'super-admin')
-  @Permission('incident', 'release')
+  @Permission('appointment', 'release')
   @ApiOperation({
     summary: 'Liberar cita',
     description: 'Quita al técnico asignado sin cambiar el estado.',
@@ -261,7 +258,7 @@ export class AppointmentsController {
 
   @Patch(':id/reschedule')
   @Roles('technician', 'admin', 'super-admin')
-  @Permission('incident', 'change-status')
+  @Permission('appointment', 'change-status')
   @ApiOperation({
     summary: 'Reprogramar la cita',
     description:
@@ -284,7 +281,7 @@ export class AppointmentsController {
 
   @Patch(':id/estimated-close')
   @Roles('technician', 'admin', 'super-admin')
-  @Permission('incident', 'change-status')
+  @Permission('appointment', 'change-status')
   @ApiOperation({
     summary: 'Corregir la fecha estimada de cierre',
     description:
@@ -307,7 +304,7 @@ export class AppointmentsController {
 
   @Patch(':id/status')
   @Roles('employee', 'technician', 'admin', 'super-admin')
-  @Permission('incident', 'change-status')
+  @Permission('appointment', 'change-status')
   @ApiOperation({
     summary: 'Cambiar estado',
     description:
@@ -330,7 +327,7 @@ export class AppointmentsController {
 
   @Patch(':id/cancel')
   @Roles('employee', 'technician', 'admin', 'super-admin')
-  @Permission('incident', 'change-status')
+  @Permission('appointment', 'change-status')
   @ApiOperation({
     summary: 'Cancelar cita',
     description:
@@ -356,7 +353,7 @@ export class AppointmentsController {
 
   @Patch(':id/validate')
   @Roles('employee', 'technician', 'admin', 'super-admin')
-  @Permission('incident', 'validate')
+  @Permission('appointment', 'validate')
   @ApiOperation({
     summary: 'Validar resolución',
     description:
@@ -379,7 +376,7 @@ export class AppointmentsController {
 
   @Patch(':id/reopen')
   @Roles('employee', 'technician', 'admin', 'super-admin')
-  @Permission('incident', 'reopen')
+  @Permission('appointment', 'reopen')
   @ApiOperation({
     summary: 'Reabrir cita',
     description:
@@ -404,7 +401,7 @@ export class AppointmentsController {
   }
 
   @Get(':id/timeline')
-  @Permission('incident', 'read')
+  @Permission('appointment', 'read')
   @ApiOperation({
     summary: 'Historial de la cita',
     description:
@@ -418,7 +415,7 @@ export class AppointmentsController {
   @Post(':id/notes')
   @HttpCode(HttpStatus.CREATED)
   @Roles('technician', 'admin', 'super-admin')
-  @Permission('incident', 'change-status')
+  @Permission('appointment', 'change-status')
   @ApiOperation({
     summary: 'Agregar nota de avance',
     description: 'Registra una nota sin cambiar el estado de la cita.',

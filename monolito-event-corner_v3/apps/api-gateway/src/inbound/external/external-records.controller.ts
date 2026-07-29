@@ -15,7 +15,7 @@ export class ExternalRecordsController {
     @ApiParam({ name: 'number', example: 'INC0001234' })
     @ApiResponse({ status: 200 }) @ApiResponse({ status: 404 })
     getIncidentByNumber(@Param('number') number: string) {
-        return this.monolith.getIncidentByNumber(number);
+        return this.monolith.getAppointmentByNumber(number);
     }
 
     @Get('requests/by-number/:number')
@@ -23,7 +23,7 @@ export class ExternalRecordsController {
     @ApiParam({ name: 'number', example: 'REQ0001234' })
     @ApiResponse({ status: 200 }) @ApiResponse({ status: 404 })
     getRequestByNumber(@Param('number') number: string) {
-        return this.monolith.getRequestByNumber(number);
+        return this.monolith.getAppointmentByNumber(number);
     }
 
     @Get('incidents')
@@ -39,7 +39,7 @@ export class ExternalRecordsController {
     @ApiQuery({ name: 'limit', required: false })
     @ApiResponse({ status: 200 })
     listIncidents(@Query() query: Record<string, string>) {
-        return this.monolith.listIncidents(query);
+        return this.monolith.listAppointments(query);
     }
 
     @Get('requests')
@@ -56,6 +56,6 @@ export class ExternalRecordsController {
     @ApiQuery({ name: 'limit', required: false })
     @ApiResponse({ status: 200 })
     listRequests(@Query() query: Record<string, string>) {
-        return this.monolith.listRequests(query);
+        return this.monolith.listAppointments(query);
     }
 }

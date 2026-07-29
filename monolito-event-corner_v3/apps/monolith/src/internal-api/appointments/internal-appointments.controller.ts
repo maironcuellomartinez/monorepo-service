@@ -24,11 +24,9 @@ import {
 import { TracingService } from '@app/observability';
 
 /**
- * Superficie unificada "Cita": mismo IAppointmentService que
- * internal-incidents/internal-requests, sin fijar kind — cualquier
- * IssueType (ISSUE o REQUEST-*) pasa por acá. Reemplaza para el frontend
- * unificado a los dos controladores anteriores, que quedan sin uso pero
- * no se borran (patrón strangler).
+ * Superficie unificada "Cita": sin fijar kind — cualquier IssueType
+ * (ISSUE o REQUEST-*) pasa por acá. Reemplaza a internal-incidents e
+ * internal-requests, que se borraron tras la unificación del frontend.
  */
 @ApiTags('Appointments')
 @ApiBearerAuth()
@@ -78,6 +76,7 @@ export class InternalAppointmentsController {
         const filters = {
             cornerId: query.cornerId as any,
             customerId: query.customerId as any,
+            companyId: query.companyId as any,
             technicianId: query.technicianId as any,
             availableOnly: query.availableOnly === 'true',
             issueTypeId: query.issueTypeId as any,

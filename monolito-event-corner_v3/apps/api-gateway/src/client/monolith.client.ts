@@ -47,20 +47,12 @@ export class MonolithClient {
         return res.value.data;
     }
 
-    async getIncidentByNumber(number: string): Promise<unknown> {
-        return this.get(`/incidents/by-number/${encodeURIComponent(number)}`);
+    async getAppointmentByNumber(number: string): Promise<unknown> {
+        return this.get(`/appointments/by-number/${encodeURIComponent(number)}`);
     }
 
-    async getRequestByNumber(number: string): Promise<unknown> {
-        return this.get(`/requests/by-number/${encodeURIComponent(number)}`);
-    }
-
-    async listIncidents(params: Record<string, string | undefined>): Promise<unknown> {
-        return this.get('/incidents', params);
-    }
-
-    async listRequests(params: Record<string, string | undefined>): Promise<unknown> {
-        return this.get('/requests', params);
+    async listAppointments(params: Record<string, string | undefined>): Promise<unknown> {
+        return this.get('/appointments', params);
     }
 
     private rethrow(err: HttpClientError): never {

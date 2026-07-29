@@ -2,11 +2,9 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { InternalTokenGuard } from './guards/internal-token.guard';
-import { InternalIncidentsController } from './incidents/internal-incidents.controller';
 import { InternalAppointmentsController } from './appointments/internal-appointments.controller';
 import { InternalCornersController } from './corners/internal-corners.controller';
 import { InternalAvailabilityController } from './availability/internal-availability.controller';
-import { InternalRequestsController } from './requests/internal-requests.controller';
 import { InternalDevicesController } from './devices/internal-devices.controller';
 import { InternalIssueTypesController } from './issue-types/internal-issue-types.controller';
 import { InternalCompanyIssueConfigsController } from './corner-issue-configs/internal-corner-issue-configs.controller';
@@ -30,10 +28,8 @@ import { BatchDraftService } from '../core/services/batch-draft/batch-draft.serv
   imports: [TypeOrmModule.forFeature([BatchDraftEntity, BatchDraftItemEntity])],
   controllers: [
     InternalAppointmentsController,
-    InternalIncidentsController,
     InternalCornersController,
     InternalAvailabilityController,
-    InternalRequestsController,
     InternalDevicesController,
     InternalIssueTypesController,
     InternalCompanyIssueConfigsController,

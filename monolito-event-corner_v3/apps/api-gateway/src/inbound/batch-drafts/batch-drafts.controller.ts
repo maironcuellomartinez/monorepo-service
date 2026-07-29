@@ -19,7 +19,7 @@ export class BatchDraftsController {
     ) {}
 
     @Get()
-    @Permission('incident', 'create')
+    @Permission('appointment', 'create')
     @ApiOperation({ summary: 'Obtener draft del lote del técnico autenticado' })
     async getMyDraft(@CurrentUser() user: JwtPayload) {
         return this.monolith.get('/batch-drafts', { userId: user.sub });
@@ -27,7 +27,7 @@ export class BatchDraftsController {
 
     @Post('items')
     @HttpCode(HttpStatus.CREATED)
-    @Permission('incident', 'create')
+    @Permission('appointment', 'create')
     @ApiOperation({ summary: 'Agregar item al lote y holdear sus slots' })
     async addItem(@CurrentUser() user: JwtPayload, @Body() body: Record<string, any>) {
         return this.tracing.run('gateway.controller.batchDrafts.addItem', { kind: 'server' }, () => this._addItem(user, body));
@@ -37,7 +37,7 @@ export class BatchDraftsController {
     }
 
     @Patch('items/:id')
-    @Permission('incident', 'create')
+    @Permission('appointment', 'create')
     @ApiOperation({ summary: 'Editar item del lote' })
     @ApiParam({ name: 'id' })
     async editItem(
@@ -53,7 +53,7 @@ export class BatchDraftsController {
 
     @Delete('items/:id')
     @HttpCode(HttpStatus.NO_CONTENT)
-    @Permission('incident', 'create')
+    @Permission('appointment', 'create')
     @ApiOperation({ summary: 'Eliminar item del lote y liberar sus holds' })
     @ApiParam({ name: 'id' })
     async removeItem(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
@@ -64,7 +64,7 @@ export class BatchDraftsController {
     }
 
     @Post('submit')
-    @Permission('incident', 'create')
+    @Permission('appointment', 'create')
     @ApiOperation({ summary: 'Enviar el lote completo a ServiceNow' })
     async submit(@CurrentUser() user: JwtPayload) {
         return this.tracing.run('gateway.controller.batchDrafts.submit', { kind: 'server' }, () => this._submit(user));
@@ -75,7 +75,7 @@ export class BatchDraftsController {
 
     @Delete()
     @HttpCode(HttpStatus.NO_CONTENT)
-    @Permission('incident', 'create')
+    @Permission('appointment', 'create')
     @ApiOperation({ summary: 'Descartar el draft y liberar todos los holds' })
     async discard(@CurrentUser() user: JwtPayload) {
         return this.tracing.run('gateway.controller.batchDrafts.discard', { kind: 'server' }, () => this._discard(user));
@@ -85,7 +85,7 @@ export class BatchDraftsController {
     }
 
     @Post('renew')
-    @Permission('incident', 'create')
+    @Permission('appointment', 'create')
     @ApiOperation({ summary: 'Renovar TTL de los holds activos del técnico' })
     async renewHolds(@CurrentUser() user: JwtPayload) {
         return this.monolith.post('/batch-drafts/renew', {}, { userId: user.sub });
