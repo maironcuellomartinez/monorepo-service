@@ -92,6 +92,26 @@ export class InternalAppointmentsController {
         return unwrapOrThrow(await this.repository.findWithFilters(filters));
     }
 
+    @Get('suggestions/device-serial')
+    @ApiOperation({ summary: 'Sugerencias de serial de dispositivo', description: 'Seriales que matchean `q`, acotados a citas del corner — para autocomplete del filtro.' })
+    @ApiQuery({ name: 'cornerId', required: true })
+    @ApiQuery({ name: 'q', required: true, description: 'Término de búsqueda (mínimo 2 caracteres)' })
+    @ApiResponse({ status: 200, description: 'Lista de seriales sugeridos' })
+    async suggestDeviceSerial(@Query('cornerId') cornerId: string, @Query('q') q: string) {
+        if (!cornerId || !q || q.trim().length < 2) return [];
+        return unwrapOrThrow(await this.repository.suggestDeviceSerials(CornerId(cornerId), q.trim()));
+    }
+
+    @Get('suggestions/servicenow-number')
+    @ApiOperation({ summary: 'Sugerencias de número ServiceNow', description: 'Números de ticket que matchean `q`, acotados a citas del corner — para autocomplete del filtro.' })
+    @ApiQuery({ name: 'cornerId', required: true })
+    @ApiQuery({ name: 'q', required: true, description: 'Término de búsqueda (mínimo 2 caracteres)' })
+    @ApiResponse({ status: 200, description: 'Lista de números sugeridos' })
+    async suggestServiceNowNumber(@Query('cornerId') cornerId: string, @Query('q') q: string) {
+        if (!cornerId || !q || q.trim().length < 2) return [];
+        return unwrapOrThrow(await this.repository.suggestServiceNowNumbers(CornerId(cornerId), q.trim()));
+    }
+
     @Get('by-number/:number')
     @ApiOperation({ summary: 'Obtener cita por número de ServiceNow', description: 'Busca por el número de ticket ServiceNow (ej: INC0001234).' })
     @ApiParam({ name: 'number', example: 'INC0001234' })

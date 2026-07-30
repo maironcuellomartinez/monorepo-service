@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, AlertCircle, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Header } from '@/components/header'
@@ -9,10 +9,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { appointmentsApi, issueTypesApi, cornersApi, Corner, IssueType, Appointment, AppointmentStatus, AppointmentFilters, TICKET_TYPE_LABELS } from '@/lib/api'
+import {
+  appointmentsApi, issueTypesApi, cornersApi, usersApi,
+  Corner, IssueType, Appointment, AppointmentStatus, AppointmentFilters, TICKET_TYPE_LABELS,
+  MonolithUser, DeviceSerialSuggestion, ServiceNowNumberSuggestion,
+} from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { useSuggestions } from '@/hooks/use-suggestions'
 
 const STATUS_CONFIG: Record<AppointmentStatus, { label: string; className: string }> = {
   CREATED:                     { label: 'Creada',               className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
@@ -37,6 +42,13 @@ const ALL_STATUSES: AppointmentStatus[] = [
   'CLOSED', 'VALIDATED', 'REOPENED', 'CANCELED',
 ]
 
+// Espejo de ACTIVE_STATUSES (monolith: core/domain/enums/appointment-status.enum.ts)
+// — todo lo que no es terminal. Se usa como filtro por defecto para no traer
+// el historial completo (potencialmente cientos de miles de citas por corner)
+// cuando no se eligió un estado puntual.
+const TERMINAL_STATUSES: AppointmentStatus[] = ['CLOSED', 'VALIDATED', 'CANCELED']
+const ACTIVE_STATUSES: AppointmentStatus[] = ALL_STATUSES.filter((s) => !TERMINAL_STATUSES.includes(s))
+
 export function AppointmentStatusBadge({ status }: { status: AppointmentStatus }) {
   const config = STATUS_CONFIG[status] ?? { label: status, className: '' }
   return (
@@ -49,6 +61,63 @@ export function AppointmentStatusBadge({ status }: { status: AppointmentStatus }
 export function TicketTypeBadge({ ticketType }: { ticketType?: Appointment['ticketType'] }) {
   if (!ticketType) return <span className="text-xs text-muted-foreground">—</span>
   return <Badge variant="outline">{TICKET_TYPE_LABELS[ticketType]}</Badge>
+}
+
+/** Input con dropdown de sugerencias server-side debajo — se cierra al elegir una opción o al hacer click afuera. */
+function SuggestInput<T>({
+  value, onChange, placeholder, suggestions, loading, onSelect, renderItem, getKey,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  suggestions: T[]
+  loading: boolean
+  onSelect: (item: T) => void
+  renderItem: (item: T) => ReactNode
+  getKey: (item: T) => string
+}) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <Input
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        className="text-sm"
+        autoComplete="off"
+      />
+      {open && (loading || suggestions.length > 0) && (
+        <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-md border bg-popover shadow-md">
+          {loading ? (
+            <p className="text-xs text-muted-foreground text-center py-2">Buscando...</p>
+          ) : (
+            suggestions.map((item) => (
+              <div
+                key={getKey(item)}
+                className="px-3 py-2 text-sm cursor-pointer hover:bg-muted/50"
+                onClick={() => { onSelect(item); setOpen(false) }}
+              >
+                {renderItem(item)}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 const PAGE_SIZE = 20
@@ -75,6 +144,9 @@ export function AppointmentsPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [availableOnly, setAvailableOnly] = useState(true)
+  // Por defecto solo se buscan citas activas (no terminales) — evita traer el
+  // historial completo del corner. Al tildarlo, se buscan todos los estados.
+  const [includeHistory, setIncludeHistory] = useState(false)
 
   // Búsqueda en vivo: los campos de texto se aplican con debounce para no
   // disparar una petición por tecla.
@@ -85,6 +157,20 @@ export function AppointmentsPage() {
   // Descarta respuestas fuera de orden (la de un filtro viejo podría llegar
   // después que la del filtro actual y pisar los resultados correctos).
   const requestId = useRef(0)
+
+  // Autocomplete: sugerencias server-side mientras se escribe en cada filtro de texto.
+  const userSuggestFn = useCallback((q: string) => usersApi.search(q), [])
+  const serialSuggestFn = useCallback(
+    (q: string) => appointmentsApi.suggestDeviceSerial(cornerId, q),
+    [cornerId],
+  )
+  const snNumberSuggestFn = useCallback(
+    (q: string) => appointmentsApi.suggestServiceNowNumber(cornerId, q),
+    [cornerId],
+  )
+  const userSuggestions = useSuggestions(customerEmail, userSuggestFn)
+  const serialSuggestions = useSuggestions(deviceSerial, serialSuggestFn, !!cornerId)
+  const snNumberSuggestions = useSuggestions(servicenowNumber, snNumberSuggestFn, !!cornerId)
 
   useEffect(() => {
     Promise.all([cornersApi.list(), issueTypesApi.list()])
@@ -97,7 +183,7 @@ export function AppointmentsPage() {
   // pedir una página que ya no existe y mostrar "sin resultados" con datos.
   useEffect(() => {
     setPage(1)
-  }, [cornerId, status, issueTypeId, debouncedEmail, debouncedSnNumber, debouncedSerial, dateFrom, dateTo, availableOnly])
+  }, [cornerId, status, issueTypeId, debouncedEmail, debouncedSnNumber, debouncedSerial, dateFrom, dateTo, availableOnly, includeHistory])
 
   // Al cambiar de corner se vacía la tabla para mostrar el skeleton inicial
   useEffect(() => {
@@ -108,7 +194,13 @@ export function AppointmentsPage() {
   const buildParams = useCallback((): AppointmentFilters => {
     const p: AppointmentFilters = { page, limit: PAGE_SIZE, availableOnly }
     if (cornerId) p.cornerId = cornerId
-    if (status) p.status = status
+    if (status) {
+      p.status = status
+    } else if (!includeHistory) {
+      // Sin estado puntual elegido: acotar a activas para no traer el
+      // historial completo (cerradas/validadas/canceladas) del corner.
+      p.status = ACTIVE_STATUSES.join(',')
+    }
     if (issueTypeId) p.issueTypeId = issueTypeId
     if (debouncedEmail.trim()) p.customerEmail = debouncedEmail.trim()
     if (debouncedSnNumber.trim()) p.servicenowNumber = debouncedSnNumber.trim()
@@ -116,7 +208,7 @@ export function AppointmentsPage() {
     if (dateFrom) p.dateFrom = dateFrom
     if (dateTo) p.dateTo = dateTo
     return p
-  }, [page, cornerId, status, issueTypeId, debouncedEmail, debouncedSnNumber, debouncedSerial, dateFrom, dateTo, availableOnly])
+  }, [page, cornerId, status, issueTypeId, debouncedEmail, debouncedSnNumber, debouncedSerial, dateFrom, dateTo, availableOnly, includeHistory])
 
   const loadAppointments = useCallback(async () => {
     if (!cornerId) {
@@ -229,35 +321,65 @@ export function AppointmentsPage() {
             </div>
           </div>
 
-          {/* Row 2: upn + serial + servicenow number */}
+          {/* Row 2: upn + serial + servicenow number — cada uno con autocomplete server-side */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">UPN de usuario</Label>
-              <Input
+              <SuggestInput<MonolithUser>
                 value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
+                onChange={setCustomerEmail}
                 placeholder="usuario@empresa.com"
-                className="text-sm"
+                suggestions={userSuggestions.suggestions}
+                loading={userSuggestions.loading}
+                onSelect={(u) => setCustomerEmail(u.upn ?? u.email ?? '')}
+                getKey={(u) => u.id}
+                renderItem={(u) => (
+                  <>
+                    <p className="font-medium truncate">{u.fullName ?? (`${u.name ?? ''} ${u.lastName ?? ''}`.trim() || 'Sin nombre')}</p>
+                    <p className="text-xs text-muted-foreground truncate">{u.upn ?? u.email ?? '—'}</p>
+                  </>
+                )}
               />
             </div>
 
             <div className="space-y-1">
               <Label className="text-xs">Serial del dispositivo</Label>
-              <Input
+              <SuggestInput<DeviceSerialSuggestion>
                 value={deviceSerial}
-                onChange={(e) => setDeviceSerial(e.target.value)}
-                placeholder="SN123456789"
-                className="text-sm"
+                onChange={setDeviceSerial}
+                placeholder={cornerId ? 'SN123456789' : 'Elegí un corner primero'}
+                suggestions={serialSuggestions.suggestions}
+                loading={serialSuggestions.loading}
+                onSelect={(d) => setDeviceSerial(d.serialNumber)}
+                getKey={(d) => d.serialNumber}
+                renderItem={(d) => (
+                  <>
+                    <p className="font-medium font-mono truncate">{d.serialNumber}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {[d.brand, d.model].filter(Boolean).join(' ') || '—'}
+                      {d.customerUpn ? ` · ${d.customerUpn}` : ''}
+                    </p>
+                  </>
+                )}
               />
             </div>
 
             <div className="space-y-1">
               <Label className="text-xs">Número ServiceNow</Label>
-              <Input
+              <SuggestInput<ServiceNowNumberSuggestion>
                 value={servicenowNumber}
-                onChange={(e) => setServicenowNumber(e.target.value)}
-                placeholder="INC0001234"
-                className="text-sm"
+                onChange={setServicenowNumber}
+                placeholder={cornerId ? 'INC0001234' : 'Elegí un corner primero'}
+                suggestions={snNumberSuggestions.suggestions}
+                loading={snNumberSuggestions.loading}
+                onSelect={(s) => setServicenowNumber(s.number)}
+                getKey={(s) => s.appointmentId + s.number}
+                renderItem={(s) => (
+                  <>
+                    <p className="font-medium font-mono truncate">{s.number}</p>
+                    <p className="text-xs text-muted-foreground truncate">{s.type}</p>
+                  </>
+                )}
               />
             </div>
           </div>
@@ -294,6 +416,20 @@ export function AppointmentsPage() {
               />
               <Label htmlFor="availableOnly" className="text-sm font-normal cursor-pointer">
                 Solo disponibles
+              </Label>
+            </div>
+
+            <div className="flex items-center gap-2 pb-1.5">
+              <input
+                type="checkbox"
+                id="includeHistory"
+                checked={includeHistory}
+                onChange={(e) => setIncludeHistory(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+                disabled={!!status}
+              />
+              <Label htmlFor="includeHistory" className="text-sm font-normal cursor-pointer">
+                Todas las citas
               </Label>
             </div>
 

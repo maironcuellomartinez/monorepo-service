@@ -39,6 +39,19 @@ export interface AppointmentFilters {
   limit?: number;
 }
 
+export interface DeviceSerialSuggestion {
+  serialNumber: string;
+  model: string | null;
+  brand: string | null;
+  customerUpn: string | null;
+}
+
+export interface ServiceNowNumberSuggestion {
+  number: string;
+  type: string;
+  appointmentId: string;
+}
+
 export interface AppointmentTimelineEntry {
   activityId: string;
   appointmentId: string;
@@ -105,6 +118,18 @@ export interface IAppointmentRepository {
     technicianId: TechnicianId | null,
     comment: string,
   ): Promise<Result<void>>;
+  /** Seriales de dispositivo (con datos de contexto) que matchean `q`, acotados al corner — para autocomplete del filtro de citas. */
+  suggestDeviceSerials(
+    cornerId: CornerId | string,
+    q: string,
+    limit?: number,
+  ): Promise<Result<DeviceSerialSuggestion[]>>;
+  /** Números de ticket ServiceNow que matchean `q`, acotados al corner — para autocomplete del filtro de citas. */
+  suggestServiceNowNumbers(
+    cornerId: CornerId | string,
+    q: string,
+    limit?: number,
+  ): Promise<Result<ServiceNowNumberSuggestion[]>>;
 }
 
 export { APPOINTMENT_REPOSITORY };

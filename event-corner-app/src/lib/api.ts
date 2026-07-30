@@ -292,6 +292,19 @@ export interface PaginatedAppointments {
   limit: number
 }
 
+export interface DeviceSerialSuggestion {
+  serialNumber: string
+  model: string | null
+  brand: string | null
+  customerUpn: string | null
+}
+
+export interface ServiceNowNumberSuggestion {
+  number: string
+  type: string
+  appointmentId: string
+}
+
 export const appointmentsApi = {
   list: (params?: { cornerId?: string; status?: string }) =>
     apiClient
@@ -301,6 +314,14 @@ export const appointmentsApi = {
     const p = params ? { ...params, availableOnly: params.availableOnly ? 'true' : undefined } : undefined
     return apiClient.get<PaginatedAppointments>('/api/appointments', { params: p }).then((r) => r.data)
   },
+  suggestDeviceSerial: (cornerId: string, q: string) =>
+    apiClient
+      .get<DeviceSerialSuggestion[]>('/api/appointments/suggestions/device-serial', { params: { cornerId, q } })
+      .then((r) => r.data),
+  suggestServiceNowNumber: (cornerId: string, q: string) =>
+    apiClient
+      .get<ServiceNowNumberSuggestion[]>('/api/appointments/suggestions/servicenow-number', { params: { cornerId, q } })
+      .then((r) => r.data),
   mine: () =>
     apiClient
       .get<PaginatedAppointments>('/api/appointments/mine')

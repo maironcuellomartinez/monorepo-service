@@ -131,6 +131,42 @@ export class AppointmentsController {
     });
   }
 
+  @Get('suggestions/device-serial')
+  @Permission('appointment', 'list')
+  @ApiOperation({
+    summary: 'Sugerencias de serial de dispositivo',
+    description: 'Autocomplete acotado al corner indicado.',
+  })
+  @ApiQuery({ name: 'cornerId', required: true })
+  @ApiQuery({ name: 'q', required: true })
+  async suggestDeviceSerial(
+    @Query('cornerId') cornerId: string,
+    @Query('q') q: string,
+  ) {
+    return this.monolith.get('/appointments/suggestions/device-serial', {
+      cornerId,
+      q,
+    });
+  }
+
+  @Get('suggestions/servicenow-number')
+  @Permission('appointment', 'list')
+  @ApiOperation({
+    summary: 'Sugerencias de número ServiceNow',
+    description: 'Autocomplete acotado al corner indicado.',
+  })
+  @ApiQuery({ name: 'cornerId', required: true })
+  @ApiQuery({ name: 'q', required: true })
+  async suggestServiceNowNumber(
+    @Query('cornerId') cornerId: string,
+    @Query('q') q: string,
+  ) {
+    return this.monolith.get('/appointments/suggestions/servicenow-number', {
+      cornerId,
+      q,
+    });
+  }
+
   @Get('mine')
   @Permission('appointment', 'read')
   @ApiOperation({

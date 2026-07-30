@@ -7,6 +7,8 @@ import {
   AppointmentFilters,
   AppointmentTimelineEntry,
   PaginatedResult,
+  DeviceSerialSuggestion,
+  ServiceNowNumberSuggestion,
 } from '../../../../core/ports/outgoing/repositories/appointment-repository.port';
 import { AppointmentEntity } from '../entities/appointment.entity';
 import { AppointmentSlotEntity } from '../entities/appointment-slot.entity';
@@ -259,6 +261,57 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
       const data = await this.toDomainMany(entities);
 
       return Result.ok({ data, total, page, limit });
+    } catch (error) {
+      return Result.err(error);
+    }
+  }
+
+  async suggestDeviceSerials(
+    cornerId: CornerId | string,
+    q: string,
+    limit = 10,
+  ): Promise<Result<DeviceSerialSuggestion[]>> {
+    try {
+      const rows = await this.appointmentRepository
+        .createQueryBuilder('appointment')
+        .innerJoin('appointment.device', 'device')
+        .leftJoin('appointment.customer', 'customer')
+        .select('device.serial_number', 'serialNumber')
+        .addSelect('device.model', 'model')
+        .addSelect('device.brand', 'brand')
+        .addSelect('customer.upn', 'customerUpn')
+        .distinct(true)
+        .where('appointment.corner_id = :cornerId', { cornerId: cornerId.toString() })
+        .andWhere('device.serial_number LIKE :q', { q: `%${q}%` })
+        .orderBy('device.serial_number', 'ASC')
+        .limit(limit)
+        .getRawMany<DeviceSerialSuggestion>();
+      return Result.ok(rows);
+    } catch (error) {
+      return Result.err(error);
+    }
+  }
+
+  async suggestServiceNowNumbers(
+    cornerId: CornerId | string,
+    q: string,
+    limit = 10,
+  ): Promise<Result<ServiceNowNumberSuggestion[]>> {
+    try {
+      const rows = await this.appointmentRepository.manager
+        .createQueryBuilder()
+        .select('link.number', 'number')
+        .addSelect('link.type', 'type')
+        .addSelect('link.appointment_id', 'appointmentId')
+        .from('servicenow_ticket_links', 'link')
+        .innerJoin('appointments', 'appointment', 'appointment.appointment_id = link.appointment_id')
+        .where('appointment.corner_id = :cornerId', { cornerId: cornerId.toString() })
+        .andWhere('link.number IS NOT NULL')
+        .andWhere('link.number LIKE :q', { q: `%${q}%` })
+        .orderBy('link.number', 'ASC')
+        .limit(limit)
+        .getRawMany<ServiceNowNumberSuggestion>();
+      return Result.ok(rows);
     } catch (error) {
       return Result.err(error);
     }
