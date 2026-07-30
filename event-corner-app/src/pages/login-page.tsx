@@ -22,7 +22,7 @@ export function LoginPage() {
     setError('')
 
     if (!email.trim()) {
-      setError('El email es obligatorio')
+      setError('El upn es obligatorio')
       return
     }
     if (!oid.trim()) {
@@ -72,7 +72,7 @@ export function LoginPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">UPN</Label>
                 <Input
                   id="email"
                   type="email"
