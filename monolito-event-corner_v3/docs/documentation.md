@@ -1,5 +1,7 @@
 # Documentación del Sistema Event Corner
 
+> Este archivo cubre el monolito (dominio, endpoints, integración SN). Para el **mapa completo del ecosistema** (todos los servicios, puertos, autenticación, orden de arranque) ver [`infrastructure-diagram.md`](./infrastructure-diagram.md). Para el modelo entidad-relación ver [`er-diagram.md`](./er-diagram.md).
+
 ## Tabla de Contenidos
 1. [Visión General](#visión-general)
 2. [Arquitectura](#arquitectura)
@@ -17,11 +19,10 @@
 
 Event Corner es un sistema de gestión de citas técnicas en ubicaciones físicas ("corners") donde:
 
-- **Usuarios** (empleados corporativos) reservan citas para incidencias de hardware. Se autentican **exclusivamente con Entra ID (Azure AD)** — no hay login por contraseña.
-- **Técnicos** se auto-asignan las incidencias disponibles y las gestionan
-- **Managers** configuran franjas horarias, asignan técnicos y gestionan tipos de incidencia
-- **Incidencias de hardware** se atienden en corners (requieren atención física)
-- **Solicitudes administrativas** (REQUEST-*) se envían directamente a ServiceNow
+- **Usuarios** (empleados corporativos) reservan citas para incidencias de hardware o trámites administrativos. Se autentican **exclusivamente con Entra ID (Azure AD)** — no hay login por contraseña.
+- **Técnicos** se auto-asignan las citas disponibles y las gestionan
+- **Managers** configuran franjas horarias, asignan técnicos y gestionan tipos de cita
+- Todas las citas — de hardware (`ISSUE`, `CREATE-DELIVERY`, `CREATE-COLLECTION`) o administrativas (`REQUEST-ONBOARDING`, `REQUEST-DECOMISSION`) — se atienden en un corner y ocupan slots; lo único que cambia entre ambas es qué tipo de ticket ServiceNow generan (`incident` vs `sc_req_item`/`sc_task`), decidido por `Appointment.kind`
 
 ### Autenticación
 
@@ -43,16 +44,16 @@ El sistema sigue una **arquitectura hexagonal** (puertos y adaptadores) con las 
 │  (Controladores REST, GraphQL, CLI, etc.)                   │
 ├─────────────────────────────────────────────────────────────┤
 │                        PUERTOS DE ENTRADA                    │
-│  (Interfaces de servicios: IIncidentService, etc.)          │
+│  (Interfaces de servicios: IAppointmentService, etc.)       │
 ├─────────────────────────────────────────────────────────────┤
 │                      SERVICIOS DE APLICACIÓN                 │
-│  (Casos de uso: IncidentService, AvailabilityService, etc.) │
+│  (Casos de uso: AppointmentService, AvailabilityService...) │
 ├─────────────────────────────────────────────────────────────┤
 │                         DOMINIO                              │
 │  (Entidades, Value Objects, Enums)                          │
 ├─────────────────────────────────────────────────────────────┤
 │                       PUERTOS DE SALIDA                      │
-│  (Interfaces de repositorios: IIncidentRepository, etc.)    │
+│  (Interfaces de repositorios: IAppointmentRepository, etc.) │
 ├─────────────────────────────────────────────────────────────┤
 │                    ADAPTADORES DE SALIDA                     │
 │  (TypeORM, Cache Local, Event Bus, ServiceNow API)          │
@@ -66,35 +67,52 @@ El sistema sigue una **arquitectura hexagonal** (puertos y adaptadores) con las 
 - **MySQL 8** - Base de datos relacional
 - **TypeScript** - Lenguaje de programación
 - **Result Pattern** - Manejo funcional de errores
-- **Event Sourcing** - Para trazabilidad de incidencias
+- **Event Sourcing** - Para trazabilidad de citas
+- **Outbox Pattern** - Entrega garantizada de eventos hacia ServiceNow (`OutboxEvent` + `OutboxWorkerService`)
 
 ---
 
 ## Modelo de Dominio
 
+> **Remodelado (2026-07):** `Incident` y `Request` se unificaron en una única entidad **`Appointment`** ("Cita"). Ya no existen tablas ni entidades separadas — cualquier `IssueType` (categoría `ISSUE`, `CREATE-DELIVERY`, `CREATE-COLLECTION`, `REQUEST-ONBOARDING`, `REQUEST-DECOMISSION`) pasa por el mismo agregado. Lo que antes era `Incident.servicenowId`/`servicenowNumber` inline ahora vive en una entidad separada, `ServiceNowTicketLink`, para soportar citas con más de un ticket asociado (ver más abajo).
+
 ### Entidades Principales
 
-#### `Incident` (Incidencia)
-Representa una cita creada por un usuario para resolver un problema de hardware.
-|-----------------------|------------------|------------------------------------------|
-| Propiedad             | Tipo             | Descripción                              |
-|-----------------------|------------------|------------------------------------------|
-| `id`                  | `IncidentId`     | Identificador único                      |
-| `issueTypeId`         | `IssueTypeId`    | Tipo de incidencia                       |
-| `customerId`          | `CustomerId`     | Usuario que crea la cita                 |
-| `cornerId`            | `CornerId`       | Corner donde se atiende                  |
-| `slotIds`             | `SlotId[]`       | Slots que ocupa la cita                  |
-| `scheduledRange`      | `DateRange`      | Rango de fecha/hora                      |
-| `status`              | `IncidentStatus` | Estado actual                            |
-| `currentTechnicianId` | `TechnicianId`   | Técnico que atiende (null si disponible) |
-| `servicenowId`        | `string`         | ID del ticket en ServiceNow              |
-|-----------------------|------------------|------------------------------------------|
+#### `Appointment` (Cita)
+Agregado raíz único que reemplaza a `Incident` + `Request`. `kind` decide el mecanismo técnico de creación de ticket SN, no la clase del agregado.
 
-**Estados:**
+| Propiedad | Tipo | Descripción |
+|-----------|------|-------------|
+| `id` | `AppointmentId` | Identificador único |
+| `issueId` | `number \| null` | Correlativo incremental (referencia externa estable, ej. para `correlation_id` en SN) |
+| `kind` | `AppointmentKind` | `ISSUE` (crea `incident`) o `REQUEST` (crea `sc_req_item`/`sc_task`) — derivado de `IssueType.category` vía `appointmentKindFromIssueCategory()` |
+| `issueTypeId` | `IssueTypeId` | Tipo de cita (catálogo) |
+| `customerId` | `CustomerId` | Usuario que la cita atiende/afecta |
+| `companyId` | `CompanyId` | Empresa del cliente |
+| `cornerId` | `CornerId` | Corner donde se atiende |
+| `slotIds` | `SlotId[]` | Slots que ocupa la cita |
+| `scheduledRange` | `DateRange` | Rango de fecha/hora programado |
+| `estimatedCloseAt` | `Date \| null` | Fecha estimada de cierre (editable por el técnico, independiente del slot) |
+| `durationMinutes` | `number` | Duración total |
+| `status` | `AppointmentStatus` | Estado actual |
+| `currentTechnicianId` | `TechnicianId \| null` | Técnico que atiende (null si disponible) |
+| `createdByTechnicianId` | `TechnicianId \| null` | Técnico que creó la cita (walk-in / REQUEST) |
+| `deviceId` | `string \| null` | Dispositivo afectado (opcional) |
+| `lockerId` | `LockerId \| null` | Taquilla asignada (opcional) |
+| `priority` | `number` | Prioridad de atención |
+| `origin` | `AppointmentOrigin` | Canal de origen (ej. `CUSTOMER_APP`, `event-corner-app-batch`) |
+| `comment` | `string \| null` | Comentario/nota libre |
+| `closedAt` | `Date \| null` | Fecha de cierre real |
+| `metadata` | `Record<string, any>` | Datos adicionales por kind |
+
+Enriquecimiento de solo-lectura (poblado por el repositorio desde relaciones, no persistido en el agregado): `issueTypeInfo`, `cornerInfo`, `customerInfo` (incluye `upn`), `technicianInfo`, `deviceInfo`, y `serviceNowLinkInfo` (`sysId`/`number`/`correlationId` del ticket **primary** más reciente, resuelto desde `ServiceNowTicketLink`).
+
+**Estados (`AppointmentStatus`):**
 ```
 CREATED                      → Cita creada, dispositivo no entregado aún
 DELIVERED                    → Dispositivo entregado al corner
 IN_PROGRESS                  → Técnico trabajando en la resolución
+PAUSED                       → Pausada
 PENDING_THIRD_PARTY          → Esperando acción de tercero
 PENDING_USER                 → Esperando acción del usuario
 PENDING_SPARE_PART           → Esperando llegada de repuesto
@@ -102,9 +120,11 @@ PENDING_PICKUP               → Dispositivo reparado listo para recoger
 PENDING_REPLACEMENT_DELIVERY → Sustitución lista para recoger
 CLOSED                       → Cliente recogió, cita cerrada
 REOPENED                     → Reabierta por técnico
-VALIDATED                    → Validada por cliente (post-cierre)
-CANCELED                     → Cancelada por cliente
+VALIDATED                    → Validada por cliente (post-cierre) — terminal
+CANCELED                     → Cancelada por cliente — terminal
 ```
+
+`ACTIVE_STATUSES` = todo lo anterior salvo `CLOSED`/`VALIDATED`/`CANCELED`. Se usa como filtro por defecto en `/citas` (event-corner-app) para no traer el historial completo de un corner con mucho volumen — un checkbox "Todas las citas" lo desactiva.
 
 **Transiciones válidas:**
 ```
@@ -118,20 +138,23 @@ CLOSED → REOPENED (via reopen()), VALIDATED (via validate())
 REOPENED → IN_PROGRESS
 ```
 
-#### `Request` (Solicitud)
-Representa una solicitud administrativa creada por un técnico (onboarding, decomisión, etc.) que va directo a ServiceNow.
+#### `ServiceNowTicketLink` (Vínculo con ticket ServiceNow)
+Vínculo polimórfico 1:N entre un `Appointment` y uno o más tickets de ServiceNow. Reemplaza los campos `servicenowId`/`servicenowNumber` inline que tenía `Incident`. Una cita `REQUEST` puede tener un link `sc_req_item` (la RITM, `role='primary'`) y uno o más `sc_task` de cumplimiento (`role='fulfillment'`, enlazados de vuelta vía `parentRequestSysId`).
 
-|----------------|------------------|------------------------------------------|
-| Propiedad      | Tipo             | Descripción                              |
-|----------------|------------------|------------------------------------------|
-| `id`           | `RequestId`      | Identificador único                      |
-| `issueTypeId`  | `IssueTypeId`    | Tipo de solicitud                        |
-| `technicianId` | `TechnicianId`   | Técnico que crea                         |
-| `customerId`   | `CustomerId`     | Usuario sujeto de la solicitud           |
-| `companyId`    | `CompanyId`      | Empresa del usuario                      |
-| `scheduledAt`  | `Date`           | Fecha programada                         |
-| `status`       | `string`         | Estado                                   |
-|----------------|------------------|------------------------------------------|
+| Propiedad | Tipo | Descripción |
+|-----------|------|-------------|
+| `id` | `string` | Identificador único |
+| `appointmentId` | `AppointmentId` | Cita asociada |
+| `type` | `'incident' \| 'sc_req_item' \| 'sc_task'` | Tabla SN del ticket |
+| `role` | `'primary' \| 'fulfillment'` | Cuál es "el" ticket a pollear/cerrar |
+| `sysId` | `ServiceNowId \| null` | `sys_id` del ticket en SN (null hasta resolverse) |
+| `number` | `ServiceNowNumber \| null` | Número visible (ej. `INC0001234`) |
+| `parentRequestSysId` | `string \| null` | Solo para `type='sc_task'`: `sys_id` de la RITM padre |
+| `snowqCorrelationId` | `string \| null` | Correlation ID mientras el ticket está en modo async (api-snowq-service) |
+| `status` | `'PENDING' \| 'ACTIVE' \| 'CLOSED' \| 'ABANDONED'` | Estado del vínculo |
+| `closedAt` | `Date \| null` | Fecha de cierre |
+
+Métodos de dominio: `resolveImmediate(sysId, number)` (creación síncrona), `markDeferred(correlationId)` (encolado async), `reconcileDelivered(sysId, number)` (resuelto por el reconciler), `close()`, `abandon()` (recuperación de huérfanos — deja el link como auditoría en vez de sobreescribirlo).
 
 #### `IssueType` (Tipo de Incidencia)
 Catálogo de tipos configurables desde el panel de administración.
@@ -154,7 +177,7 @@ Catálogo de tipos configurables desde el panel de administración.
 | `servicenowCloseCategory`| `string`         | Categoría de cierre                      | "resolved" |
 
 #### `Corner` (Punto de Servicio)
-Ubicación física donde se atienden incidencias.
+Ubicación física donde se atienden citas.
 
 | Propiedad | Tipo | Descripción |
 |-----------|------|-------------|
@@ -190,7 +213,7 @@ Slots generados a partir de las franjas horarias.
 | `status` | `SlotStatus` | `AVAILABLE`, `BOOKED`, `EXPIRED` |
 
 #### `Technician` (Técnico)
-Profesional que atiende incidencias.
+Profesional que atiende citas.
 
 | Propiedad | Tipo | Descripción |
 |-----------|------|-------------|
@@ -201,15 +224,15 @@ Profesional que atiende incidencias.
 | `disabled` | `boolean` | Deshabilitado |
 
 #### `User` (Usuario)
-Empleado que crea incidencias. Se autentica con Entra ID (Azure AD).
+Empleado que crea citas. Se autentica con Entra ID (Azure AD).
 
 | Propiedad | Tipo | Descripción |
 |-----------|------|-------------|
 | `id` | `UserId` | Identificador único |
 | `externalId` | `string` | ID externo (oid de Azure AD en usuarios Entra) |
 | `domain` | `string` | Dominio corporativo |
-| `upn` | `string` | UPN de Azure (nombre@dominio) |
-| `email` | `Email` | Email |
+| `upn` | `string \| null` | User Principal Name — identificador primario del usuario en el frontend (ej. `x249401@company.com`). **Único** (constraint agregado en `1785700000000-RenamePrincipalNameToUpnOnUsers`). Reemplaza al viejo `principalName`. |
+| `email` | `string \| null` | Email de contacto — campo separado de `upn`, reservado para notificaciones futuras |
 | `companyId` | `CompanyId` | Empresa |
 | `cornerId` | `CornerId` | Corner habitual |
 
@@ -256,24 +279,27 @@ Registro contextual de dispositivo afectado.
 
 | Value Object | Propósito |
 |--------------|-----------|
-| `IncidentId` | ID tipado para incidencias |
 | `TechnicianId` | ID tipado para técnicos |
 | `CornerId` | ID tipado para corners |
 | `SlotId` | ID tipado para slots |
+| `AppointmentId` | ID tipado para citas |
 | `DateRange` | Rango de fechas con validaciones |
 | `Email` | Email con validación de formato |
 | `SerialNumber` | Número de serie normalizado |
 | `DeviceType` | Tipo de dispositivo controlado |
 | `WorkMinutes` | Minutos de trabajo con validación |
-| `ServiceNowId` | ID de ServiceNow |
+| `ServiceNowId` | `sys_id` de ServiceNow |
+| `ServiceNowNumber` | Número visible de ServiceNow (ej. `INC0001234`) |
+| `ServiceNowTicketType` | `'incident' \| 'sc_req_item' \| 'sc_task'` — tabla SN del ticket |
 
 ### Enums
 
 ```typescript
-enum IncidentStatus {
+enum AppointmentStatus {
   CREATED = 'CREATED',
   DELIVERED = 'DELIVERED',
   IN_PROGRESS = 'IN_PROGRESS',
+  PAUSED = 'PAUSED',
   PENDING_THIRD_PARTY = 'PENDING_THIRD_PARTY',
   PENDING_USER = 'PENDING_USER',
   PENDING_SPARE_PART = 'PENDING_SPARE_PART',
@@ -285,12 +311,20 @@ enum IncidentStatus {
   CANCELED = 'CANCELED'
 }
 
+/** Mecanismo técnico de creación de ticket SN — no la categoría de negocio. */
+enum AppointmentKind {
+  ISSUE = 'ISSUE',
+  REQUEST = 'REQUEST'
+}
+
+/** Categoría de negocio del IssueType. ISSUE/CREATE-DELIVERY/CREATE-COLLECTION → incident;
+ *  REQUEST-ONBOARDING/REQUEST-DECOMISSION → sc_task (vía RITM sc_req_item). */
 enum IssueCategory {
   ISSUE = 'ISSUE',
-  REQUEST = 'REQUEST',
+  CREATE_DELIVERY = 'CREATE-DELIVERY',
+  CREATE_COLLECTION = 'CREATE-COLLECTION',
   REQUEST_ONBOARDING = 'REQUEST-ONBOARDING',
-  REQUEST_DECOMMISSION = 'REQUEST-DECOMMISSION',
-  REQUEST_DELIVERY = 'REQUEST-DELIVERY'
+  REQUEST_DECOMISSION = 'REQUEST-DECOMISSION'
 }
 
 enum SlotStatus {
@@ -350,7 +384,9 @@ enum DayOfWeek {
 }
 ```
 
-### 2. Gestión de Tipos de Incidencia (Admin)
+### 2. Gestión de Tipos de Cita (Admin)
+
+`category` determina el `AppointmentKind` (mecanismo de ticket SN) que tendrán las citas creadas con este tipo — ver `appointmentKindFromIssueCategory()`. Valores válidos: `ISSUE`, `CREATE-DELIVERY`, `CREATE-COLLECTION`, `REQUEST-ONBOARDING`, `REQUEST-DECOMISSION` (una sola M, coincide con el valor real de producción).
 
 #### Crear Tipo ISSUE (Hardware)
 ```typescript
@@ -372,13 +408,13 @@ enum DayOfWeek {
 }
 ```
 
-#### Crear Tipo REQUEST (Administrativo)
+#### Crear Tipo REQUEST-DECOMISSION (Administrativo)
 ```typescript
 // Command
 {
   profileId: "prof_santander",
   name: "Decomisión digital (portátil)",
-  category: "REQUEST-DECOMMISSION",
+  category: "REQUEST-DECOMISSION",
   deviceType: "Portátil",
   workMinutes: 20,
   spareMinutes: 0,
@@ -425,13 +461,15 @@ enum DayOfWeek {
 ]
 ```
 
-### 4. Creación de Incidencia (Usuario)
+### 4. Creación de Cita (Usuario o Técnico)
 
-#### Crear Cita
+Un único comando de creación sirve tanto para incidencias de hardware (`kind=ISSUE`) como para trámites administrativos (`kind=REQUEST`, ej. onboarding/decomisión) — lo que cambia es el `issueTypeId` elegido, cuya `category` determina el `kind` automáticamente (`appointmentKindFromIssueCategory()`). `cornerId`/`slotIds` son obligatorios en ambos casos.
+
+#### Crear Cita (hardware — ISSUE)
 ```typescript
-// Command
+// Command → POST /api/appointments
 {
-  issueTypeId: "averia_portatil",
+  issueTypeId: "averia_portatil",     // category='ISSUE' → kind=ISSUE (ticket SN: incident)
   customerId: "user_123",
   cornerId: "corner_123",
   slotIds: ["slot_0930", "slot_0945"],
@@ -446,28 +484,43 @@ enum DayOfWeek {
 }
 ```
 
-### 5. Gestión de Incidencias (Técnico)
-
-#### Ver Incidencias Disponibles
+#### Crear Cita (administrativa — REQUEST, creada por un técnico)
 ```typescript
-// GET /api/incidents/available?cornerId=corner_123
-// Response: Lista de incidencias en estado CREATED
-```
-
-#### Tomar Incidencia
-```typescript
-// Command
+// Command → POST /api/appointments
 {
-  incidentId: "inc_123",
-  technicianId: "tech_456"
+  issueTypeId: "decomision_portatil", // category='REQUEST-DECOMISSION' → kind=REQUEST (ticket SN: sc_req_item/sc_task)
+  customerId: "user_789",
+  cornerId: "corner_123",
+  slotIds: ["slot_1100"],
+  startTime: "2026-03-10T11:00:00Z",
+  endTime: "2026-03-10T11:30:00Z",
+  origin: "gateway",
+  device: { serialNumber: "ABC123XYZ" },
+  notes: "Decomisión por baja voluntaria"
 }
 ```
 
-#### Liberar Incidencia
+### 5. Gestión de Citas (Técnico)
+
+#### Ver Citas Disponibles
 ```typescript
-// Command
+// GET /api/appointments/available?cornerId=corner_123
+// Response: Lista de citas en estado DELIVERED sin técnico asignado
+```
+
+#### Tomar Cita
+```typescript
+// Command → PATCH /api/appointments/:id/take
 {
-  incidentId: "inc_123",
+  technicianId: "tech_456",
+  slotIds: ["slot_0930"]   // opcional
+}
+```
+
+#### Liberar Cita
+```typescript
+// Command → PATCH /api/appointments/:id/release
+{
   technicianId: "tech_456",
   reason: "Cambio de turno"
 }
@@ -475,28 +528,18 @@ enum DayOfWeek {
 
 #### Cambiar Estado
 ```typescript
-// Command
+// Command → PATCH /api/appointments/:id/status
 {
-  incidentId: "inc_123",
-  technicianId: "tech_456",
   newStatus: "IN_PROGRESS",
   comment: "Comenzando reparación"
 }
 ```
 
-### 6. Creación de Request (Técnico)
-
+#### Registrar Entrega, Validar, Reabrir
 ```typescript
-// Command
-{
-  issueTypeId: "decomision_portatil",
-  technicianId: "tech_456",
-  customerId: "user_789",
-  cornerId: "corner_123",
-  companyId: "company_456",
-  scheduledAt: "2026-03-10T11:00:00Z",
-  notes: "Decomisión por baja voluntaria"
-}
+// PATCH /api/appointments/:id/deliver   { technicianId }
+// PATCH /api/appointments/:id/validate  { customerId }
+// PATCH /api/appointments/:id/reopen    { customerId, reason }
 ```
 
 ---
@@ -516,7 +559,7 @@ enum DayOfWeek {
 | `GET` | `/api/corners/:id/schedules` | Lista franjas del corner |
 | `POST` | `/api/corners/:id/schedules/:scheduleId/technicians` | Asigna técnicos a franja |
 
-### Tipos de Incidencia (Admin)
+### Tipos de Cita (Admin)
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
@@ -533,26 +576,33 @@ enum DayOfWeek {
 | `GET` | `/api/availability/:cornerId` | Obtiene disponibilidad para un corner |
 | `GET` | `/api/availability/:cornerId/technicians` | Disponibilidad de técnicos |
 
-### Incidencias
+### Citas (Appointments)
 
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| `GET` | `/api/incidents/available` | Incidencias disponibles para tomar |
-| `GET` | `/api/incidents/technician/:technicianId` | Incidencias de un técnico |
-| `GET` | `/api/incidents/:id` | Detalle de incidencia |
-| `POST` | `/api/incidents` | Crear nueva incidencia |
-| `PATCH` | `/api/incidents/:id/take` | Tomar incidencia |
-| `PATCH` | `/api/incidents/:id/release` | Liberar incidencia |
-| `PATCH` | `/api/incidents/:id/status` | Cambiar estado |
+Superficie unificada — reemplaza los antiguos `/api/incidents` y `/api/requests` (borrados en el remodelado). Controller real: `@Controller('api/appointments')` (`apps/api-gateway/src/inbound/appointments/appointments.controller.ts`), proxy delgado hacia `/internal/appointments` del monolito.
 
-### Requests
+| Método | Endpoint | Permiso ABAC | Descripción |
+|--------|----------|--------------|-------------|
+| `GET` | `/api/appointments` | `appointment:list` | Búsqueda paginada con filtros (`cornerId`, `status`, `issueTypeId`, `customerEmail`\* [matchea también `upn`], `servicenowNumber`, `deviceSerial`, `dateFrom`/`dateTo`, `availableOnly`) |
+| `GET` | `/api/appointments/suggestions/device-serial?cornerId=&q=` | `appointment:list` | Autocomplete de seriales de dispositivo, acotado al corner |
+| `GET` | `/api/appointments/suggestions/servicenow-number?cornerId=&q=` | `appointment:list` | Autocomplete de números de ticket SN, acotado al corner |
+| `GET` | `/api/appointments/available?cornerId=` | `appointment:list` | Citas en `DELIVERED` sin técnico asignado |
+| `GET` | `/api/appointments/mine` | `appointment:read` | Citas del usuario autenticado (vía JWT) |
+| `GET` | `/api/appointments/technician/:technicianId` | `appointment:list` | Citas activas de un técnico |
+| `GET` | `/api/appointments/:id` | `appointment:read` | Detalle de cita |
+| `GET` | `/api/appointments/:id/timeline` | `appointment:read` | Historial/línea de tiempo de la cita |
+| `POST` | `/api/appointments` | `appointment:create` | Crea una cita (`kind` se deriva del `IssueType` elegido) |
+| `POST` | `/api/appointments/:id/notes` | `appointment:change-status` | Agrega una nota sin cambiar el estado |
+| `PATCH` | `/api/appointments/:id/deliver` | `appointment:deliver` | Registra entrega del dispositivo (CREATED→DELIVERED) |
+| `PATCH` | `/api/appointments/:id/take` | `appointment:take` | Técnico toma la cita |
+| `PATCH` | `/api/appointments/:id/release` | `appointment:release` | Técnico libera la cita |
+| `PATCH` | `/api/appointments/:id/reschedule` | `appointment:change-status` | Reprograma horario/slots |
+| `PATCH` | `/api/appointments/:id/estimated-close` | `appointment:change-status` | Corrige la fecha estimada de cierre |
+| `PATCH` | `/api/appointments/:id/status` | `appointment:change-status` | Cambia de estado (incluye cierre → dispara cierre de ticket SN) |
+| `PATCH` | `/api/appointments/:id/cancel` | `appointment:change-status` | Cliente cancela (solo CREATED→CANCELED) |
+| `PATCH` | `/api/appointments/:id/validate` | `appointment:validate` | Cliente valida la resolución (CLOSED→VALIDATED) |
+| `PATCH` | `/api/appointments/:id/reopen` | `appointment:reopen` | Cliente rechaza la resolución (CLOSED→REOPENED) |
 
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| `GET` | `/api/requests` | Lista requests (con filtros) |
-| `GET` | `/api/requests/:id` | Detalle de request |
-| `POST` | `/api/requests` | Crear nueva request |
-| `PATCH` | `/api/requests/:id/status` | Cambiar estado |
+\* El nombre del parámetro `customerEmail` se mantiene por compatibilidad de API, pero la query matchea contra `email` **o** `upn` del cliente.
 
 ### Técnicos
 
@@ -638,7 +688,7 @@ curl -X POST http://localhost:3000/api/corners/corner_123/schedules/schedule_456
   }'
 ```
 
-### 4. Crear Tipo de Incidencia (ISSUE)
+### 4. Crear Tipo de Cita (ISSUE — hardware)
 
 ```bash
 curl -X POST http://localhost:3000/api/admin/issue-types \
@@ -660,7 +710,7 @@ curl -X POST http://localhost:3000/api/admin/issue-types \
   }'
 ```
 
-### 5. Crear Tipo de Incidencia (REQUEST)
+### 5. Crear Tipo de Cita (REQUEST-DECOMISSION — administrativo)
 
 ```bash
 curl -X POST http://localhost:3000/api/admin/issue-types \
@@ -668,7 +718,7 @@ curl -X POST http://localhost:3000/api/admin/issue-types \
   -d '{
     "profileId": "prof_santander",
     "name": "Decomisión digital (portátil)",
-    "category": "REQUEST-DECOMMISSION",
+    "category": "REQUEST-DECOMISSION",
     "deviceType": "Portátil",
     "workMinutes": 20,
     "spareMinutes": 0,
@@ -709,10 +759,10 @@ curl -X GET "http://localhost:3000/api/availability/corner_123?date=2026-03-09&d
 ]
 ```
 
-### 7. Crear Incidencia (Usuario)
+### 7. Crear Cita (Usuario o Técnico)
 
 ```bash
-curl -X POST http://localhost:3000/api/incidents \
+curl -X POST http://localhost:3000/api/appointments \
   -H "Content-Type: application/json" \
   -d '{
     "issueTypeId": "averia_portatil",
@@ -733,39 +783,37 @@ curl -X POST http://localhost:3000/api/incidents \
 **Respuesta:**
 ```json
 {
-  "id": "inc_123",
+  "id": "appt_123",
+  "kind": "ISSUE",
   "status": "CREATED",
-  "scheduledStart": "2026-03-09T09:30:00Z",
-  "scheduledEnd": "2026-03-09T10:00:00Z",
-  "message": "Cita creada exitosamente"
+  "scheduledRange": { "start": "2026-03-09T09:30:00Z", "end": "2026-03-09T10:00:00Z" }
 }
 ```
 
-### 8. Ver Incidencias Disponibles (Técnico)
+### 8. Ver Citas Disponibles (Técnico)
 
 ```bash
-curl -X GET http://localhost:3000/api/incidents/available?cornerId=corner_123
+curl -X GET http://localhost:3000/api/appointments/available?cornerId=corner_123
 ```
 
 **Respuesta:**
 ```json
 [
   {
-    "id": "inc_123",
-    "start": "2026-03-09T09:30:00Z",
-    "end": "2026-03-09T10:00:00Z",
-    "customerName": "Juan Pérez",
-    "issueType": "Avería de portátil",
-    "deviceModel": "ThinkPad T14",
-    "duration": 30
+    "id": "appt_123",
+    "kind": "ISSUE",
+    "status": "DELIVERED",
+    "scheduledRange": { "start": "2026-03-09T09:30:00Z", "end": "2026-03-09T10:00:00Z" },
+    "issueType": { "name": "Avería de portátil" },
+    "device": { "serialNumber": "ABC123XYZ", "model": "ThinkPad T14" }
   }
 ]
 ```
 
-### 9. Tomar Incidencia
+### 9. Tomar Cita
 
 ```bash
-curl -X PATCH http://localhost:3000/api/incidents/inc_123/take \
+curl -X PATCH http://localhost:3000/api/appointments/appt_123/take \
   -H "Content-Type: application/json" \
   -d '{
     "technicianId": "tech_456"
@@ -775,29 +823,27 @@ curl -X PATCH http://localhost:3000/api/incidents/inc_123/take \
 **Respuesta:**
 ```json
 {
-  "id": "inc_123",
+  "id": "appt_123",
   "status": "IN_PROGRESS",
-  "currentTechnicianId": "tech_456",
-  "message": "Incidencia asignada"
+  "currentTechnicianId": "tech_456"
 }
 ```
 
-### 10. Cambiar Estado de Incidencia
+### 10. Cambiar Estado de Cita
 
 ```bash
-curl -X PATCH http://localhost:3000/api/incidents/inc_123/status \
+curl -X PATCH http://localhost:3000/api/appointments/appt_123/status \
   -H "Content-Type: application/json" \
   -d '{
-    "technicianId": "tech_456",
     "newStatus": "PAUSED",
     "comment": "Esperando repuesto de pantalla"
   }'
 ```
 
-### 11. Liberar Incidencia
+### 11. Liberar Cita
 
 ```bash
-curl -X PATCH http://localhost:3000/api/incidents/inc_123/release \
+curl -X PATCH http://localhost:3000/api/appointments/appt_123/release \
   -H "Content-Type: application/json" \
   -d '{
     "technicianId": "tech_456",
@@ -808,25 +854,26 @@ curl -X PATCH http://localhost:3000/api/incidents/inc_123/release \
 **Respuesta:**
 ```json
 {
-  "id": "inc_123",
+  "id": "appt_123",
   "status": "CREATED",
-  "currentTechnicianId": null,
-  "message": "Incidencia liberada"
+  "currentTechnicianId": null
 }
 ```
 
-### 12. Crear Request (Técnico)
+### 12. Crear Cita administrativa (REQUEST, creada por un Técnico)
 
 ```bash
-curl -X POST http://localhost:3000/api/requests \
+curl -X POST http://localhost:3000/api/appointments \
   -H "Content-Type: application/json" \
   -d '{
     "issueTypeId": "decomision_portatil",
-    "technicianId": "tech_456",
     "customerId": "user_789",
     "cornerId": "corner_123",
-    "companyId": "company_456",
-    "scheduledAt": "2026-03-10T11:00:00Z",
+    "slotIds": ["slot_1100"],
+    "startTime": "2026-03-10T11:00:00Z",
+    "endTime": "2026-03-10T11:30:00Z",
+    "origin": "gateway",
+    "device": { "serialNumber": "ABC123XYZ" },
     "notes": "Decomisión por baja voluntaria"
   }'
 ```
@@ -834,9 +881,10 @@ curl -X POST http://localhost:3000/api/requests \
 ### 13. Crear Técnico
 
 ```bash
-curl -X POST http://localhost:3000/api/technicians \
+curl -X POST http://localhost:3000/api/admin/technicians \
   -H "Content-Type: application/json" \
   -d '{
+    "userId": "user_456",
     "name": "María",
     "lastName": "López",
     "email": "maria.lopez@empresa.com",
@@ -844,14 +892,15 @@ curl -X POST http://localhost:3000/api/technicians \
   }'
 ```
 
-### 14. Registrar Token de Dispositivo
+### 14. Sincronizar Dispositivos de un Usuario (Minerva)
 
 ```bash
-curl -X POST http://localhost:3000/api/users/user_123/device-token \
-  -H "Content-Type: application/json" \
-  -d '{
-    "token": "fcm_token_abc123..."
-  }'
+curl -X POST http://localhost:3000/api/devices/sync-user/user_123
+```
+
+**Respuesta:**
+```json
+{ "synced": 2, "errors": 0 }
 ```
 
 ---
@@ -898,16 +947,16 @@ sequenceDiagram
     U->>S: 4. Introduce datos del dispositivo
     U->>S: 5. Confirma
     
-    S->>DB: 6. Crea incident (status=CREATED)
+    S->>DB: 6. Crea appointment (kind=ISSUE, status=CREATED)
     S->>DB: 7. Marca slots como BOOKED
     S->>DB: 8. Registra timeline
     
     S-->>U: 9. Confirmación
 ```
 
-### Flujo 3: Técnico Gestiona Incidencia
+### Flujo 3: Técnico Gestiona una Cita (ISSUE) — creación + cierre de ticket
 
-El monolith **nunca llama directo a ServiceNow**. La entrega es asíncrona vía patrón Outbox: el cambio de estado se persiste transaccionalmente junto a un `OutboxEvent`, y un worker (`OutboxWorkerService`) lo despacha a un handler (`IncidentServiceNowHandler`) que llama al gateway.
+El monolith **nunca llama directo a ServiceNow**. Tanto la creación como el cierre son asíncronos vía patrón Outbox: el cambio se persiste transaccionalmente junto a un `OutboxEvent`, y un worker (`OutboxWorkerService`) lo despacha a un handler que llama al gateway. La creación del ticket la maneja `AppointmentServiceNowHandler`; los cambios de estado y el cierre los maneja `AppointmentStatusChangedHandler`, operando sobre el `ServiceNowTicketLink` (`role='primary'`) de la cita — no sobre un campo inline.
 
 ```mermaid
 sequenceDiagram
@@ -919,33 +968,33 @@ sequenceDiagram
     participant SQ as api-snowq-service
     participant SN as ServiceNow
 
-    T->>S: 1. Ver incidencias disponibles
-    S->>DB: SELECT * FROM incidents WHERE status='CREATED'
+    T->>S: 1. Ver citas disponibles
+    S->>DB: SELECT * FROM appointments WHERE status='DELIVERED' AND current_technician_id IS NULL
 
-    T->>S: 2. Tomar incidencia
-    S->>DB: UPDATE status='IN_PROGRESS', technician_id
+    T->>S: 2. Tomar cita
+    S->>DB: UPDATE status='IN_PROGRESS', current_technician_id
 
     T->>S: 3. Durante atención (cambios de estado)
     S->>DB: UPDATE status
-    S->>DB: INSERT INTO timeline
+    S->>DB: INSERT INTO appointment_timeline
 
-    T->>S: 4. Cerrar incidencia
+    T->>S: 4. Cerrar cita
     S->>DB: UPDATE status='CLOSED' + INSERT OutboxEvent (misma transacción)
 
     OW->>DB: 5. Polling periódico de eventos pendientes
-    OW->>S: 6. IncidentServiceNowHandler procesa el evento
+    OW->>S: 6. AppointmentStatusChangedHandler procesa el evento CLOSED
     S->>GW: 7. Bearer M2M EdDSA → PATCH /outbound/servicenow/immediate/incidents/{sysId}/close
     GW->>SQ: 8. Bearer M2M EdDSA → PATCH /snow-requests/immediate/incidents/{sysId}/close
     SQ->>SN: 9. Basic Auth → PATCH /api/now/v2/table/incident/{sysId}
     SN-->>SQ: 10. Ticket cerrado
     SQ-->>GW: 11. OK
-    GW-->>S: 12. OK
+    GW-->>S: 12. OK → link.close() + persiste el ServiceNowTicketLink
     S-->>T: 13. Notificar cierre
 ```
 
-### Flujo 4: Técnico Crea Request
+### Flujo 4: Técnico Crea una Cita administrativa (REQUEST)
 
-La creación también pasa por Outbox: el `Request` se persiste junto a su `OutboxEvent`, y el worker crea el ticket en ServiceNow en dos fases (síncrona inmediata + fallback async) a través del gateway y api-snowq-service.
+La creación también pasa por Outbox: el `Appointment` (kind=REQUEST) se persiste junto a un `ServiceNowTicketLink` en estado `PENDING` y su `OutboxEvent`, y el worker crea el ticket en ServiceNow en dos fases (síncrona inmediata + fallback async) a través del gateway y api-snowq-service.
 
 ```mermaid
 sequenceDiagram
@@ -957,23 +1006,24 @@ sequenceDiagram
     participant SQ as api-snowq-service
     participant SN as ServiceNow
 
-    T->>S: 1. Selecciona tipo REQUEST
-    T->>S: 2. Busca usuario
+    T->>S: 1. Selecciona tipo REQUEST-ONBOARDING/DECOMISSION
+    T->>S: 2. Busca usuario, corner y slot
     T->>S: 3. Introduce datos
     T->>S: 4. Confirma
 
-    S->>DB: 5. Crea request + INSERT OutboxEvent (misma transacción)
+    S->>DB: 5. Crea appointment (kind=REQUEST) + ServiceNowTicketLink(PENDING) + INSERT OutboxEvent (misma transacción)
 
     OW->>DB: 6. Polling periódico de eventos pendientes
-    OW->>GW: 7. Bearer M2M EdDSA → POST /outbound/servicenow/immediate/service-catalog (fase síncrona)
+    OW->>S: 6b. AppointmentServiceNowHandler procesa el evento
+    S->>GW: 7. Bearer M2M EdDSA → POST /outbound/servicenow/immediate/service-catalog (fase síncrona)
     GW->>SQ: 8. Bearer M2M EdDSA → POST /snow-requests/immediate/service-catalog
     SQ->>SN: 9. Basic Auth → POST /api/now/v2/table/sc_req_item
     SN-->>SQ: 10. sys_id, number
     SQ-->>GW: 11. sys_id, number
-    GW-->>S: 12. sys_id, number (o correlationId si cae al fallback async)
-    S->>DB: 13. Actualiza request con servicenow_id/servicenow_number
+    GW-->>S: 12. sys_id, number (o correlationId si cae al fallback async → link.markDeferred())
+    S->>DB: 13. link.resolveImmediate(sysId, number) — actualiza el ServiceNowTicketLink
 
-    S-->>T: 14. Request creada
+    S-->>T: 14. Cita creada
 ```
 
 ---
@@ -982,24 +1032,26 @@ sequenceDiagram
 
 ### Mapeo de Campos
 
-| Campo SN | Origen en Incident | Origen en Request |
-|----------|-------------------|-------------------|
-| `company` | `user.companyId` → `company.servicenowProfile.snowCompanySysId` | `request.companyId` → `company.servicenowProfile.snowCompanySysId` |
-| `category` | `issueType.servicenowCategory` | `issueType.servicenowCategory` |
-| `assignment_group` | `resolveAssignmentGroup()` — cadena de 3 niveles (ver abajo) | `resolveAssignmentGroup()` — misma cadena de 3 niveles |
-| `location` | `corner.servicenowLocation` | `corner.servicenowLocation` |
-| `short_description` | `Incidente: {issueType.name}` | `Solicitud: {issueType.name}` |
-| `caller_id` | `user.email` | `technician.email` |
-| `expected_start` | `incident.scheduledStart` | `request.scheduledAt` |
+Un único mapeo aplica a cualquier `Appointment`, sea `kind=ISSUE` (crea `incident`) o `kind=REQUEST` (crea `sc_req_item`/`sc_task`) — ya no hay dos rutas de mapeo separadas.
+
+| Campo SN | Origen |
+|----------|--------|
+| `company` | `resolveSnowCompanySysId()`: `company.profile.snow_company_sys_id` → fallback `SN_DEFAULT_COMPANY_SYS_ID` |
+| `category` | `issueType.servicenowCategory` |
+| `assignment_group` | `resolveAssignmentGroup()` — cadena de 4 niveles (ver abajo) |
+| `location` | `corner.servicenowLocation` |
+| `caller_id` | `user.upn` (UPN) |
+| `correlation_id` | `device.serialNumber` |
+| `expected_start` | `appointment.scheduledRange.start` |
 
 ### Lógica de Asignación de Grupo
 
-`resolveAssignmentGroup()` en `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts:331` sigue esta cadena de fallback (sin lógica hardcodeada por ciudad):
+`resolveAssignmentGroup()` en `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts` sigue esta cadena de fallback (sin lógica hardcodeada por ciudad):
 
 ```
 1. CompanyIssueConfig(company.id, issueTypeId)              → servicenow_group específico de la empresa
 2. CompanyIssueConfig(SN_DEFAULT_COMPANY_ID, issueTypeId)   → fallback a la config de la empresa default
-3. Corner.snowAssignmentGroup                                → fallback al grupo configurado en el corner
+3. Corner.snow_assignment_group                              → fallback al grupo configurado en el corner
 4. 'SOPORTE_GENERAL'                                          → fallback final + warn log (indica config faltante)
 ```
 
@@ -1012,16 +1064,16 @@ sequenceDiagram
 Todos los servicios devuelven `Result<T, E>` para manejo funcional de errores:
 
 ```typescript
-const result = await incidentService.takeIncident(command);
+const result = await appointmentService.takeAppointment(command);
 
 if (result.isSuccess) {
-  const incident = result.unwrap();
+  const appointment = result.unwrap();
   // Procesar éxito
 } else {
   const error = result.unwrapError();
   // Manejar error específico
-  if (error instanceof IncidentNotAvailableError) {
-    // La incidencia ya no está disponible
+  if (error instanceof AppointmentNotAvailableError) {
+    // La cita ya no está disponible
   }
 }
 ```
@@ -1030,22 +1082,26 @@ if (result.isSuccess) {
 
 | Error | Código HTTP | Descripción |
 |-------|-------------|-------------|
-| `IncidentNotFoundError` | 404 | Incidencia no encontrada |
-| `IncidentNotAvailableError` | 409 | Incidencia no disponible para tomar |
-| `InvalidIncidentStateError` | 400 | Estado inválido para la operación |
-| `TechnicianNotAuthorizedError` | 403 | Técnico no autorizado |
+| `AppointmentNotFoundError` | 404 | Cita no encontrada |
+| `AppointmentNotAvailableError` | 409 | Cita no disponible para tomar |
+| `InvalidAppointmentStateError` | 400 | Estado inválido para la operación |
+| `AppointmentTechnicianNotAuthorizedError` | 403 | Técnico no autorizado para operar sobre la cita |
+| `DeviceHasActiveAppointmentError` | 409 | El dispositivo ya tiene una cita activa |
 | `SlotNotAvailableError` | 409 | Slot no disponible |
 | `InsufficientSlotsError` | 400 | Slots insuficientes para la duración |
 | `LockerNotAvailableError` | 409 | Taquilla no disponible |
 | `TechnicianNotAvailableError` | 409 | Técnico no disponible |
+| `IssueTypeTreeInUseError` | 409 | No se puede borrar un árbol de tipos con citas o configuraciones asociadas |
+
+`unwrapOrThrow()` (`libs/shared/src/utils/result-to-http.ts`) mapea el `.code` del error a status HTTP por substring: contiene `NOT_FOUND`→404, `UNAUTHORIZED`/`NOT_AUTHORIZED`→403, `ALREADY`/`INVALID`/`UNAVAILABLE`/`NOT_AVAILABLE`/`INSUFFICIENT`→409, default→400.
 
 ### Ejemplo de Respuesta de Error
 
 ```json
 {
   "statusCode": 409,
-  "error": "INCIDENT_NOT_AVAILABLE",
-  "message": "Incident inc_123 is not available to be taken",
+  "error": "APPOINTMENT_NOT_AVAILABLE",
+  "message": "Appointment appt_123 is not available to be taken",
   "timestamp": "2026-03-06T10:00:00Z"
 }
 ```
@@ -1066,7 +1122,7 @@ if (result.isSuccess) {
 - Transacciones ACID en operaciones críticas
 
 ### Auditoría
-- Timeline de incidencias registra todas las acciones
+- `appointment_timeline` registra todas las acciones de la cita
 - Event sourcing para trazabilidad completa
 
 ---
@@ -1079,13 +1135,16 @@ if (result.isSuccess) {
 
 ### Índices de Base de Datos
 ```sql
-CREATE INDEX idx_incidents_status_available ON incidents(status) WHERE status = 'CREATED';
-CREATE INDEX idx_incidents_technician ON incidents(current_technician_id);
+CREATE INDEX idx_appointments_status_available ON appointments(status) WHERE status = 'CREATED';
+CREATE INDEX idx_appointments_technician ON appointments(current_technician_id);
 CREATE INDEX idx_slots_corner_date ON corner_slots(corner_id, starts_at, status);
-CREATE INDEX idx_incident_slots_lookup ON incident_slots(slot_id, incident_id);
+CREATE INDEX idx_appointment_slots_lookup ON appointment_slots(slot_id, appointment_id);
+CREATE INDEX idx_snow_ticket_link_appointment ON servicenow_ticket_links(appointment_id);
+CREATE INDEX idx_snow_ticket_link_status ON servicenow_ticket_links(status);
 ```
 
 ### Jobs Programados
 - Generación de slots (diario)
 - Marcado de slots expirados (cada hora)
-- Liberación de incidencias abandonadas (cada 30 minutos)
+- Liberación de citas abandonadas (cada 30 minutos)
+- `OutboxWorkerService` — polling de eventos pendientes cada 5s (backoff exponencial, máx. 5 reintentos)

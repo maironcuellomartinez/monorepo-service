@@ -450,6 +450,7 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
 
 | File | Purpose |
 |---|---|
+| `monolito-event-corner_v3/docs/infrastructure-diagram.md` | Diagrama Mermaid del ecosistema completo (todos los servicios, puertos, auth, orden de arranque) |
 | `monolito-event-corner_v3/ecosystem.config.js` | PM2 multi-app config (api-gateway, monolith, abac) |
 | `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts` | Group + company resolution, ticket creation/close |
 | `apps/monolith/src/infrastructure/external/servicenow/servicenow-proxy.adapter.ts` | Monolith → gateway HTTP calls |
