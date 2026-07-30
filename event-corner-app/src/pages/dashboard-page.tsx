@@ -663,7 +663,10 @@ function AppointmentActionsModal({ incident, open, onClose, onUpdated }: Appoint
 // El técnico puede cerrar como resuelta desde cualquier estado activo (paridad
 // legacy) — no hace falta pasar por PENDING_PICKUP/PENDING_REPLACEMENT_DELIVERY.
 const TECHNICIAN_TRANSITIONS: Partial<Record<AppointmentStatus, AppointmentStatus[]>> = {
-  CREATED:                    ['DELIVERED', 'CANCELED'],
+  // IN_PROGRESS directo: el sistema registra el DELIVERED intermedio solo
+  // (ver appointment.entity.ts changeStatus()) — el técnico no tiene que
+  // pasar manualmente por "Entregado" si ya sabe que va a empezar a trabajar.
+  CREATED:                    ['DELIVERED', 'IN_PROGRESS', 'CANCELED'],
   DELIVERED:                  ['IN_PROGRESS', 'CLOSED'],
   IN_PROGRESS:                ['PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART', 'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY', 'CLOSED'],
   PENDING_THIRD_PARTY:        ['IN_PROGRESS', 'CLOSED'],
@@ -677,7 +680,7 @@ const TECHNICIAN_TRANSITIONS: Partial<Record<AppointmentStatus, AppointmentStatu
 }
 
 export const STATUS_LABELS: Record<string, string> = {
-  CREATED: 'Creada', DELIVERED: 'Entregada', IN_PROGRESS: 'En progreso',
+  CREATED: 'Creada', DELIVERED: 'Entregado', IN_PROGRESS: 'En progreso',
   PENDING_THIRD_PARTY: 'Pend. tercero', PENDING_USER: 'Pend. usuario',
   PENDING_SPARE_PART: 'Pend. repuesto', PENDING_PICKUP: 'Pend. recogida',
   PENDING_REPLACEMENT_DELIVERY: 'Pend. sustitución', CLOSED: 'Cerrada',
@@ -686,19 +689,19 @@ export const STATUS_LABELS: Record<string, string> = {
   STATUS_CHANGED: 'Estado cambiado',
   // Nombres reales de action_type que persiste saveEvents() (event.type del dominio,
   // sin normalizar contra el enum TimelineAction — ese enum quedó sin usar).
-  INCIDENT_CREATED: 'Creada',
-  INCIDENT_DELIVERED: 'Entregada',
-  INCIDENT_TAKEN: 'Tomada por técnico',
-  INCIDENT_RELEASED: 'Liberada por técnico',
-  INCIDENT_STATUS_CHANGED: 'Estado cambiado',
-  INCIDENT_VALIDATED: 'Validada',
-  INCIDENT_REOPENED: 'Reabierta',
-  INCIDENT_COMMENT_ADDED: 'Comentario añadido',
-  INCIDENT_RESCHEDULED: 'Reprogramada',
-  INCIDENT_ESTIMATED_CLOSE_CHANGED: 'Cierre estimado actualizado',
-  INCIDENT_LOCKER_ASSIGNED: 'Locker asignado',
-  INCIDENT_LOCKER_RELEASED: 'Locker liberado',
-  INCIDENT_SERVICENOW_UPDATED: 'Ticket ServiceNow actualizado',
+  APPOINTMENT_CREATED: 'Creada',
+  APPOINTMENT_DELIVERED: 'Entregado',
+  APPOINTMENT_TAKEN: 'Tomada por técnico',
+  APPOINTMENT_RELEASED: 'Liberada por técnico',
+  APPOINTMENT_STATUS_CHANGED: 'Estado cambiado',
+  APPOINTMENT_VALIDATED: 'Validada',
+  APPOINTMENT_REOPENED: 'Reabierta',
+  APPOINTMENT_COMMENT_ADDED: 'Comentario añadido',
+  APPOINTMENT_RESCHEDULED: 'Reprogramada',
+  APPOINTMENT_ESTIMATED_CLOSE_CHANGED: 'Cierre estimado actualizado',
+  APPOINTMENT_LOCKER_ASSIGNED: 'Locker asignado',
+  APPOINTMENT_LOCKER_RELEASED: 'Locker liberado',
+  APPOINTMENT_SERVICENOW_UPDATED: 'Ticket ServiceNow actualizado',
 }
 
 export const TIMELINE_ICON: Record<string, React.ElementType> = {
@@ -706,14 +709,14 @@ export const TIMELINE_ICON: Record<string, React.ElementType> = {
   ASSIGNED: LogIn,
   ACCEPTED: CheckCircle2,
   TECHNICIAN_CHANGED: RefreshCw,
-  INCIDENT_CREATED: Plus,
-  INCIDENT_DELIVERED: Inbox,
-  INCIDENT_TAKEN: LogIn,
-  INCIDENT_RELEASED: XCircle,
-  INCIDENT_STATUS_CHANGED: RefreshCw,
-  INCIDENT_VALIDATED: ThumbsUp,
-  INCIDENT_REOPENED: RotateCcw,
-  INCIDENT_COMMENT_ADDED: MessageSquare,
+  APPOINTMENT_CREATED: Plus,
+  APPOINTMENT_DELIVERED: Inbox,
+  APPOINTMENT_TAKEN: LogIn,
+  APPOINTMENT_RELEASED: XCircle,
+  APPOINTMENT_STATUS_CHANGED: RefreshCw,
+  APPOINTMENT_VALIDATED: ThumbsUp,
+  APPOINTMENT_REOPENED: RotateCcw,
+  APPOINTMENT_COMMENT_ADDED: MessageSquare,
 }
 
 interface TechnicianAppointmentModalProps {

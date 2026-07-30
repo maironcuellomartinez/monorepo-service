@@ -16,7 +16,7 @@ import {
   Ban,
   CircleCheck,
 } from 'lucide-react'
-import { devicesApi, usersApi, type DeviceSummary, type MonolithUser } from '@/lib/api'
+import { devicesApi, usersApi, DEVICE_TYPES, type DeviceSummary, type MonolithUser } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -44,10 +44,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const DEVICE_TYPES = ['LAPTOP', 'CELULAR', 'TABLET', 'DESKTOP', 'IMPRESORA', 'OTRO']
 
 // ─── Status helpers ──────────────────────────────────────────────────────────
 

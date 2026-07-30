@@ -21,13 +21,9 @@ import {
   Select, SelectContent, SelectItem,
   SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { issueTypesApi, treesApi, IssueType, IssueTypeTree } from '@/lib/api'
+import { issueTypesApi, treesApi, DEVICE_TYPES, IssueType, IssueTypeTree } from '@/lib/api'
 
 // ── Catalogs ─────────────────────────────────────────────────────────────────
-
-// Debe coincidir con el vocabulario de dispositivos reales (ver DEVICE_TYPES en devices-page.tsx) —
-// es el que usan los dispositivos sincronizados vía Minerva.
-const DEVICE_TYPES = ['LAPTOP', 'CELULAR', 'TABLET', 'DESKTOP', 'IMPRESORA', 'OTRO']
 
 const CATEGORIES: { value: string; label: string }[] = [
   { value: 'ISSUE',               label: 'Incidencia' },

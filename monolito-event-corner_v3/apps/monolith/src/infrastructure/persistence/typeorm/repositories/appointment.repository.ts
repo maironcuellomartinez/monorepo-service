@@ -11,6 +11,7 @@ import {
 import { AppointmentEntity } from '../entities/appointment.entity';
 import { AppointmentSlotEntity } from '../entities/appointment-slot.entity';
 import { AppointmentTimelineEntity } from '../entities/appointment-timeline.entity';
+import { ServiceNowTicketLinkEntity } from '../entities/servicenow-ticket-link.entity';
 import { Appointment } from '../../../../core/domain/entities/appointment.entity';
 import { DateRange } from '../../../../core/domain/value-objects/date-range.value';
 import {
@@ -93,6 +94,7 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
 
       if (!entity) return Result.ok(null);
 
+      await this.attachTicketLinks([entity]);
       const slotIds = await this.getSlotIds(entity.appointment_id);
       return Result.ok(this.toDomain(entity, slotIds));
     } catch (error) {
@@ -485,6 +487,31 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
     });
   }
 
+  /**
+   * Adjunta en memoria los ServiceNowTicketLink de cada appointment (batch,
+   * evita N+1). No se carga como `relations` de TypeORM porque en
+   * findWithFilters ese join (OneToMany) rompe la paginación (LIMIT aplicaría
+   * sobre las filas ya multiplicadas por ticket) — ver comentario análogo
+   * para 'device'/'issueType' que sí son ManyToOne y no tienen ese problema.
+   */
+  private async attachTicketLinks(entities: AppointmentEntity[]): Promise<void> {
+    if (entities.length === 0) return;
+    const ids = entities.map((e) => e.appointment_id);
+    const links = await this.appointmentRepository.manager
+      .getRepository(ServiceNowTicketLinkEntity)
+      .find({ where: { appointment_id: In(ids) } });
+
+    const byAppointment = new Map<string, ServiceNowTicketLinkEntity[]>();
+    for (const link of links) {
+      const list = byAppointment.get(link.appointment_id) ?? [];
+      list.push(link);
+      byAppointment.set(link.appointment_id, list);
+    }
+    for (const entity of entities) {
+      entity.ticketLinks = byAppointment.get(entity.appointment_id) ?? [];
+    }
+  }
+
   private async getSlotIds(appointmentId: string): Promise<string[]> {
     const slotRelations = await this.appointmentSlotRepository.find({
       where: { appointment_id: appointmentId },
@@ -493,6 +520,7 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
   }
 
   private async toDomainMany(entities: AppointmentEntity[]): Promise<Appointment[]> {
+    await this.attachTicketLinks(entities);
     return Promise.all(
       entities.map(async (e) => this.toDomain(e, await this.getSlotIds(e.appointment_id))),
     );
@@ -586,6 +614,22 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
           entity.currentTechnician.full_name ||
           `${entity.currentTechnician.name}${entity.currentTechnician.last_name ? ' ' + entity.currentTechnician.last_name : ''}`,
       });
+    }
+    if (entity.ticketLinks && entity.ticketLinks.length > 0) {
+      // 'primary' es el ticket a mostrar/pollear (incident o sc_req_item según
+      // kind) — 'fulfillment' (sc_task) aún no aplica, ver appointment-kind.enum.ts.
+      // Más reciente primero: si el primary fue abandonado (huérfano) y se
+      // recreó, el nuevo link es el que corresponde mostrar.
+      const primary = entity.ticketLinks
+        .filter((l) => l.role === 'primary')
+        .sort((a, b) => b.created_at.getTime() - a.created_at.getTime())[0];
+      if (primary) {
+        appointment.setServiceNowLinkInfo({
+          sysId: primary.sys_id,
+          number: primary.number,
+          correlationId: primary.snowq_correlation_id,
+        });
+      }
     }
 
     return appointment;

@@ -6,10 +6,13 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { IsString, IsNotEmpty } from 'class-validator';
 import { IIssueTypeTreeRepository, ISSUE_TYPE_TREE_REPOSITORY } from '../../core/ports/outgoing/repositories/issue-type-tree-repository.port';
+import { IIssueTypeRepository, ISSUE_TYPE_REPOSITORY } from '../../core/ports/outgoing/repositories/issue-type-repository.port';
 import { IssueTypeTree } from '../../core/domain/entities/issue-type-tree.entity';
 import { IssueTypeTreeId } from '../../core/domain/value-objects/ids';
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
+import { IssueTypeTreeInUseError } from '@app/shared/errors/domain-error';
 import { TracingService } from '@app/observability';
+import { Result } from '@app/result';
 
 class CreateTreeDto {
     @IsString() @IsNotEmpty()
@@ -30,6 +33,7 @@ class RenameTreeDto {
 export class InternalIssueTypeTreesController {
     constructor(
         @Inject(ISSUE_TYPE_TREE_REPOSITORY) private readonly treeRepo: IIssueTypeTreeRepository,
+        @Inject(ISSUE_TYPE_REPOSITORY) private readonly issueTypeRepo: IIssueTypeRepository,
         private readonly tracing: TracingService,
     ) {}
 
@@ -89,6 +93,25 @@ export class InternalIssueTypeTreesController {
         const result = await this.treeRepo.findById(id);
         const tree = unwrapOrThrow(result);
         if (!tree) throw Object.assign(new Error(`Árbol "${id}" no encontrado`), { status: 404 });
+
+        const allTypes = unwrapOrThrow(await this.issueTypeRepo.findAllByTree(id));
+
+        // "Asignado" = activo. Uno desactivado ya no cuenta para el usuario,
+        // pero su fila sigue ahí por la FK — se limpia más abajo si no tiene historial.
+        if (allTypes.some((it) => it.isActive)) {
+            unwrapOrThrow(Result.err(new IssueTypeTreeInUseError(id)));
+        }
+
+        for (const inactive of allTypes) {
+            const referenced = unwrapOrThrow(await this.issueTypeRepo.isReferenced(inactive.id));
+            if (referenced) {
+                unwrapOrThrow(Result.err(new IssueTypeTreeInUseError(id)));
+            }
+        }
+        for (const inactive of allTypes) {
+            unwrapOrThrow(await this.issueTypeRepo.hardDelete(inactive.id));
+        }
+
         unwrapOrThrow(await this.treeRepo.delete(id));
     }
 

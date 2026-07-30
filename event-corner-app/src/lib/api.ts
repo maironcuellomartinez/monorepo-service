@@ -230,6 +230,9 @@ export type AppointmentStatus =
   | 'REOPENED'
   | 'CANCELED'
 
+/** Vocabulario de tipos de dispositivo — debe coincidir con device-type.value.ts (backend). */
+export const DEVICE_TYPES = ['LAPTOP', 'CELULAR', 'TABLET', 'DESKTOP', 'IMPRESORA', 'PANTALLA', 'SIM', 'EQUIPO_SOBREMESA', 'OTRO']
+
 /** Tipo de ticket SN que corresponde a esta cita — ver appointment-kind.enum.ts (backend). */
 export type TicketType = 'incident' | 'sc_req_item' | 'sc_task'
 

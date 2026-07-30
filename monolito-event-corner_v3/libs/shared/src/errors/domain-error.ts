@@ -85,3 +85,13 @@ export class IssueTypeNotAllowedForCompanyError extends DomainError {
         this.message = `Issue type ${issueTypeId} is not available for company ${companyId}`;
     }
 }
+
+export class IssueTypeTreeInUseError extends DomainError {
+    readonly code = 'ISSUE_TYPE_TREE_ALREADY_IN_USE';
+    readonly message: string;
+
+    constructor(treeId: string) {
+        super(`Issue type tree ${treeId} still has issue types assigned — reassign or delete them first`);
+        this.message = `Issue type tree ${treeId} still has issue types assigned — reassign or delete them first`;
+    }
+}

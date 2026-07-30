@@ -111,6 +111,19 @@ export class Appointment {
     this._issueTypeInfo = info;
   }
 
+  // Enriched ServiceNow ticket link info — el link "primary" vigente (incident
+  // o sc_req_item, ver ServiceNowTicketLink) (populated from DB relation, not persisted)
+  private _serviceNowLinkInfo: {
+    sysId: string | null;
+    number: string | null;
+    correlationId: string | null;
+  } | null = null;
+  setServiceNowLinkInfo(
+    info: { sysId: string | null; number: string | null; correlationId: string | null } | null,
+  ) {
+    this._serviceNowLinkInfo = info;
+  }
+
   // Getters
   get id(): AppointmentId {
     return this._id;
@@ -198,8 +211,11 @@ export class Appointment {
   /**
    * Registra la entrega del dispositivo por parte del cliente.
    * Transición: CREATED → DELIVERED.
+   * `comment` se usa para distinguir en el historial una entrega registrada
+   * automáticamente (atajo CREATED → IN_PROGRESS de changeStatus()) de una
+   * entrega manual explícita.
    */
-  deliver(technicianId: TechnicianId): Result<void> {
+  deliver(technicianId: TechnicianId, comment?: string): Result<void> {
     if (this._status !== AppointmentStatus.CREATED) {
       return Result.err(
         new InvalidAppointmentStateError(
@@ -217,6 +233,7 @@ export class Appointment {
       new DomainEvent('APPOINTMENT_DELIVERED', this._id, 'Appointment', {
         technicianId,
         previousStatus: AppointmentStatus.CREATED,
+        comment,
       }),
     );
 
@@ -411,6 +428,22 @@ export class Appointment {
     comment?: string,
     closeCategory?: string,
   ): Result<void> {
+    // Atajo: el técnico puede pasar directo de CREATED a IN_PROGRESS sin el
+    // paso manual de "entregar" — el sistema inserta automáticamente el
+    // DELIVERED intermedio (mismo evento que deliver(), con un comentario
+    // que aclara que fue automático) para no perder el registro de entrega
+    // del dispositivo en el historial.
+    if (
+      this._status === AppointmentStatus.CREATED &&
+      newStatus === AppointmentStatus.IN_PROGRESS
+    ) {
+      const deliverResult = this.deliver(
+        technicianId,
+        'Dispositivo entregado por el usuario',
+      );
+      if (deliverResult.isFailure) return deliverResult;
+    }
+
     const validTransitions =
       (
         APPOINTMENT_CONSTANTS.VALID_STATUS_TRANSITIONS as Record<
@@ -578,6 +611,9 @@ export class Appointment {
       createdByTechnicianId: this._createdByTechnicianId,
       deviceId: this._deviceId,
       device: this._deviceInfo ?? undefined,
+      servicenowId: this._serviceNowLinkInfo?.sysId ?? undefined,
+      servicenowNumber: this._serviceNowLinkInfo?.number ?? undefined,
+      snowqCorrelationId: this._serviceNowLinkInfo?.correlationId ?? undefined,
       lockerId: this._lockerId,
       metadata: this._metadata,
       closedAt: this._closedAt,

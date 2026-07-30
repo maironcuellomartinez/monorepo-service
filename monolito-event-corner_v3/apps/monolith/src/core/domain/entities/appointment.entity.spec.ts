@@ -352,9 +352,28 @@ describe('Appointment.changeStatus()', () => {
         expect(result.isSuccess).toBe(true);
     });
 
-    it('falla con transición inválida (CREATED → IN_PROGRESS sin pasar por DELIVERED)', () => {
+    it('CREATED → IN_PROGRESS inserta automáticamente el DELIVERED intermedio', () => {
         const appointment = makeAppointment();
+        appointment.pullEvents();
+
         const result = appointment.changeStatus(AppointmentStatus.IN_PROGRESS, TECH);
+
+        expect(result.isSuccess).toBe(true);
+        expect(appointment.status).toBe(AppointmentStatus.IN_PROGRESS);
+        expect(appointment.currentTechnicianId?.toString()).toBe('tech-1');
+
+        const events = appointment.pullEvents();
+        const delivered = events.find(e => e.type === 'APPOINTMENT_DELIVERED');
+        const statusChanged = events.find(e => e.type === 'APPOINTMENT_STATUS_CHANGED');
+        expect(delivered).toBeDefined();
+        expect(delivered?.data.comment).toBe('Dispositivo entregado por el usuario');
+        expect(statusChanged?.data.oldStatus).toBe(AppointmentStatus.DELIVERED);
+        expect(statusChanged?.data.newStatus).toBe(AppointmentStatus.IN_PROGRESS);
+    });
+
+    it('sigue fallando CREATED → PENDING_USER (el atajo es solo para IN_PROGRESS)', () => {
+        const appointment = makeAppointment();
+        const result = appointment.changeStatus(AppointmentStatus.PENDING_USER, TECH);
         expect(result.isFailure).toBe(true);
     });
 
