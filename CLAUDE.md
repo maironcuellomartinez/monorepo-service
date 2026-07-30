@@ -441,7 +441,7 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
 | `assignment_group` | `resolveAssignmentGroup()`: CompanyIssueConfig → default company config → Corner.snow_assignment_group |
 | `company` | `resolveSnowCompanySysId()`: Company.profile.snow_company_sys_id → `SN_DEFAULT_COMPANY_SYS_ID` |
 | `category` | `IssueType.servicenow_category` |
-| `caller_id` | `User.principalName` (UPN) |
+| `caller_id` | `User.upn` (UPN) |
 | `location` | `Corner.servicenow_location` |
 | `correlation_id` | `Device.serial_number` |
 | `expected_start` | `Incident.scheduledRange.start` |

@@ -69,7 +69,7 @@ export interface MeResponse {
   permissions: string[]
   monolithUserId: string
   companyId: string | null
-  principalName: string | null
+  upn: string | null
   isActive: boolean
   technicianId: string | null
 }
@@ -248,7 +248,7 @@ export interface Appointment {
   status: AppointmentStatus
   ticketType?: TicketType
   customerId: string
-  customer?: { id: string; email: string; name?: string }
+  customer?: { id: string; email: string; upn?: string | null; name?: string }
   cornerId: string
   corner?: Corner
   issueTypeId: string
@@ -509,7 +509,7 @@ export interface MonolithUser {
   lastName: string | null
   fullName: string | null
   companyId: string | null
-  principalName: string | null
+  upn: string | null
   isActive: boolean
 }
 

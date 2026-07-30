@@ -208,7 +208,7 @@ Empleado que crea incidencias. Se autentica con Entra ID (Azure AD).
 | `id` | `UserId` | Identificador único |
 | `externalId` | `string` | ID externo (oid de Azure AD en usuarios Entra) |
 | `domain` | `string` | Dominio corporativo |
-| `principalName` | `string` | UPN de Azure (nombre@dominio) |
+| `upn` | `string` | UPN de Azure (nombre@dominio) |
 | `email` | `Email` | Email |
 | `companyId` | `CompanyId` | Empresa |
 | `cornerId` | `CornerId` | Corner habitual |

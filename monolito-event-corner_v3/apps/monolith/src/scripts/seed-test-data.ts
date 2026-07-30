@@ -525,7 +525,7 @@ async function main() {
             await qr.query(
                 `INSERT INTO users
                    (customer_id, external_id, name, last_name, full_name, email,
-                    company_id, domain, principal_name, device_tokens, is_active,
+                    company_id, domain, upn, device_tokens, is_active,
                     created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?)`,
                 [

@@ -60,7 +60,7 @@ export function CreateAppointmentPage() {
         name: authUser.name ?? null,
         lastName: null,
         companyId: authUser.companyId,
-        principalName: null,
+        upn: null,
         externalId: authUser.oid ?? null,
         isActive: true,
       } as MonolithUser
@@ -373,7 +373,7 @@ export function CreateAppointmentPage() {
                   <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     className="pl-9"
-                    placeholder="Buscar por nombre o email..."
+                    placeholder="Buscar por nombre o upn..."
                     value={userSearch}
                     onChange={(e) => {
                       setUserSearch(e.target.value)
@@ -405,7 +405,7 @@ export function CreateAppointmentPage() {
                         <User className="h-4 w-4 text-muted-foreground shrink-0" />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium truncate">{u.fullName ?? (`${u.name ?? ''} ${u.lastName ?? ''}`.trim() || 'Sin nombre')}</p>
-                          <p className="text-xs text-muted-foreground truncate">{u.email ?? u.principalName ?? '—'}</p>
+                          <p className="text-xs text-muted-foreground truncate">{u.upn ?? u.email ?? '—'}</p>
                         </div>
                         {selectedUser?.id === u.id && (
                           <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
@@ -422,8 +422,8 @@ export function CreateAppointmentPage() {
                       ? 'bg-primary/5 border-primary/20'
                       : 'bg-destructive/10 border-destructive/30 text-destructive',
                   )}>
-                    <p className="font-medium">{selectedUser.fullName ?? selectedUser.email}</p>
-                    <p className="text-xs opacity-70">{selectedUser.email}</p>
+                    <p className="font-medium">{selectedUser.fullName ?? selectedUser.upn ?? selectedUser.email}</p>
+                    <p className="text-xs opacity-70">{selectedUser.upn ?? selectedUser.email}</p>
                     {!selectedUser.companyId && (
                       <p className="text-xs mt-1 font-medium">Este usuario no tiene empresa asignada y no puede crear citas.</p>
                     )}
@@ -716,7 +716,7 @@ export function CreateAppointmentPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Usuario:</span>
-                    <span className="font-medium">{selectedUser?.fullName ?? selectedUser?.email ?? '—'}</span>
+                    <span className="font-medium">{selectedUser?.fullName ?? selectedUser?.upn ?? selectedUser?.email ?? '—'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Dispositivo:</span>

@@ -326,7 +326,7 @@ function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: Crea
               <Input
                 ref={searchRef}
                 className="pl-9"
-                placeholder="Buscar por nombre o email..."
+                placeholder="Buscar por nombre o upn..."
                 value={userSearch}
                 onChange={(e) => {
                   setUserSearch(e.target.value)
@@ -356,7 +356,7 @@ function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: Crea
                       <p className="font-medium truncate">
                         {u.fullName ?? (`${u.name ?? ''} ${u.lastName ?? ''}`.trim() || 'Sin nombre')}
                       </p>
-                      <p className="text-xs text-muted-foreground truncate">{u.email ?? u.principalName ?? '—'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{u.upn ?? u.email ?? '—'}</p>
                     </div>
                     {selectedUser?.id === u.id && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
                   </div>

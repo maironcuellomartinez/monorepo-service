@@ -103,7 +103,7 @@ erDiagram
         varchar email "nullable — Correo electrónico corporativo"
         varchar company_id FK "nullable — Empresa asignada manualmente por admin"
         varchar domain "nullable — Dominio corporativo del proveedor de identidad"
-        varchar principal_name "nullable — UPN del proveedor de identidad (user@domain)"
+        varchar upn "nullable — UPN del proveedor de identidad (user@domain)"
         text    device_tokens "nullable — Tokens push para notificaciones (JSON array)"
         boolean is_active "false = usuario desactivado"
         timestamp created_at "Fecha de creación"
@@ -745,7 +745,7 @@ classDiagram
         +Email? email
         +CompanyId? companyId
         +string? domain
-        +string? principalName
+        +string? upn
         +string[] deviceTokens
         +bool isActive
         +syncFromProvider(data) void

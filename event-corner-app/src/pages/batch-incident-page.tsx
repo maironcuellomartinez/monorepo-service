@@ -130,7 +130,7 @@ function IncidentWizardDialog({
         name: initial.customerName,
         lastName: null,
         companyId: null,
-        principalName: null,
+        upn: null,
         externalId: null,
         isActive: true,
       } as MonolithUser)
@@ -220,8 +220,8 @@ function IncidentWizardDialog({
       cornerId: selectedCornerId,
       cornerName: corner?.name ?? selectedCornerId,
       customerId: selectedUser.id,
-      customerName: selectedUser.fullName ?? selectedUser.email ?? selectedUser.id,
-      customerEmail: selectedUser.email ?? '',
+      customerName: selectedUser.fullName ?? selectedUser.upn ?? selectedUser.email ?? selectedUser.id,
+      customerEmail: selectedUser.upn ?? selectedUser.email ?? '',
       deviceSerial: serial,
       issueTypeId: selectedIssueTypeId,
       issueTypeName: issueType?.name ?? selectedIssueTypeId,
@@ -308,7 +308,7 @@ function IncidentWizardDialog({
           <div className="space-y-4">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Buscar por nombre o email..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)} />
+              <Input className="pl-9" placeholder="Buscar por nombre o upn..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)} />
             </div>
             {loadingUsers ? (
               <p className="text-sm text-muted-foreground text-center py-6">Buscando...</p>
@@ -326,7 +326,7 @@ function IncidentWizardDialog({
                     <User className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate">{u.fullName ?? (`${u.name ?? ''} ${u.lastName ?? ''}`.trim() || 'Sin nombre')}</p>
-                      <p className="text-xs text-muted-foreground truncate">{u.email ?? u.principalName ?? '—'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{u.upn ?? u.email ?? '—'}</p>
                     </div>
                     {selectedUser?.id === u.id && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
                   </div>
@@ -554,7 +554,7 @@ function IncidentWizardDialog({
           <div className="space-y-4">
             <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Corner:</span><span className="font-medium">{corner?.name ?? selectedCornerId}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Cliente:</span><span className="font-medium">{selectedUser?.fullName ?? selectedUser?.email ?? '—'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Cliente:</span><span className="font-medium">{selectedUser?.fullName ?? selectedUser?.upn ?? selectedUser?.email ?? '—'}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Dispositivo:</span><span className="font-mono text-xs">{selectedDevice?.serialNumber ?? manualSerial.trim()}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Tipo:</span><span className="font-medium">{issueType?.name ?? selectedIssueTypeId}</span></div>
               {selectedSlot && (

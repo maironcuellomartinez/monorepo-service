@@ -229,10 +229,10 @@ export function AppointmentsPage() {
             </div>
           </div>
 
-          {/* Row 2: email + serial + servicenow number */}
+          {/* Row 2: upn + serial + servicenow number */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Email de usuario</Label>
+              <Label className="text-xs">UPN de usuario</Label>
               <Input
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
@@ -349,7 +349,7 @@ export function AppointmentsPage() {
                     <TableHead>Estado</TableHead>
                     <TableHead>Técnico</TableHead>
                     <TableHead>Dispositivo</TableHead>
-                    <TableHead>Email</TableHead>
+                    <TableHead>UPN</TableHead>
                     <TableHead>Fecha</TableHead>
                     <TableHead>SN Number</TableHead>
                     <TableHead>Acciones</TableHead>
@@ -382,7 +382,7 @@ export function AppointmentsPage() {
                         {appointment.device?.serialNumber ?? '—'}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground max-w-40 truncate">
-                        {appointment.customer?.email ?? appointment.customerId?.slice(0, 8) ?? '—'}
+                        {appointment.customer?.upn ?? appointment.customer?.email ?? appointment.customerId?.slice(0, 8) ?? '—'}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {formatDate(appointment.createdAt)}

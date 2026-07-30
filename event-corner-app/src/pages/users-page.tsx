@@ -162,7 +162,7 @@ function UsersTab() {
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Buscar por nombre o email..."
+          placeholder="Buscar por nombre o upn..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -192,7 +192,7 @@ function UsersTab() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nombre</TableHead>
-                <TableHead>Email</TableHead>
+                <TableHead>UPN</TableHead>
                 <TableHead>Empresa</TableHead>
                 <TableHead>ID</TableHead>
                 <TableHead>External ID</TableHead>
@@ -209,7 +209,7 @@ function UsersTab() {
                       {u.fullName ?? (`${u.name ?? ''} ${u.lastName ?? ''}`.trim() || '—')}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {u.email ?? u.principalName ?? '—'}
+                      {u.upn ?? u.email ?? '—'}
                     </TableCell>
                     <TableCell>
                       {companyName ? (
@@ -279,7 +279,7 @@ function UsersTab() {
           <DialogHeader>
             <DialogTitle>Editar usuario</DialogTitle>
             <DialogDescription>
-              {editTarget?.email ?? editTarget?.principalName ?? '—'}
+              {editTarget?.upn ?? editTarget?.email ?? '—'}
             </DialogDescription>
           </DialogHeader>
 
@@ -420,6 +420,7 @@ function TechniciansTab() {
       (u) =>
         u.fullName?.toLowerCase().includes(q) ||
         u.name?.toLowerCase().includes(q) ||
+        u.upn?.toLowerCase().includes(q) ||
         u.email?.toLowerCase().includes(q),
     )
   }, [allUsers, search])
@@ -431,9 +432,9 @@ function TechniciansTab() {
     try {
       await techniciansApi.create({
         userId: selectedUser.id,
-        name: selectedUser.name ?? selectedUser.email ?? '',
+        name: selectedUser.name ?? selectedUser.upn ?? selectedUser.email ?? '',
         lastName: selectedUser.lastName ?? undefined,
-        email: selectedUser.email ?? '',
+        email: selectedUser.email ?? selectedUser.upn ?? '',
       })
       setShowDialog(false)
       await load()
@@ -612,7 +613,7 @@ function TechniciansTab() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Buscar por nombre o email..."
+              placeholder="Buscar por nombre o upn..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -632,7 +633,8 @@ function TechniciansTab() {
             ) : (
               filtered.map((u) => {
                 const isSelected = selectedUser?.id === u.id
-                const displayName = u.fullName || `${u.name ?? ''} ${u.lastName ?? ''}`.trim() || u.email || u.id
+                const identifier = u.upn ?? u.email
+                const displayName = u.fullName || `${u.name ?? ''} ${u.lastName ?? ''}`.trim() || identifier || u.id
                 return (
                   <button
                     key={u.id}
@@ -645,8 +647,8 @@ function TechniciansTab() {
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{displayName}</p>
-                      {u.email && displayName !== u.email && (
-                        <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                      {identifier && displayName !== identifier && (
+                        <p className="text-xs text-muted-foreground truncate">{identifier}</p>
                       )}
                     </div>
                     {isSelected && <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-primary" />}

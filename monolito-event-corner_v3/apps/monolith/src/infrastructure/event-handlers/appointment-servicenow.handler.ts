@@ -96,10 +96,10 @@ export class AppointmentServiceNowHandler implements OnModuleInit {
         const ticketType = appointment.kind === AppointmentKind.ISSUE ? 'incident' : 'sc_req_item';
         const creatorTechnicianEmail: string | undefined = event.data?.creatorTechnicianEmail ?? undefined;
 
-        const callerPrincipalName = appointment.kind === AppointmentKind.ISSUE ? (user?.principalName ?? undefined) : undefined;
+        const callerPrincipalName = appointment.kind === AppointmentKind.ISSUE ? (user?.upn ?? undefined) : undefined;
         const requestedForOrCreatorEmail = appointment.kind === AppointmentKind.ISSUE
             ? creatorTechnicianEmail
-            : (user?.principalName ?? undefined);
+            : (user?.upn ?? undefined);
 
         const result = await this.serviceNowService.createTicket(
             appointment,

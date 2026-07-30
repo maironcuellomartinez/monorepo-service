@@ -85,10 +85,11 @@ export class Appointment {
   private _customerInfo: {
     id: string;
     email: string | null;
+    upn: string | null;
     name: string | null;
   } | null = null;
   setCustomerInfo(
-    info: { id: string; email: string | null; name: string | null } | null,
+    info: { id: string; email: string | null; upn: string | null; name: string | null } | null,
   ) {
     this._customerInfo = info;
   }

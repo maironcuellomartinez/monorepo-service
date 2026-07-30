@@ -235,7 +235,9 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
         queryBuilder.andWhere('appointment.issue_type_id = :issueTypeId', { issueTypeId: filters.issueTypeId });
       }
       if (filters.customerEmail) {
-        queryBuilder.andWhere('customer.email LIKE :customerEmail', {
+        // Nombre del filtro (customerEmail) se mantiene por compat de API, pero
+        // matchea también contra upn — el identificador real del usuario.
+        queryBuilder.andWhere('(customer.email LIKE :customerEmail OR customer.upn LIKE :customerEmail)', {
           customerEmail: `%${filters.customerEmail}%`,
         });
       }
@@ -594,6 +596,7 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
       appointment.setCustomerInfo({
         id: entity.customer.customer_id,
         email: entity.customer.email ?? null,
+        upn: entity.customer.upn ?? null,
         name: entity.customer.name ?? null,
       });
     }
