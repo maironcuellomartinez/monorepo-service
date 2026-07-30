@@ -5,6 +5,7 @@ interface AuthUser {
   email: string
   oid: string
   name?: string
+  upn?: string | null
   customerId: string
   companyId: string | null
   monolithUserId: string
@@ -67,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       oid,
       name: name || email,
+      upn: me.upn,
       monolithUserId: me.monolithUserId,
       abacUserId: me.abacUserId,
       customerId: me.monolithUserId,

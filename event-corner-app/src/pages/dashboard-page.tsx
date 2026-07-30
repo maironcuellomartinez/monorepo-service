@@ -4,7 +4,7 @@ import {
   MapPin, Tag, AlertCircle, ClipboardList, Plus, Info, Monitor,
   RefreshCw, Calendar, ChevronRight, Clock, CheckCircle2,
   ArrowRight, ArrowLeft, Zap, XCircle, RotateCcw, ThumbsUp,
-  Wrench, Inbox, MessageSquare, History, Send, LogIn,
+  Wrench, Inbox, MessageSquare, History, Send, LogIn, LayoutDashboard,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { SlotPicker } from '@/components/slot-picker'
@@ -2080,7 +2080,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title={title} />
+      <Header title={title} icon={LayoutDashboard} />
       {isAdmin ? <AdminDashboard />
         : isManager ? <ManagerDashboard />
         : isTechnician ? <TechnicianDashboard />

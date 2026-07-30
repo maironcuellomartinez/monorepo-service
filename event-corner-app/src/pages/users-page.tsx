@@ -686,7 +686,7 @@ export function UsersPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Usuarios" />
+      <Header title="Usuarios" icon={Users} />
       <div className="flex-1 p-6 overflow-auto">
         <Tabs defaultValue={defaultTab}>
           {(canSeeUsersTab && canSeeTechniciansTab) && (

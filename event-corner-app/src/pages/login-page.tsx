@@ -32,7 +32,7 @@ export function LoginPage() {
 
     setLoading(true)
     try {
-      await login(email.trim(), oid.trim(), name.trim() || email.trim())
+      await login(email.trim(), oid.trim(), name.trim() || email.trim().split('@')[0])
       navigate('/dashboard')
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? err?.message ?? 'Error al iniciar sesión'

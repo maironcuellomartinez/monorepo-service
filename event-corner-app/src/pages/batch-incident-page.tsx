@@ -703,7 +703,7 @@ export function BatchIncidentPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Lote de Citas" />
+        <Header title="Lote de Citas" icon={PackagePlus} />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
@@ -713,7 +713,7 @@ export function BatchIncidentPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Lote de Citas" />
+      <Header title="Lote de Citas" icon={PackagePlus} />
 
       <div className="flex-1 p-6 overflow-auto space-y-4">
 

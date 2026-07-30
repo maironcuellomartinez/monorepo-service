@@ -430,7 +430,7 @@ export function CornersPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Corners" onRefresh={load} loading={loading}>
+      <Header title="Corners" icon={MapPin} onRefresh={load} loading={loading}>
         {canCreateCorner && (
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4" />

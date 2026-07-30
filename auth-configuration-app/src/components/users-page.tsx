@@ -8,12 +8,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Alert, AlertDescription } from "./ui/alert"
 import { usersApi, rolesApi, applicationsApi, policiesApi } from "../lib/api"
-import { Trash2, ShieldPlus, AppWindow, Search, AlertTriangle, RefreshCw, X, ScrollText, Unlink } from "lucide-react"
+import { Trash2, ShieldPlus, AppWindow, Search, AlertTriangle, RefreshCw, X, ScrollText, Unlink, Pencil } from "lucide-react"
 
 interface User {
     id: string; email: string; firstName: string; lastName: string;
     username: string; status: string; accountType: string; isActive: boolean;
-    entraId?: string; createdAt: string;
+    entraId?: string; createdAt: string; phone?: string;
 }
 
 interface Role {
@@ -54,6 +54,11 @@ export function UsersPage() {
     const [allPolicies, setAllPolicies] = useState<any[]>([])
     const [policyDialogOpen, setPolicyDialogOpen] = useState(false)
     const [selectedPolicyIds, setSelectedPolicyIds] = useState<string[]>([])
+
+    // Edit modal
+    const [editOpen, setEditOpen] = useState(false)
+    const [editTarget, setEditTarget] = useState<User | null>(null)
+    const [editForm, setEditForm] = useState({ firstName: "", lastName: "", username: "", phone: "" })
 
     // Deactivate modal
     const [deactivateOpen, setDeactivateOpen] = useState(false)
@@ -219,6 +224,41 @@ export function UsersPage() {
         }
     }
 
+    const openEdit = (user: User) => {
+        setEditTarget(user)
+        setEditForm({
+            firstName: user.firstName || "",
+            lastName: user.lastName || "",
+            username: user.username || "",
+            phone: user.phone || "",
+        })
+        setEditOpen(true)
+    }
+
+    const handleSaveEdit = async () => {
+        if (!editTarget) return
+        setSubmitting(true)
+        try {
+            await usersApi.update(editTarget.id, {
+                firstName: editForm.firstName.trim(),
+                lastName: editForm.lastName.trim(),
+                username: editForm.username.trim(),
+                phone: editForm.phone.trim() || undefined,
+            })
+            showSuccess("Usuario actualizado correctamente")
+            setEditOpen(false)
+            setEditTarget(null)
+            loadUsers()
+            if (detailUser?.id === editTarget.id) {
+                setDetailUser(prev => prev ? { ...prev, ...editForm } : prev)
+            }
+        } catch (err: any) {
+            setError(err.response?.data?.message || "Error al actualizar usuario")
+        } finally {
+            setSubmitting(false)
+        }
+    }
+
     const handleUnlinkEntra = async (user: User) => {
         try {
             await usersApi.update(user.id, { entraId: null })
@@ -301,6 +341,13 @@ export function UsersPage() {
                         )}
                         <TableCell>
                             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                                <Button
+                                    variant="ghost" size="icon"
+                                    title="Editar datos"
+                                    onClick={() => openEdit(user)}
+                                >
+                                    <Pencil className="h-4 w-4" />
+                                </Button>
                                 <Button
                                     variant="ghost" size="icon"
                                     title="Asignar rol"
@@ -466,16 +513,86 @@ export function UsersPage() {
                 </DialogContent>
             </Dialog>
 
+            {/* Edit User Modal */}
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Editar usuario</DialogTitle>
+                    </DialogHeader>
+                    {editTarget && (
+                        <div className="space-y-4">
+                            <p className="text-xs text-muted-foreground font-mono">{editTarget.email}</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <Label>Nombre</Label>
+                                    <Input
+                                        value={editForm.firstName}
+                                        onChange={(e) => setEditForm(f => ({ ...f, firstName: e.target.value }))}
+                                        placeholder="Nombre"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label>Apellido</Label>
+                                    <Input
+                                        value={editForm.lastName}
+                                        onChange={(e) => setEditForm(f => ({ ...f, lastName: e.target.value }))}
+                                        placeholder="Apellido"
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label>Usuario</Label>
+                                <Input
+                                    value={editForm.username}
+                                    onChange={(e) => setEditForm(f => ({ ...f, username: e.target.value }))}
+                                    placeholder="nombre.apellido"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label>Teléfono</Label>
+                                <Input
+                                    value={editForm.phone}
+                                    onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                                    placeholder="+1234567890"
+                                />
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                                <Button variant="outline" onClick={() => setEditOpen(false)}>Cancelar</Button>
+                                <Button
+                                    onClick={handleSaveEdit}
+                                    disabled={submitting || !editForm.firstName.trim() || !editForm.lastName.trim()}
+                                >
+                                    {submitting ? "Guardando..." : "Guardar"}
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
             {/* User Detail Dialog */}
             <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle>{detailUser?.firstName} {detailUser?.lastName}</DialogTitle>
+                        <DialogTitle className="flex items-center gap-2">
+                            {detailUser?.firstName} {detailUser?.lastName}
+                            {detailUser && (
+                                <Button
+                                    variant="ghost" size="icon" className="h-7 w-7"
+                                    title="Editar datos"
+                                    onClick={() => openEdit(detailUser)}
+                                >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                            )}
+                        </DialogTitle>
                     </DialogHeader>
                     {detailUser && (
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-4 text-sm">
                                 <div><span className="font-medium">Email:</span> {detailUser.email}</div>
+                                <div><span className="font-medium">Usuario:</span> {detailUser.username}</div>
+                                <div><span className="font-medium">Teléfono:</span> {detailUser.phone || '-'}</div>
                                 <div><span className="font-medium">Tipo:</span> {detailUser.accountType}</div>
                                 <div><span className="font-medium">Estado:</span> {detailUser.isActive ? 'Activo' : 'Inactivo'}</div>
                                 <div className="flex items-center gap-2">

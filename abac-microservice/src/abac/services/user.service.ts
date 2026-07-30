@@ -154,7 +154,9 @@ export class UserService {
     async updateUser(
         userId: string,
         updateDto: {
-            name?: string;
+            firstName?: string;
+            lastName?: string;
+            username?: string;
             phone?: string;
             profile?: Record<string, any>;
             entraId?: string | null;
@@ -178,7 +180,9 @@ export class UserService {
             const previousState = { ...user };
 
             // Actualizar campos
-            if (updateDto.name !== undefined) user.username = updateDto.name;
+            if (updateDto.firstName !== undefined) user.firstName = updateDto.firstName;
+            if (updateDto.lastName !== undefined) user.lastName = updateDto.lastName;
+            if (updateDto.username !== undefined) user.username = updateDto.username;
             if (updateDto.phone !== undefined) user.phone = updateDto.phone;
             if (updateDto.profile !== undefined) user.profile = updateDto.profile;
             if ('entraId' in updateDto) user.entraId = updateDto.entraId ?? null;

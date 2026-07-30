@@ -252,7 +252,7 @@ export function IssueTypesPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Tipos de Citas" onRefresh={refresh} loading={treeLoading || itLoading} />
+      <Header title="Tipos de Citas" icon={Tag} onRefresh={refresh} loading={treeLoading || itLoading} />
 
       {error && (
         <div className="px-6 pt-3">

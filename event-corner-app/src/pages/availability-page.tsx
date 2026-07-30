@@ -732,7 +732,7 @@ export function AvailabilityPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Disponibilidad" />
+      <Header title="Disponibilidad" icon={CalendarIcon} />
 
       <div className="flex-1 p-6 flex flex-col gap-3 overflow-auto min-h-0">
 

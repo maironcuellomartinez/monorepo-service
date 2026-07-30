@@ -95,7 +95,7 @@ export function AppointmentDetailPage() {
   if (loading) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Detalle Cita" />
+        <Header title="Detalle Cita" icon={AlertCircle} />
         <div className="flex-1 p-6 space-y-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-32 bg-muted animate-pulse rounded-lg" />
@@ -108,7 +108,7 @@ export function AppointmentDetailPage() {
   if (error || !appointment) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Detalle Cita" />
+        <Header title="Detalle Cita" icon={AlertCircle} />
         <div className="p-6">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -135,7 +135,7 @@ export function AppointmentDetailPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title={`Cita ${appointment.servicenowNumber ?? appointment.id.slice(0, 8)}`} onRefresh={load} loading={loading}>
+      <Header title={`Cita ${appointment.servicenowNumber ?? appointment.id.slice(0, 8)}`} icon={AlertCircle} onRefresh={load} loading={loading}>
         <Button variant="outline" size="sm" onClick={() => navigate('/appointments')}>
           <ArrowLeft className="h-4 w-4" />
           Volver

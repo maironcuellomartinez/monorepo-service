@@ -224,7 +224,7 @@ export function CreateAppointmentPage() {
   if (createdAppointment) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Nueva Cita" />
+        <Header title="Nueva Cita" icon={AlertCircle} />
         <div className="flex-1 p-6 flex items-center justify-center">
           <Card className="max-w-lg w-full">
             <CardHeader className="text-center">
@@ -279,7 +279,7 @@ export function CreateAppointmentPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Nueva Cita" />
+      <Header title="Nueva Cita" icon={AlertCircle} />
 
       <div className="flex-1 p-6 overflow-auto">
         {/* Stepper */}

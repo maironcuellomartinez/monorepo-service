@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Cpu,
   RefreshCw,
@@ -15,9 +16,14 @@ import {
   Pencil,
   Ban,
   CircleCheck,
+  Moon,
+  Sun,
+  LogOut,
 } from 'lucide-react'
 import { devicesApi, usersApi, DEVICE_TYPES, type DeviceSummary, type MonolithUser } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useTheme } from '@/components/theme-provider'
+import { useAuth } from '@/context/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -223,6 +229,20 @@ function VirtualDeviceDialog({ open, onClose, onSaved, userId, editing }: Virtua
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export function DevicesPage() {
+  const { theme, setTheme } = useTheme()
+  const { logout, user: authUser } = useAuth()
+  const navigate = useNavigate()
+
+  const toggleTheme = () => {
+    if (theme === 'dark') setTheme('light')
+    else setTheme('dark')
+  }
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
+
   const [users, setUsers] = useState<MonolithUser[]>([])
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [userSearch, setUserSearch] = useState('')
@@ -379,6 +399,23 @@ export function DevicesPage() {
           >
             <RefreshCw className={cn('w-4 h-4 mr-1.5', syncing && 'animate-spin')} />
             {syncing ? 'Sincronizando…' : 'Sync Minerva'}
+          </Button>
+          {authUser?.upn && (
+            <span className="text-xs text-muted-foreground hidden sm:inline" title="UPN">
+              {authUser.upn}
+            </span>
+          )}
+          <Button variant="ghost" size="icon" onClick={toggleTheme} title="Cambiar tema">
+            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleLogout}
+            className="text-muted-foreground hover:text-destructive"
+            title="Cerrar sesión"
+          >
+            <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </div>

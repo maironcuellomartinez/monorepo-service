@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
   AlertCircle,
@@ -7,7 +7,6 @@ import {
   Calendar,
   Tag,
   Users,
-  LogOut,
   ChevronLeft,
   ChevronRight,
   Building2,
@@ -49,12 +48,11 @@ const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; permissio
 ]
 
 export function Sidebar() {
-  const { user, logout, can } = useAuth()
+  const { user, can } = useAuth()
   // Employees manage incidents from the Dashboard — they don't need staff-only pages.
   // appointment:list-all (no lo tiene employee) distingue staff (admin/manager/technician)
   // de un empleado común — corner:manage-schedules no sirve porque manager tampoco lo tiene.
   const isEmployee = !user?.technicianId && can('appointment:create') && !can('appointment:list-all')
-  const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('ec_sidebar') === 'collapsed'
   })
@@ -62,11 +60,6 @@ export function Sidebar() {
   useEffect(() => {
     localStorage.setItem('ec_sidebar', collapsed ? 'collapsed' : 'expanded')
   }, [collapsed])
-
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
 
   return (
     <aside
@@ -134,15 +127,6 @@ export function Sidebar() {
             ) : (
               <ChevronLeft className="h-4 w-4" />
             )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleLogout}
-            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-            title="Cerrar sesión"
-          >
-            <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </div>
