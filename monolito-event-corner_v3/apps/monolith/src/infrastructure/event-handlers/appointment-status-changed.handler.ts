@@ -76,6 +76,14 @@ export class AppointmentStatusChangedHandler implements OnModuleInit {
                 throw new Error(msg);
             }
 
+            link.close();
+            const updateResult = await this.ticketLinkRepo.update(link);
+            if (updateResult.isFailure) {
+                const msg = `[APPOINTMENT_STATUS_CHANGED] SN ticket closed but failed to persist link ${link.id} for appointment ${event.aggregateId}: ${updateResult.unwrapError().message}`;
+                this.logger.error(msg);
+                throw new Error(msg);
+            }
+
             this.logger.log(`[APPOINTMENT_STATUS_CHANGED] SN ticket closed for appointment ${event.aggregateId} — sysId: ${link.sysId?.value}`);
             return;
         }

@@ -481,6 +481,18 @@ export class ServiceNowOutboundController {
       () => this._closeTicket(table, sysId, body, req),
     );
   }
+  /**
+   * A diferencia del update genérico (/snow-requests/immediate/:table/:sysId,
+   * que matchea contra RequestType en singular — 'incident', 'sc_req_item'),
+   * la ruta de cierre en api-snowq-service está hardcodeada en plural
+   * (`incidents/:sysId/close` — ver SnowRequestImmediateController). Solo
+   * 'incident' está cableado de punta a punta hoy; el resto sigue sin ruta
+   * de cierre propia en snowq (ver comentario en servicenow-client.port.ts).
+   */
+  private resolveCloseTablePath(table: string): string {
+    return table === 'incident' ? 'incidents' : table;
+  }
+
   private async _closeTicket(
     table: string,
     sysId: string,
@@ -489,10 +501,11 @@ export class ServiceNowOutboundController {
   ) {
     this.logger.log(`→ closeTicket | table=${table} sysId=${sysId}`);
     try {
+      const closeTablePath = this.resolveCloseTablePath(table);
       const data = await this.resilience.fireWrite(() =>
         firstValueFrom(
           this.httpService.patch(
-            `/snow-requests/immediate/${table}/${sysId}/close`,
+            `/snow-requests/immediate/${closeTablePath}/${sysId}/close`,
             {
               close_code: body.closeCategory,
               close_notes: body.closeNotes ?? 'Cerrado desde Event Corner',
