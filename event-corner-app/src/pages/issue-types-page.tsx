@@ -25,13 +25,9 @@ import { issueTypesApi, treesApi, DEVICE_TYPES, IssueType, IssueTypeTree } from 
 
 // ── Catalogs ─────────────────────────────────────────────────────────────────
 
-const CATEGORIES: { value: string; label: string }[] = [
-  { value: 'ISSUE',               label: 'Incidencia' },
-  { value: 'CREATE-DELIVERY',     label: 'Entrega' },
-  { value: 'CREATE-COLLECTION',   label: 'Recolección' },
-  { value: 'REQUEST-ONBOARDING',  label: 'Alta (Onboarding)' },
-  { value: 'REQUEST-DECOMISSION', label: 'Baja (Decomisión)' },
-]
+// Nombres tal cual los usa legacy/backend (IssueCategory) — sin traducir,
+// para evitar confusión al correlacionar con sistemas que usan el valor crudo.
+const CATEGORIES = ['ISSUE', 'CREATE-DELIVERY', 'CREATE-COLLECTION', 'REQUEST-ONBOARDING', 'REQUEST-DECOMISSION']
 
 // ── Issue type form ───────────────────────────────────────────────────────────
 
@@ -239,8 +235,7 @@ export function IssueTypesPage() {
 
   // ── Filtered issue types ──────────────────────────────────────────────────
 
-  const categoryLabel = (value?: string) =>
-    CATEGORIES.find((c) => c.value === value)?.label ?? value ?? '—'
+  const categoryLabel = (value?: string) => value ?? '—'
 
   const filtered = search.trim()
     ? issueTypes.filter((it) => {
@@ -547,7 +542,7 @@ export function IssueTypesPage() {
               <Select value={itForm.category ?? ''} onValueChange={(v) => setItField('category', v)}>
                 <SelectTrigger><SelectValue placeholder="Seleccionar categoría" /></SelectTrigger>
                 <SelectContent>
-                  {CATEGORIES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                  {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
