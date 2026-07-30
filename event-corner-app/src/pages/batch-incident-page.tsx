@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useBatchDraft, UIBatchItem } from '@/hooks/use-batch-draft'
 import { useUserSearch } from '@/hooks/use-user-search'
+import { useCompanyTree } from '@/hooks/use-company-tree'
 import { useAuth } from '@/context/auth'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
@@ -166,9 +167,13 @@ function IncidentWizardDialog({
   // solo se muestran los tipos de ese device_type + los genéricos (deviceType null).
   // Con serial manual (o en edición, donde solo se conoce el serial) no se filtra.
   const deviceType = selectedDevice?.deviceType ?? null
-  const filteredIssueTypes = deviceType
-    ? issueTypes.filter((it) => !it.deviceType || it.deviceType === deviceType)
-    : issueTypes
+  // El grupo (treeId) de la compañía del cliente filtra a su vez los tipos —
+  // el backend rechaza (IssueTypeNotAllowedForCompanyError) cualquier tipo
+  // que no pertenezca al mismo grupo que la compañía.
+  const { treeId: companyTreeId } = useCompanyTree(selectedUser?.companyId)
+  const filteredIssueTypes = issueTypes
+    .filter((it) => !deviceType || !it.deviceType || it.deviceType === deviceType)
+    .filter((it) => !companyTreeId || !it.treeId || it.treeId === companyTreeId)
 
   useEffect(() => {
     if (selectedIssueTypeId && !filteredIssueTypes.some((it) => it.id === selectedIssueTypeId)) {
@@ -177,7 +182,7 @@ function IncidentWizardDialog({
       setSlots([])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceType])
+  }, [deviceType, companyTreeId])
 
   // La duración de la cita la define el tipo de incidencia elegido en el paso 4
   const duration = issueTypes.find((it) => it.id === selectedIssueTypeId)?.workMinutes ?? 60
@@ -609,7 +614,7 @@ function StatusBadge({ item }: { item: UIBatchItem }) {
 export function BatchIncidentPage() {
   const navigate = useNavigate()
   const { user, can } = useAuth()
-  const canCreateIncident = can('incident:create')
+  const canCreateIncident = can('appointment:create')
   // Editar/quitar items del PROPIO borrador es parte de componer incidencias a
   // crear — no existe incident:update en el catálogo ABAC y gatear con él
   // dejaba la columna Acciones vacía para todos.

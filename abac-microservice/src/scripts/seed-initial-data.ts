@@ -194,8 +194,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         'slot:read', 'slot:list', 'slot:expire',
         // Lockers — operación
         'locker:read', 'locker:list', 'locker:assign', 'locker:release',
-        // Issue types & companies — solo lectura
-        'issue-type:read', 'issue-type:list',
+        // Issue types — gestión completa (como admin); companies — solo lectura
+        'issue-type:create', 'issue-type:read', 'issue-type:list',
+        'issue-type:update', 'issue-type:delete',
         'company:read', 'company:list',
         // Technicians — gestión completa (la asignación a horarios va por 'schedule:assign-technicians')
         'technician:create', 'technician:read', 'technician:list', 'technician:update',
@@ -223,6 +224,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         'locker:read', 'locker:assign', 'locker:release',
         // Issue types — lectura
         'issue-type:read', 'issue-type:list',
+        // Companies — lectura (necesario para resolver el treeId de la
+        // compañía del cliente al elegir tipo de cita en el wizard)
+        'company:list',
         // Devices
         'device:read', 'device:sync',
         'availability:read', 'availability:read-technicians',
@@ -240,6 +244,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
         'slot:read', 'slot:list',
         // Issue types — lectura
         'issue-type:read', 'issue-type:list',
+        // Companies — lectura (necesario para resolver el treeId de la
+        // compañía del cliente al elegir tipo de cita en el wizard)
+        'company:list',
         // Device — propio + onboarding
         'device:read', 'device:create-virtual',
         'availability:read',

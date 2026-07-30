@@ -22,11 +22,11 @@ function buildCacheKey(checks: AbacCheckItem[]): string {
  *
  * @example
  * const { granted, loading } = useAbacCheck([
- *   { resource: 'incident', action: 'delete' },
- *   { resource: 'incident', action: 'take' },
+ *   { resource: 'appointment', action: 'delete' },
+ *   { resource: 'appointment', action: 'take' },
  * ])
  *
- * if (granted['incident:delete']) { ... }
+ * if (granted['appointment:delete']) { ... }
  */
 export function useAbacCheck(checks: AbacCheckItem[]) {
   const [granted, setGranted] = useState<GrantedMap>({})

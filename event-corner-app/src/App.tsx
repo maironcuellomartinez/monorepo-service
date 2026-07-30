@@ -110,7 +110,7 @@ function AppRoutes() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/appointments" element={
-          <PermissionRoute permission="incident:list"><AppointmentsPage /></PermissionRoute>
+          <PermissionRoute permission="appointment:list"><AppointmentsPage /></PermissionRoute>
         } />
         {/* /appointments/new and /appointments/:id are accessible to any authenticated user
             (employees reach them from the Dashboard; technicians from the Appointments page) */}

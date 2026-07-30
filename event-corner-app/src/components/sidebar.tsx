@@ -31,26 +31,29 @@ import { Button } from '@/components/ui/button'
  *                             en sí queda gateado adentro de CornersPage (admin-only)
  *  - Usuarios               → admin (user:list) y manager (technician:list) — UsersPage
  *                             decide internamente qué tabs mostrar (Usuarios/Técnicos)
- *  - Tipos de Incidencia    → solo admin (issue-type:create)
+ *  - Tipos de Incidencia    → admin y manager (issue-type:create)
+ *  - Compañías              → admin, manager y readonly (company:read) — employee/technician
+ *                             tienen company:list (lookup interno del treeId en el wizard de
+ *                             citas) pero no company:read, así que no ven este ítem
  */
 const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; permission?: string | string[]; staffOnly?: boolean }[] = [
   { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/appointments', icon: AlertCircle,     label: 'Citas',               permission: 'incident:list',         staffOnly: true },
-  { to: '/appointments/batch', icon: PackagePlus, label: 'Lote de Citas',    permission: 'incident:list',         staffOnly: true },
+  { to: '/appointments', icon: AlertCircle,     label: 'Citas',               permission: 'appointment:list',      staffOnly: true },
+  { to: '/appointments/batch', icon: PackagePlus, label: 'Lote de Citas',    permission: 'appointment:list',      staffOnly: true },
   { to: '/corners',      icon: MapPin,          label: 'Corners',             permission: 'schedule:create' },
   { to: '/users',        icon: Users,           label: 'Usuarios',            permission: ['user:list', 'technician:list'] },
   { to: '/availability', icon: Calendar,        label: 'Disponibilidad',      permission: 'availability:read',     staffOnly: true },
   { to: '/issue-types',  icon: Tag,             label: 'Tipos de Citas',      permission: 'issue-type:create' },
-  { to: '/companies',    icon: Building2,       label: 'Compañías',           permission: 'company:list' },
+  { to: '/companies',    icon: Building2,       label: 'Compañías',           permission: 'company:read' },
   { to: '/devices',      icon: Cpu,             label: 'Dispositivos',         permission: 'user:list' },
 ]
 
 export function Sidebar() {
   const { user, logout, can } = useAuth()
   // Employees manage incidents from the Dashboard — they don't need staff-only pages.
-  // incident:list-all (no lo tiene employee) distingue staff (admin/manager/technician)
+  // appointment:list-all (no lo tiene employee) distingue staff (admin/manager/technician)
   // de un empleado común — corner:manage-schedules no sirve porque manager tampoco lo tiene.
-  const isEmployee = !user?.technicianId && can('incident:create') && !can('incident:list-all')
+  const isEmployee = !user?.technicianId && can('appointment:create') && !can('appointment:list-all')
   const navigate = useNavigate()
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('ec_sidebar') === 'collapsed'

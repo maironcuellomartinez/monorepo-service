@@ -1575,7 +1575,7 @@ function AdminDashboard() {
         {can('issue-type:list') && (
           <StatCardItem label="Tipos de cita" value={activeIssueTypes.length} icon={Tag} description="configurados activos" loading={loadingIssueTypes} />
         )}
-        {can('incident:list') && (
+        {can('appointment:list') && (
           <StatCardItem label="Citas" value="—" icon={AlertCircle} description="Filtra por corner para ver" loading={false} />
         )}
       </div>
@@ -1583,7 +1583,7 @@ function AdminDashboard() {
       <div>
         <h3 className="text-base font-semibold mb-3">Acciones rápidas</h3>
         <div className="flex flex-wrap gap-3">
-          {can('incident:create') && (
+          {can('appointment:create') && (
             <Button onClick={() => navigate('/appointments/new')}>
               <Plus className="h-4 w-4" />
               Nueva Cita
@@ -2052,15 +2052,18 @@ export function DashboardPage() {
   // Permisos explícitos de dashboard (post-seed) con fallback por permisos de negocio.
   // isAdmin usa permisos exclusivos de admin — company:list/user:list se comparten
   // con manager y readonly, así que no sirven para distinguir el rol.
+  // isManager/isTechnician NO usan fallback de appointment:* — desde que
+  // incident+request se unificaron en un solo recurso 'appointment', manager
+  // Y technician comparten appointment:list-all/take/release, así que esos
+  // permisos ya no distinguen el rol (technician:list-all volvía true a
+  // isManager y mandaba al técnico al dashboard equivocado). dashboard-manager:read
+  // / dashboard-technician:read son marcadores exclusivos por rol, siempre
+  // presentes desde el seed — no necesitan fallback.
   const isAdmin = can('dashboard-admin:read')
     || can('corner:manage-schedules') || can('user:update') || can('company:update')
-  const isManager = !isAdmin && (
-    can('dashboard-manager:read')
-    || (can('incident:list-all') && can('request:list-all'))
-  )
+  const isManager = !isAdmin && can('dashboard-manager:read')
   const isTechnician = !isAdmin && !isManager && (
-    can('dashboard-technician:read')
-    || (!!(user?.technicianId) && (can('incident:take') || can('incident:release')))
+    can('dashboard-technician:read') || !!user?.technicianId
   )
   const isEmployee = !isAdmin && !isManager && !isTechnician
 

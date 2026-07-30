@@ -135,6 +135,7 @@ function buildMocks(opts?: {
     findAvailable: jest.fn().mockResolvedValue(Result.ok([])),
     findByTechnician: jest.fn().mockResolvedValue(Result.ok([])),
     findByDateRange: jest.fn().mockResolvedValue(Result.ok([])),
+    findActiveAppointmentSlotIds: jest.fn().mockResolvedValue(Result.ok(new Set())),
   };
 
   const slotRepository = {
@@ -225,6 +226,7 @@ function buildMocks(opts?: {
     userRepository,
     companyRepository,
     issueTypeRepository,
+    technicianRepository,
     deviceService,
     eventBus,
     cache,
@@ -397,6 +399,37 @@ describe('AppointmentService.createAppointment()', () => {
     const [events] = eventBus.publishMany.mock.calls[0];
     expect(Array.isArray(events)).toBe(true);
     expect(events.length).toBeGreaterThan(0);
+  });
+
+  it('un técnico puede crear una cita sobre un slot ocupado (multi-cita) sin bookear', async () => {
+    const { service, slotRepository, userRepository, technicianRepository } =
+      buildMocks({ slotsUnavailable: true });
+    userRepository.findByExternalId.mockResolvedValue(
+      Result.ok({ id: CustomerId('tech-user-1') }),
+    );
+    technicianRepository.findByUserId.mockResolvedValue(
+      Result.ok({ id: TechnicianId('tech-1'), email: 'tech@ec.com' }),
+    );
+
+    const result = await service.createAppointment({
+      ...baseCommand,
+      creatorExternalId: 'ext-tech-1',
+    });
+
+    expect(result.isSuccess).toBe(true);
+    expect(slotRepository.bookManyAtomic).not.toHaveBeenCalled();
+  });
+
+  it('un empleado no puede crear una cita sobre un slot ocupado', async () => {
+    const { service, userRepository } = buildMocks({ slotsUnavailable: true });
+    userRepository.findByExternalId.mockResolvedValue(Result.ok(null));
+
+    const result = await service.createAppointment({
+      ...baseCommand,
+      creatorExternalId: 'ext-employee-1',
+    });
+
+    expect(result.isFailure).toBe(true);
   });
 });
 
@@ -609,6 +642,28 @@ describe('AppointmentService.changeStatus()', () => {
       futureSlot,
       pastSlot,
     ]);
+  });
+
+  it('al cancelar, no libera un slot que otra cita activa todavía usa (multi-cita)', async () => {
+    const appointment = makeAppointment(AppointmentStatus.CREATED);
+    const sharedSlot = makeSlotMock('slot-shared');
+    const { service, appointmentRepository, slotRepository } = buildMocks();
+    appointmentRepository.findById.mockResolvedValue(Result.ok(appointment));
+    slotRepository.findManyByIds.mockResolvedValue(Result.ok([sharedSlot]));
+    appointmentRepository.findActiveAppointmentSlotIds.mockResolvedValue(
+      Result.ok(new Set(['slot-shared'])),
+    );
+
+    const result = await service.changeStatus({
+      appointmentId: AppointmentId('apt-1'),
+      technicianId: TechnicianId('tech-1'),
+      newStatus: AppointmentStatus.CANCELED,
+    });
+
+    expect(result.isSuccess).toBe(true);
+    expect(sharedSlot.release).not.toHaveBeenCalled();
+    expect(sharedSlot.expire).not.toHaveBeenCalled();
+    expect(slotRepository.updateMany).not.toHaveBeenCalled();
   });
 
   it('no expira slots en transiciones que no sean CANCELED', async () => {

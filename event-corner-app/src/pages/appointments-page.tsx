@@ -164,7 +164,7 @@ export function AppointmentsPage() {
   return (
     <div className="flex flex-col h-full">
       <Header title="Citas" onRefresh={loadAppointments} loading={loading}>
-        {can('incident:create') && (
+        {can('appointment:create') && (
           <Button onClick={() => navigate('/appointments/new')}>
             <Plus className="h-4 w-4" />
             Nueva Cita

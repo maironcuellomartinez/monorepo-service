@@ -28,6 +28,8 @@ import { IEventBus } from '../../ports/outgoing/event-bus/event-bus.port';
 import { ICache } from '../../ports/outgoing/cache/cache.port';
 import { IDeviceService } from '../../ports/incoming/device/device-service.port';
 import { Appointment } from '../../domain/entities/appointment.entity';
+import { Technician } from '../../domain/entities/technician.entity';
+import { Slot } from '../../domain/entities/slot.entity';
 import {
   AppointmentId,
   CompanyId,
@@ -105,19 +107,54 @@ export class AppointmentService implements IAppointmentService {
       return Result.err(new Error(`Slots not found: ${missingIds.join(', ')}`));
     }
 
-    const unavailable = slots.filter(
-      (s) => !s.isAvailableForUser(command.heldByUserId),
-    );
-    if (unavailable.length > 0) {
-      this.logger.warn(
-        `createAppointment — slots unavailable: ${unavailable.map((s) => s.id).join(', ')}`,
-        CTX,
+    // Resolver si quien crea la cita es un técnico — vía creatorExternalId
+    // (creación individual, JWT del usuario autenticado) o heldByUserId
+    // (lote de técnico, sin creatorExternalId). Un técnico puede reutilizar
+    // cualquier slot (disponible u ocupado) sin reclamarlo en exclusiva —
+    // habilita walk-ins cuando los slots normales se agotan. Un empleado
+    // (sin resolución a técnico) sigue el booking exclusivo de siempre.
+    let creatorTech: Technician | null = null;
+    if (command.creatorExternalId) {
+      const creatorUserResult = await this.userRepository.findByExternalId(
+        command.creatorExternalId,
       );
-      return Result.err(
-        new Error(
-          `Slots not available: ${unavailable.map((s) => s.id).join(', ')}`,
-        ),
+      const creatorUser = creatorUserResult.isSuccess
+        ? creatorUserResult.unwrap()
+        : null;
+      if (creatorUser) {
+        const creatorTechResult = await this.technicianRepository.findByUserId(
+          creatorUser.id.toString(),
+        );
+        creatorTech = creatorTechResult.isSuccess
+          ? creatorTechResult.unwrap()
+          : null;
+      }
+    } else if (command.heldByUserId) {
+      const creatorTechResult = await this.technicianRepository.findByUserId(
+        command.heldByUserId,
       );
+      creatorTech = creatorTechResult.isSuccess
+        ? creatorTechResult.unwrap()
+        : null;
+    }
+    const isTechnicianCreator = !!creatorTech;
+    const creatorTechnicianEmail = creatorTech?.email ?? null;
+
+    if (!isTechnicianCreator) {
+      const unavailable = slots.filter(
+        (s) => !s.isAvailableForUser(command.heldByUserId),
+      );
+      if (unavailable.length > 0) {
+        this.logger.warn(
+          `createAppointment — slots unavailable: ${unavailable.map((s) => s.id).join(', ')}`,
+          CTX,
+        );
+        return Result.err(
+          new Error(
+            `Slots not available: ${unavailable.map((s) => s.id).join(', ')}`,
+          ),
+        );
+      }
     }
 
     // 2. Resolver tipo de incidencia + kind
@@ -219,24 +256,28 @@ export class AppointmentService implements IAppointmentService {
       );
     }
 
-    // Booking atómico ANTES de guardar la cita.
-    const bookResult = await this.slotRepository.bookManyAtomic(
-      slotIds,
-      command.heldByUserId,
-    );
-    if (bookResult.isFailure) return Result.err(bookResult.unwrapError());
+    // Booking atómico ANTES de guardar la cita — se saltea para técnicos
+    // (isTechnicianCreator): no reclaman el slot en exclusiva, así que
+    // corner_slots.status no se toca y puede seguir reutilizándose.
+    if (!isTechnicianCreator) {
+      const bookResult = await this.slotRepository.bookManyAtomic(
+        slotIds,
+        command.heldByUserId,
+      );
+      if (bookResult.isFailure) return Result.err(bookResult.unwrapError());
 
-    const booked = bookResult.unwrap();
-    if (booked < slotIds.length) {
-      this.logger.warn(
-        `createAppointment — slot conflict: expected to book ${slotIds.length}, only booked ${booked}. slotIds=${slotIds.join(', ')}`,
-        CTX,
-      );
-      return Result.err(
-        new Error(
-          'El horario seleccionado ya no está disponible. Por favor elegí otro horario.',
-        ),
-      );
+      const booked = bookResult.unwrap();
+      if (booked < slotIds.length) {
+        this.logger.warn(
+          `createAppointment — slot conflict: expected to book ${slotIds.length}, only booked ${booked}. slotIds=${slotIds.join(', ')}`,
+          CTX,
+        );
+        return Result.err(
+          new Error(
+            'El horario seleccionado ya no está disponible. Por favor elegí otro horario.',
+          ),
+        );
+      }
     }
 
     const sorted = [...slots].sort(
@@ -251,27 +292,6 @@ export class AppointmentService implements IAppointmentService {
     const estimatedCloseAt = new Date(
       scheduledRange.start.getTime() + issueType.closeMinutes.value * 60_000,
     );
-
-    // Si quien crea la cita es un técnico (kind=ISSUE vía app de técnico), se
-    // usa como assigned_to en SN.
-    let creatorTechnicianEmail: string | null = null;
-    if (command.creatorExternalId) {
-      const creatorUserResult = await this.userRepository.findByExternalId(
-        command.creatorExternalId,
-      );
-      const creatorUser = creatorUserResult.isSuccess
-        ? creatorUserResult.unwrap()
-        : null;
-      if (creatorUser) {
-        const creatorTechResult = await this.technicianRepository.findByUserId(
-          creatorUser.id.toString(),
-        );
-        const creatorTech = creatorTechResult.isSuccess
-          ? creatorTechResult.unwrap()
-          : null;
-        if (creatorTech) creatorTechnicianEmail = creatorTech.email;
-      }
-    }
 
     const metadata = command.notes
       ? { ...(command.metadata || {}), notes: command.notes }
@@ -294,7 +314,7 @@ export class AppointmentService implements IAppointmentService {
     );
 
     if (appointmentResult.isFailure) {
-      await this.releaseBookedSlots(slotIds);
+      if (!isTechnicianCreator) await this.releaseBookedSlots(slotIds);
       return appointmentResult;
     }
     const appointment = appointmentResult.unwrap();
@@ -309,7 +329,7 @@ export class AppointmentService implements IAppointmentService {
         saveResult.unwrapError().stack ?? '',
         CTX,
       );
-      await this.releaseBookedSlots(slotIds);
+      if (!isTechnicianCreator) await this.releaseBookedSlots(slotIds);
       return Result.err(saveResult.unwrapError());
     }
 
@@ -354,6 +374,56 @@ export class AppointmentService implements IAppointmentService {
     if (updateResult.isFailure) {
       this.logger.error(
         `releaseBookedSlots — no se pudieron liberar los slots ${slotIds.join(', ')}: ${updateResult.unwrapError().message}`,
+        CTX,
+      );
+    }
+  }
+
+  /**
+   * Libera (AVAILABLE) o expira (EXPIRED, si ya pasó) los slots dados al
+   * cerrar/cancelar/reprogramar una cita — salvo que otra cita activa
+   * (excluyendo excludeAppointmentId) todavía los use, en cuyo caso se dejan
+   * intactos. Cubre el caso de varios técnicos compartiendo un mismo slot:
+   * no se libera hasta que la última cita que lo usa se cierra/cancela.
+   */
+  private async releaseOrExpireSlots(
+    slots: Slot[],
+    excludeAppointmentId: AppointmentId,
+  ): Promise<void> {
+    if (slots.length === 0) return;
+
+    const stillActiveResult =
+      await this.appointmentRepository.findActiveAppointmentSlotIds(
+        slots.map((s) => s.id),
+        excludeAppointmentId,
+      );
+    if (stillActiveResult.isFailure) {
+      this.logger.error(
+        `releaseOrExpireSlots — no se pudo verificar uso activo de slots: ${stillActiveResult.unwrapError().message}`,
+        CTX,
+      );
+    }
+    const stillActive = stillActiveResult.isSuccess
+      ? stillActiveResult.unwrap()
+      : new Set<string>();
+
+    const now = new Date();
+    const toUpdate: Slot[] = [];
+    for (const s of slots) {
+      if (stillActive.has(s.id.toString())) continue;
+      if (s.timeRange.start > now) {
+        s.release();
+      } else {
+        s.expire();
+      }
+      toUpdate.push(s);
+    }
+    if (toUpdate.length === 0) return;
+
+    const updateResult = await this.slotRepository.updateMany(toUpdate);
+    if (updateResult.isFailure) {
+      this.logger.error(
+        `releaseOrExpireSlots — no se pudieron actualizar los slots: ${updateResult.unwrapError().message}`,
         CTX,
       );
     }
@@ -551,16 +621,7 @@ export class AppointmentService implements IAppointmentService {
 
     const oldSlotsResult = await this.slotRepository.findManyByIds(previousSlotIds);
     if (!oldSlotsResult.isFailure) {
-      const oldSlots = oldSlotsResult.unwrap();
-      const now = new Date();
-      for (const s of oldSlots) {
-        if (s.timeRange.start > now) {
-          s.release();
-        } else {
-          s.expire();
-        }
-      }
-      await this.slotRepository.updateMany(oldSlots);
+      await this.releaseOrExpireSlots(oldSlotsResult.unwrap(), appointment.id);
     }
 
     const timelineResult = await this.appointmentRepository.saveEvents(appointment.id, events);
@@ -732,16 +793,7 @@ export class AppointmentService implements IAppointmentService {
       previousSlotIds,
     );
     if (!oldSlotsResult.isFailure) {
-      const oldSlots = oldSlotsResult.unwrap();
-      const now = new Date();
-      for (const s of oldSlots) {
-        if (s.timeRange.start > now) {
-          s.release();
-        } else {
-          s.expire();
-        }
-      }
-      await this.slotRepository.updateMany(oldSlots);
+      await this.releaseOrExpireSlots(oldSlotsResult.unwrap(), appointment.id);
     }
 
     const rescheduleTimelineResult = await this.appointmentRepository.saveEvents(
@@ -881,18 +933,7 @@ export class AppointmentService implements IAppointmentService {
         appointment.slotIds,
       );
       if (slotsResult.isFailure) return Result.err(slotsResult.unwrapError());
-      const slots = slotsResult.unwrap();
-      const now = new Date();
-      for (const s of slots) {
-        if (s.timeRange.start > now) {
-          s.release();
-        } else {
-          s.expire();
-        }
-      }
-      const slotsUpdateResult = await this.slotRepository.updateMany(slots);
-      if (slotsUpdateResult.isFailure)
-        return Result.err(slotsUpdateResult.unwrapError());
+      await this.releaseOrExpireSlots(slotsResult.unwrap(), appointment.id);
     }
 
     const statusTimelineResult = await this.appointmentRepository.saveEvents(
@@ -1070,16 +1111,7 @@ export class AppointmentService implements IAppointmentService {
       appointment.slotIds,
     );
     if (!slotsResult.isFailure) {
-      const slots = slotsResult.unwrap();
-      const now = new Date();
-      for (const s of slots) {
-        if (s.timeRange.start > now) {
-          s.release();
-        } else {
-          s.expire();
-        }
-      }
-      await this.slotRepository.updateMany(slots);
+      await this.releaseOrExpireSlots(slotsResult.unwrap(), appointment.id);
     }
 
     const cancelTimelineResult = await this.appointmentRepository.saveEvents(

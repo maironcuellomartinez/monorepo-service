@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, CheckCircle2, AlertCircle, Calendar, Clock, Search, Monitor, User, RefreshCw } from 'lucide-react'
 import { useUserSearch } from '@/hooks/use-user-search'
+import { useCompanyTree } from '@/hooks/use-company-tree'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -128,9 +129,14 @@ export function CreateAppointmentPage() {
   // solo se muestran los tipos de ese device_type + los genéricos (deviceType null).
   // Con serial manual no se conoce el device_type, así que no se filtra.
   const deviceType = selectedDevice?.deviceType ?? null
-  const filteredIssueTypes = deviceType
-    ? issueTypes.filter((it) => !it.deviceType || it.deviceType === deviceType)
-    : issueTypes
+  // El grupo (treeId) de la compañía del cliente filtra a su vez los tipos —
+  // el backend rechaza (IssueTypeNotAllowedForCompanyError) cualquier tipo
+  // que no pertenezca al mismo grupo que la compañía, así que no tiene
+  // sentido dejarlo elegible acá.
+  const { treeId: companyTreeId } = useCompanyTree(selectedUser?.companyId)
+  const filteredIssueTypes = issueTypes
+    .filter((it) => !deviceType || !it.deviceType || it.deviceType === deviceType)
+    .filter((it) => !companyTreeId || !it.treeId || it.treeId === companyTreeId)
 
   useEffect(() => {
     if (selectedIssueTypeId && !filteredIssueTypes.some((it) => it.id === selectedIssueTypeId)) {
@@ -139,7 +145,7 @@ export function CreateAppointmentPage() {
       setSlots([])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceType])
+  }, [deviceType, companyTreeId])
 
   // La duración de la cita la define el tipo elegido en el paso 4
   const duration = issueTypes.find((it) => it.id === selectedIssueTypeId)?.workMinutes ?? 60

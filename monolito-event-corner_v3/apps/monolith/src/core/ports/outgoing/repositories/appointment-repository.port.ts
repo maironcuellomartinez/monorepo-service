@@ -70,6 +70,16 @@ export interface IAppointmentRepository {
     filters: AppointmentFilters,
   ): Promise<Result<PaginatedResult<Appointment>>>;
   findBySlotId(slotId: SlotId): Promise<Result<Appointment | null>>;
+  /**
+   * De los slotIds dados, devuelve el subconjunto que todavía tiene OTRA
+   * cita activa (no terminal) enganchada — excluyendo excludeAppointmentId.
+   * Se usa para no liberar/expirar un slot mientras otra cita (p.ej. otro
+   * walk-in de técnico sobre el mismo slot) lo siga usando.
+   */
+  findActiveAppointmentSlotIds(
+    slotIds: SlotId[],
+    excludeAppointmentId: AppointmentId,
+  ): Promise<Result<Set<string>>>;
   /** Busca por el número de ticket SN, uniendo contra servicenow_ticket_links. */
   findByServiceNowNumber(number: string): Promise<Result<Appointment | null>>;
   update(appointment: Appointment): Promise<Result<void>>;

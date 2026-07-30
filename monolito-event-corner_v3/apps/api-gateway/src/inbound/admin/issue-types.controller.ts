@@ -53,7 +53,7 @@ export class IssueTypesController {
 
     @Post()
     @HttpCode(HttpStatus.CREATED)
-    @Roles('admin', 'super-admin')
+    @Roles('admin', 'manager', 'super-admin')
     @Permission('issue-type', 'create')
     @ApiOperation({ summary: 'Crear tipo de incidencia' })
     async create(@Body() dto: CreateIssueTypeDto) {
@@ -64,7 +64,7 @@ export class IssueTypesController {
     }
 
     @Put(':id')
-    @Roles('admin', 'super-admin')
+    @Roles('admin', 'manager', 'super-admin')
     @Permission('issue-type', 'update')
     @ApiOperation({ summary: 'Actualizar tipo de incidencia' })
     @ApiParam({ name: 'id' })
@@ -77,7 +77,7 @@ export class IssueTypesController {
 
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
-    @Roles('admin', 'super-admin')
+    @Roles('admin', 'manager', 'super-admin')
     @Permission('issue-type', 'delete')
     @ApiOperation({ summary: 'Eliminar tipo de incidencia' })
     @ApiParam({ name: 'id' })

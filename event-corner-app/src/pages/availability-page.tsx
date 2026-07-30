@@ -19,6 +19,8 @@ import { es } from 'date-fns/locale'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
 import { useUserSearch } from '@/hooks/use-user-search'
+import { useCompanyTree } from '@/hooks/use-company-tree'
+import { useAuth } from '@/context/auth'
 import { Header } from '@/components/header'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -105,6 +107,13 @@ interface CreateAppointmentModalProps {
 }
 
 function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: CreateAppointmentModalProps) {
+  const { user } = useAuth()
+  // Un técnico puede reutilizar cualquier slot (disponible u ocupado) — la
+  // ventana igual trae sus slotIds reales aunque available sea false
+  // (availability.service.ts siempre los calcula, independientemente del
+  // estado). El booking exclusivo lo saltea el backend al resolver al
+  // técnico como creador.
+  const isTechnician = !!user?.technicianId
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [selectedUser, setSelectedUser] = useState<MonolithUser | null>(null)
@@ -127,6 +136,14 @@ function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: Crea
   const [bookingWindow, setBookingWindow] = useState<AvailabilitySlot | null>(null)
   const [loadingWindow, setLoadingWindow] = useState(false)
   const [windowError, setWindowError] = useState('')
+
+  // El grupo (treeId) de la compañía del cliente filtra los tipos elegibles —
+  // el backend rechaza (IssueTypeNotAllowedForCompanyError) cualquier tipo
+  // que no pertenezca al mismo grupo que la compañía.
+  const { treeId: companyTreeId } = useCompanyTree(selectedUser?.companyId)
+  const filteredIssueTypes = issueTypes.filter(
+    (it) => !companyTreeId || !it.treeId || it.treeId === companyTreeId,
+  )
 
   // Reset state + load issue types when modal opens
   useEffect(() => {
@@ -161,7 +178,7 @@ function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: Crea
       setWindowError('')
       return
     }
-    const issueType = issueTypes.find((it) => it.id === selectedIssueTypeId)
+    const issueType = filteredIssueTypes.find((it) => it.id === selectedIssueTypeId)
     const duration = issueType?.workMinutes ?? 60
     setLoadingWindow(true)
     setWindowError('')
@@ -170,8 +187,8 @@ function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: Crea
       .getSlots(corner.id, slot.startTime.slice(0, 10), duration)
       .then((windows) => {
         const w = windows.find((x) => x.startTime === slot.startTime)
-        if (w?.available) {
-          setBookingWindow(w)
+        if (w?.available || (isTechnician && w?.slotIds?.length)) {
+          setBookingWindow(w!)
         } else {
           setWindowError(
             `Este tipo de incidencia requiere ${duration} min y no hay disponibilidad consecutiva a partir de este horario. Elegí otro slot del calendario.`,
@@ -181,7 +198,7 @@ function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: Crea
       .catch(() => setWindowError('No se pudo verificar la disponibilidad para la duración del tipo elegido'))
       .finally(() => setLoadingWindow(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, selectedIssueTypeId])
+  }, [open, selectedIssueTypeId, isTechnician, companyTreeId])
 
   // Load devices when a customer is selected — sync from Minerva first, then read local DB
   const loadDevices = async (userId: string) => {
@@ -448,7 +465,7 @@ function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: Crea
                   <SelectValue placeholder="Seleccionar tipo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {issueTypes.map((it) => (
+                  {filteredIssueTypes.map((it) => (
                     <SelectItem key={it.id} value={it.id}>
                       {it.name}{it.workMinutes ? ` (${it.workMinutes} min)` : ''}
                     </SelectItem>
@@ -556,6 +573,12 @@ function SuccessModal({ incident, onClose, onViewAppointment }: SuccessModalProp
 
 export function AvailabilityPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  // Un técnico puede reutilizar cualquier slot (disponible u ocupado) para
+  // registrar walk-ins — el backend ya salta el booking exclusivo cuando
+  // resuelve al creador como técnico (ver appointment.service.ts). Acá solo
+  // hace falta permitir el click; nada nuevo que mandar en el POST.
+  const isTechnician = !!user?.technicianId
 
   const [corners, setCorners] = useState<Corner[]>([])
   const [selectedCornerId, setSelectedCornerId] = useState('')
@@ -676,6 +699,9 @@ export function AvailabilityPage() {
     // verde: disponible · amarillo: retenido en un lote (hold, puede liberarse) · gris: reservado
     const bg = available ? '#16a34a' : held ? '#f59e0b' : '#9ca3af'
     const border = available ? '#15803d' : held ? '#d97706' : '#6b7280'
+    // Para técnico, todo slot es clickeable (multi-cita) — mismo color, pero
+    // sin la opacidad reducida para que se note que sigue siendo usable.
+    const clickable = available || isTechnician
     return {
       style: {
         backgroundColor: bg,
@@ -683,19 +709,19 @@ export function AvailabilityPage() {
         color: 'white',
         borderRadius: '6px',
         border: '1px solid',
-        cursor: available ? 'pointer' : 'default',
-        opacity: available ? 1 : held ? 0.9 : 0.65,
+        cursor: clickable ? 'pointer' : 'default',
+        opacity: clickable ? 1 : held ? 0.9 : 0.65,
       },
     }
-  }, [])
+  }, [isTechnician])
 
-  // ── Click on available slot → open modal ────────────────────────────────
+  // ── Click on slot → open modal (técnico: cualquier slot, empleado: solo disponible) ──
   const handleSelectEvent = useCallback(
     (event: SlotEvent) => {
-      if (!event.resource.available) return
+      if (!event.resource.available && !isTechnician) return
       setSelectedSlot(event.resource)
     },
-    [],
+    [isTechnician],
   )
 
   // ── Derived ──────────────────────────────────────────────────────────────

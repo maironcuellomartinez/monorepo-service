@@ -289,6 +289,42 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
     }
   }
 
+  async findActiveAppointmentSlotIds(
+    slotIds: SlotId[],
+    excludeAppointmentId: AppointmentId,
+  ): Promise<Result<Set<string>>> {
+    try {
+      if (slotIds.length === 0) return Result.ok(new Set());
+
+      const relations = await this.appointmentSlotRepository.find({
+        where: { slot_id: In(slotIds.map((s) => s.toString())) },
+      });
+      const otherAppointmentIds = [
+        ...new Set(
+          relations
+            .map((r) => r.appointment_id)
+            .filter((id) => id !== excludeAppointmentId.toString()),
+        ),
+      ];
+      if (otherAppointmentIds.length === 0) return Result.ok(new Set());
+
+      const activeAppointments = await this.appointmentRepository.find({
+        where: { appointment_id: In(otherAppointmentIds), status: In(ACTIVE_STATUSES) },
+        select: ['appointment_id'],
+      });
+      const activeIds = new Set(activeAppointments.map((a) => a.appointment_id));
+
+      const stillActiveSlotIds = new Set(
+        relations
+          .filter((r) => r.appointment_id !== excludeAppointmentId.toString() && activeIds.has(r.appointment_id))
+          .map((r) => r.slot_id),
+      );
+      return Result.ok(stillActiveSlotIds);
+    } catch (error) {
+      return Result.err(error);
+    }
+  }
+
   async update(appointment: Appointment): Promise<Result<void>> {
     return this.save(appointment);
   }
