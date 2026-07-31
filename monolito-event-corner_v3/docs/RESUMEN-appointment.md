@@ -1,59 +1,95 @@
-# Resumen — Módulo de Citas (estado actual)
+# Resumen — Módulo de Citas: api-gateway + monolith (entradas/salidas)
 
-> Cómo funciona hoy el sistema de citas de Event Corner. Para el historial de cambios que llevó a este estado, ver `RESUMEN-remodelado.md`.
+> Alcance: solo `api-gateway` y `monolith`, y sus salidas hacia `api-snowq-service` e `integration-service`. No incluye frontend.
 
-## Qué es una Cita
+## 1. Entrada — api-gateway (`api/appointments/*`)
 
-Una **Cita** (`Appointment`) es el único tipo de agregado para todo lo que un usuario o técnico puede reservar en un corner: desde una avería de hardware hasta un trámite administrativo (alta/baja de equipo). No hay clases separadas por tipo — un solo modelo cubre los dos casos.
+Todo request pasa por la cadena de guards `JwtGuard → RolesGuard → AbacGuard` antes de llegar al controller. `JwtGuard` acepta tanto un Bearer de Entra ID (validado contra ABAC vía JWKS) como un JWT M2M Ed25519 propio (`@InternalOnly()`).
+
+| Método | Ruta | Permiso ABAC |
+|---|---|---|
+| `GET` | `/api/appointments` | `appointment:list` — filtros: `cornerId`, `status`, `issueTypeId`, `customerEmail` (matchea también `upn`), `servicenowNumber`, `deviceSerial`, `dateFrom`/`dateTo`, `availableOnly` |
+| `GET` | `/api/appointments/suggestions/device-serial` \| `/servicenow-number` | `appointment:list` — autocomplete acotado a un `cornerId` |
+| `GET` | `/api/appointments/available` | `appointment:list` |
+| `GET` | `/api/appointments/mine` | `appointment:read` |
+| `GET` | `/api/appointments/technician/:technicianId` | `appointment:list` |
+| `GET` | `/api/appointments/:id` \| `/:id/timeline` | `appointment:read` |
+| `POST` | `/api/appointments` | `appointment:create` |
+| `POST` | `/api/appointments/:id/notes` | `appointment:change-status` |
+| `PATCH` | `/:id/deliver` \| `/:id/take` \| `/:id/release` \| `/:id/reschedule` \| `/:id/estimated-close` \| `/:id/status` \| `/:id/cancel` | permiso específico por acción |
+| `PATCH` | `/:id/validate` \| `/:id/reopen` | `appointment:validate` \| `appointment:reopen` |
+
+`api-gateway` es un **proxy delgado**: no tiene lógica de dominio. Valida el DTO, resuelve el permiso, y reenvía tal cual al monolith.
+
+## 2. api-gateway → monolith (`/internal/appointments/*`)
+
+- `MonolithClient` reenvía cada request con `Authorization: Bearer <JWT M2M Ed25519>` propio del gateway (no el token del usuario final).
+- Mismo mapeo de rutas que el punto 1, con prefijo `/internal/` en vez de `/api/`.
+- El monolith no vuelve a validar permisos ABAC — confía en que el gateway ya filtró.
+
+## 3. Monolith — qué hace con el request
+
+`AppointmentService.createAppointment()` (y equivalentes para el resto de las transiciones) es el único caso de uso para cualquier `kind`:
+
+1. Valida slots (disponibles y futuros), corner, issueType y su `treeId` contra la empresa del cliente.
+2. Deriva `kind` (`ISSUE`/`REQUEST`) desde `issueType.category`.
+3. Resuelve el dispositivo si viene `serialNumber` — acá es donde entra **integration-service** (ver punto 5).
+4. Persiste `Appointment` + `AppointmentSlot`(s) + `AppointmentTimeline` + un `ServiceNowTicketLink` en `PENDING`, y publica `APPOINTMENT_CREATED` en la misma transacción (patrón Outbox).
+5. Responde `201` **sin esperar** al ticket de ServiceNow — esa parte es asíncrona.
+
+## 4. Monolith → api-gateway → api-snowq-service (ServiceNow)
+
+Único egress hacia ServiceNow. Se dispara `≤5s` después, vía el worker del Outbox — nunca en el mismo request que crea la cita.
 
 ```
-IssueType.category → decide el kind de la cita
-  ISSUE / CREATE-DELIVERY / CREATE-COLLECTION  →  kind=ISSUE     →  genera un incident en ServiceNow
-  REQUEST-ONBOARDING / REQUEST-DECOMISSION     →  kind=REQUEST   →  genera un sc_req_item/sc_task
+OutboxWorkerService (5s)
+  → AppointmentServiceNowHandler (creación) / AppointmentStatusChangedHandler (cierre/estado)
+  → ServiceNowIntegrationService.createTicket() / closeTicket() / updateTicket()
+        resuelve: assignment_group (CompanyIssueConfig → default company → Corner → 'SOPORTE_GENERAL')
+                  category (IssueType.servicenow_category)
+                  caller_id (User.upn)
+                  correlation_id (Device.serialNumber)
+  → ServiceNowProxyAdapter
+        Bearer M2M EdDSA → api-gateway POST /outbound/servicenow/immediate/{incidents|service-catalog}
 ```
 
-En ambos casos la cita ocupa un corner y uno o más slots — no hay un camino "sin agenda" para los trámites administrativos.
+En `api-gateway`, `ServiceNowOutboundController` reenvía con su propio M2M a `api-snowq-service`:
 
-## Ciclo de vida
+| Operación | Ruta hacia api-snowq-service |
+|---|---|
+| Crear (fase 1, síncrona) | `POST /snow-requests/immediate/{incidents\|service-catalog}` |
+| Crear (fase 2, fallback async) | `POST /snow-requests/{incidents\|service-catalog}` — si falla la fase 1 |
+| Actualizar | `PATCH /snow-requests/immediate/{table}/:sysId` |
+| Cerrar | `PATCH /snow-requests/immediate/incidents/:sysId/close` |
+| Reconciliar (deferred) | `GET /snow-requests/:correlationId` |
+
+Resultado según la fase:
+- **Éxito inmediato:** `link.resolveImmediate(sysId, number)` — el `ServiceNowTicketLink` queda `ACTIVE` con el ticket real.
+- **Deferred (SN caído momentáneamente):** `link.markDeferred(correlationId)` — `MonolithReconcilerJob` (cada 30s) pregunta a `api-snowq-service` hasta que resuelve.
+- **Huérfana (nunca llegó a tener correlationId):** `SnowOrphanRecoveryJob` (cada 10 min) crea un link nuevo y reintenta.
+- **Cierre:** siempre lo dispara el monolito (`AppointmentStatusChangedHandler`) cuando la cita pasa a `CLOSED`. No hay polling de estado desde ServiceNow hacia el monolito en ningún punto del flujo.
+
+`integration-service` **no participa** en ninguna parte de este camino — el único egress hacia ServiceNow es `api-gateway → api-snowq-service`.
+
+## 5. Monolith → api-gateway → integration-service (resolución de dispositivo)
+
+Único punto de contacto real entre el módulo de citas e `integration-service`, y es de **entrada** de datos (no ServiceNow):
 
 ```
-CREATED → DELIVERED → IN_PROGRESS → (PAUSED / PENDING_*) → CLOSED → VALIDATED
-                                                                   ↳ REOPENED → IN_PROGRESS
-CREATED → CANCELED (el cliente cancela antes de que arranque)
+AppointmentService (al crear una cita con serialNumber)
+  → DeviceService.resolveDevice(serialNumber)
+        cache local (DB) — si está fresco (<15 min), lo devuelve directo
+        si está stale o no existe → IExternalInventoryService.getBySerial()
+  → InventoryHttpAdapter
+        Bearer M2M EdDSA → api-gateway GET /outbound/inventory/devices/:serialNumber
+  → api-gateway (InventoryOutboundController, @InternalOnly)
+        Bearer M2M EdDSA → integration-service GET /api/v1/minerva/devices/:serialNumber
+  → integration-service → Minerva SOAP
 ```
 
-- El técnico toma la cita, la entrega, la pausa/retoma, y la cierra con una categoría de cierre.
-- El cliente valida la resolución o la reabre si no está conforme.
-- `VALIDATED` y `CANCELED` son terminales; no hay vuelta atrás.
+- Si `integration-service` no responde, `api-gateway` devuelve `502` y el monolito lo propaga — la creación de la cita puede fallar si el dispositivo no se puede resolver ni desde caché ni desde Minerva (fail-fast, no crea citas con datos de dispositivo inconsistentes).
+- Misma ruta para `GET /outbound/inventory/users/:userId` (dispositivos de un usuario, usado al sincronizar).
 
-## Integración con ServiceNow
+## 6. Resumen de autenticación entre saltos
 
-Cada cita tiene uno o más vínculos de ticket (`ServiceNowTicketLink`) — normalmente uno solo (`role=primary`), salvo trámites administrativos que además generan una tarea de cumplimiento (`role=fulfillment`).
-
-- **Creación:** asíncrona, vía outbox — la cita se confirma al usuario sin esperar al ticket. Si ServiceNow responde al instante, el link queda con `sys_id`/`number` de una; si no, queda en modo diferido y se completa solo (cada 30s) cuando ServiceNow procesa la cola.
-- **Cierre:** siempre lo dispara el monolito hacia ServiceNow cuando la cita pasa a `CLOSED`. El sistema no consulta periódicamente el estado en ServiceNow — el cierre es un evento saliente, nunca entrante.
-- **Recuperación:** si una cita queda sin ticket resuelto por más de 10 minutos (SN caído en el momento de crearla), un job la detecta y la vuelve a encolar automáticamente.
-- **Grupo de asignación en ServiceNow:** se resuelve primero por configuración de la empresa+tipo de cita, después por una empresa "default", después por el corner, y como último recurso cae en un grupo general (quedando un aviso en el log).
-
-## Identidad de usuario
-
-El identificador de un usuario en toda la app es su **UPN** (User Principal Name, ej. `x249401@empresa.com`) — es único en la base y es lo que se usa para vincular el `caller_id` del ticket en ServiceNow. El email queda como un dato de contacto aparte, pensado para notificaciones a futuro, no como identificador.
-
-## Permisos
-
-Todas las acciones sobre citas están gateadas por permisos ABAC del recurso `appointment` (`appointment:create`, `:read`, `:list`, `:list-all`, `:deliver`, `:take`, `:release`, `:change-status`, `:validate`, `:reopen`, `:delete`). Un empleado puede crear y ver sus propias citas; solo técnicos/managers/admins pueden ver el listado completo, tomar y entregar.
-
-## Búsqueda y filtros (`/citas` en event-corner-app)
-
-- Hay que elegir un corner para poder listar — es obligatorio.
-- Por defecto se muestran solo citas activas (se excluyen cerradas/validadas/canceladas); un checkbox "Todas las citas" saca esa restricción.
-- Autocomplete en vivo mientras se escribe para buscar por UPN de usuario, serial de dispositivo o número de ticket ServiceNow.
-- Paginado (20 por página).
-
-## Creación en lote
-
-Un técnico puede armar un lote de varias citas antes de confirmarlas juntas — cada una retiene sus slots (HELD, 15 minutos) mientras se arma el lote, y al confirmar se procesan una por una, cada una con su propia cita y ticket SN.
-
-## Panel de administración de usuarios (ABAC)
-
-Además de asignar roles/permisos/políticas, un admin puede editar directamente nombre, apellido, usuario y teléfono de un usuario — útil para completar datos que no llegaron bien desde Entra ID en el primer login.
+Todos los saltos internos (api-gateway↔monolith, api-gateway↔api-snowq-service, api-gateway↔integration-service) usan el mismo mecanismo: JWT M2M firmado con **Ed25519/EdDSA** por ABAC, verificado **localmente** por cada servicio receptor (sin llamada de red a ABAC por request). El `x-correlation-id` viaja en cada salto para no cortar la trazabilidad end-to-end.
