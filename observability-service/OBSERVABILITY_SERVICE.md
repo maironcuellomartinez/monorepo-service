@@ -199,13 +199,13 @@ curl -X POST http://localhost:3099/ingest/logs \
     "logs": [
       {
         "level": "info",
-        "message": "Incident created successfully",
+        "message": "Appointment created successfully",
         "service": "monolith",
         "timestamp": "2026-04-06T10:00:00.000Z",
         "correlationId": "a1b2c3d4-e5f6-...",
         "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
         "spanId": "00f067aa0ba902b7",
-        "context": "IncidentService"
+        "context": "AppointmentService"
       }
     ],
     "batchSize": 1
@@ -358,11 +358,11 @@ curl "http://localhost:3099/query/logs?correlationId=a1b2c3d4-e5f6-...&limit=50"
     {
       "id": "uuid",
       "level": "info",
-      "message": "Incident created successfully",
+      "message": "Appointment created successfully",
       "correlationId": "a1b2c3d4-...",
       "traceId": "4bf92f35...",
       "spanId": "00f067aa...",
-      "context": "IncidentService",
+      "context": "AppointmentService",
       "service": "monolith",
       "stack": null,
       "meta": null,

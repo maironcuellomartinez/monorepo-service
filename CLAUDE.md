@@ -184,7 +184,7 @@ In dev both point to `Santander Corporate (Default)` (`company-santander-default
 
 ### servicenow-clone-backend — closed state codes
 
-The simulator stores state as numeric strings. `api-snowq-service` (`SN_CLOSED_STATES`) and the monolith `SnowSyncJob` recognize these as closed:
+The simulator stores state as numeric strings. `api-snowq-service` (`SN_CLOSED_STATES`) recognizes these as closed. **Note:** the monolith's old `SnowSyncJob` (which polled these states to auto-close incidents) was **removed** — the monolith now always closes the SN ticket directly when an appointment reaches `CLOSED` (`AppointmentStatusChangedHandler`), never the reverse:
 
 | Code | Type | Meaning |
 |---|---|---|
@@ -234,8 +234,10 @@ TODOS los servicios  →  observability-service :3099  (/ingest/logs · /ingest/
 
 | Job | Interval | What it does |
 |---|---|---|
-| `MonolithReconcilerJob` | 30 s | Polls `GET {SNOWQ_URL}/snow-requests/{correlationId}` for incidents/requests with `snowq_correlation_id`. On DELIVERED: stores `servicenow_id`+`servicenow_number`, clears correlationId. On FAILED: logs + clears. |
-| `SnowSyncJob` | 5 min | For all active incidents with `servicenow_id`, calls `GET /outbound/servicenow/incidents/{sysId}/state`. If state ∈ `{6,7}`: closes incident in monolith automatically. |
+| `MonolithReconcilerJob` | 30 s | Polls `GET {SNOWQ_URL}/snow-requests/{correlationId}` for appointments whose `ServiceNowTicketLink` has a `snowq_correlation_id` (deferred/async creation). On DELIVERED: stores `sys_id`+`number` on the link, clears correlationId. On FAILED: logs + clears. |
+| `SnowOrphanRecoveryJob` | 10 min | Finds non-terminal appointments with no active `ServiceNowTicketLink` (none, or all ABANDONED/CLOSED) created more than `SNOW_ORPHAN_MIN_AGE_MINUTES` ago; creates a new link and re-queues it in `api-snowq-service` (async only). Disabled by default in dev (`SNOW_ORPHAN_RECOVERY_ENABLED`). |
+
+> **`SnowSyncJob` was removed** (it used to poll SN state every 5 min to auto-close incidents). The monolith now only ever closes a ticket **outbound** — when an appointment reaches `CLOSED`, `AppointmentStatusChangedHandler` calls `ServiceNowIntegrationService.closeTicket()` directly. There is no inbound polling of SN state.
 
 ### Key env vars per service
 
@@ -316,7 +318,7 @@ IssueTypeTree
 Company ──FK──► IssueTypeTree
 Company ──FK──► ServiceNowProfile (snow_company_sys_id)
 Company ──1:N──► User
-Company ──1:N──► Request
+Company ──1:N──► Appointment
 
 Corner
     ├─ snow_assignment_group  (SN routing fallback)
@@ -326,23 +328,26 @@ Corner
     └─1:N──► CornerSchedule / Slot
 
 User ──FK──► Company
-User ──1:N──► Incident
+User ──1:N──► Appointment (customerId)
+User ── upn (unique, primary frontend identifier) / email (contact, future notifications)
 
-Incident  (aggregate root)
+Appointment  (aggregate root — unifies former Incident + Request, 2026-07 remodel)
     ├─FK──► User (customerId)
+    ├─FK──► Company
     ├─FK──► IssueType
     ├─FK──► Corner
-    ├─FK──► Technician (current, optional)
+    ├─FK──► Technician (current, optional) / Technician (createdBy, optional)
     ├─FK──► Device (optional)
     ├─FK──► Locker (optional)
-    ├─ servicenow_id / servicenow_number  (set after SN ticket created)
-    ├─ snowq_correlation_id               (set during async phase, cleared on reconcile)
-    └─ status: CREATED→DELIVERED→IN_PROGRESS→PAUSED→CLOSED→VALIDATED / REOPENED
+    ├─ kind: ISSUE (→ incident ticket) | REQUEST (→ sc_req_item/sc_task) — derived from IssueType.category
+    └─ status: CREATED→DELIVERED→IN_PROGRESS→PAUSED→CLOSED→VALIDATED / REOPENED / CANCELED
 
-Request
-    ├─FK──► Company, User, Technician, Corner, IssueType, Device
-    ├─ servicenow_id / servicenow_number
-    └─ snowq_correlation_id
+ServiceNowTicketLink  (1:N per Appointment — replaces inline servicenow_id/servicenow_number/snowq_correlation_id)
+    ├─FK──► Appointment
+    ├─ type: incident | sc_req_item | sc_task
+    ├─ role: primary | fulfillment
+    ├─ sys_id / number     (set after SN ticket created)
+    └─ snowq_correlation_id (set during async phase, cleared on reconcile)
 
 CompanyIssueConfig
     ├─FK──► Company
@@ -434,7 +439,7 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
    → Returns: allow | deny | null (no policy matched → allow if permission exists)
 ```
 
-### Incident/Request → ServiceNow field mapping
+### Appointment → ServiceNow field mapping
 
 | SN field | Source |
 |---|---|
@@ -444,7 +449,7 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
 | `caller_id` | `User.upn` (UPN) |
 | `location` | `Corner.servicenow_location` |
 | `correlation_id` | `Device.serial_number` |
-| `expected_start` | `Incident.scheduledRange.start` |
+| `expected_start` | `Appointment.scheduledRange.start` |
 
 ## Key Files Reference
 
@@ -461,7 +466,9 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
 | `libs/ed25519.service/src/jwt-ed25519.service.ts` | Firma/verificación EdDSA con `kid`/claims |
 | `libs/observability/transports/winston-http.transport.ts` | Transporte de logs vía HTTP al observability-service (circuit breaker) |
 | `apps/monolith/src/infrastructure/jobs/monolith-reconciler.job.ts` | Async ticket correlation reconciliation |
-| `apps/monolith/src/infrastructure/jobs/snow-sync.job.ts` | ServiceNow → monolith state polling |
+| `apps/monolith/src/infrastructure/jobs/snow-orphan-recovery.job.ts` | Recupera citas huérfanas sin `ServiceNowTicketLink` activo (`snow-sync.job.ts`, que polleaba estado desde SN, fue eliminado) |
+| `apps/monolith/src/infrastructure/event-handlers/appointment-status-changed.handler.ts` | Cierra el ticket SN cuando la cita pasa a `CLOSED` (único disparador de cierre — nunca al revés) |
+| `apps/monolith/src/core/services/appointment/appointment.service.ts` | Caso de uso principal — reemplaza `IncidentService`/`RequestService` |
 | `apps/monolith/src/scripts/seed-test-data.ts` | Full seed (companies, corners, users, issue types, CICs, groups) |
 | `abac-microservice/src/abac/services/auth.service.ts` | Entra ID sync, M2M token (EdDSA), OAuth 2.0 Client Credentials |
 | `abac-microservice/src/abac/services/entra-id.service.ts` | Verifica tokens Entra ID vía JWKS (RS256) — NO es el cliente Azure, solo el verificador |

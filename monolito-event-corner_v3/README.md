@@ -1,6 +1,15 @@
 # Event Corner v3 — Backend
 
-Sistema de gestión de incidencias, lockers y corners para soporte técnico empresarial. Construido con NestJS, TypeORM y MySQL 8, siguiendo arquitectura hexagonal.
+Sistema de gestión de citas (hardware y trámites administrativos), lockers y corners para soporte técnico empresarial. Construido con NestJS, TypeORM y MySQL 8, siguiendo arquitectura hexagonal.
+
+> ⚠️ **Este README describe una arquitectura desactualizada** en varios puntos más allá de
+> nombres de dominio: solo menciona 3 procesos (falta `integration-service`,
+> `api-snowq-service`, `observability-service`), el login por email/password de "Auth" ya no
+> existe (los usuarios finales solo se autentican con Entra ID/Azure AD), y `x-internal-token`
+> fue reemplazado hace tiempo por JWT M2M Ed25519/EdDSA. Se corrigió la terminología de dominio
+> (`Incident`/`Request` → `Appointment`) pero **no** se reescribió la arquitectura completa —
+> ver `CLAUDE.md` (raíz del workspace) y `docs/documentation.md` / `docs/infrastructure-diagram.md`
+> para la arquitectura vigente.
 
 ---
 
@@ -328,19 +337,21 @@ Todos los endpoints requieren `Authorization: Bearer <jwt>` salvo los marcados c
 | POST   | `/api/auth/refresh`    | Renovar access token       | Sí      |
 | POST   | `/api/auth/logout`     | Cerrar sesión              | Sí      |
 
-### Incidencias
+### Citas (Appointments)
+
+> Reemplaza los antiguos `/api/incidents` y `/api/requests` (unificados en 2026-07). `kind` (ISSUE/REQUEST) se deriva del `IssueType` elegido, no se envía explícitamente.
 
 | Método | Ruta                                     | Descripción                      | Roles mínimos                  |
 |--------|------------------------------------------|----------------------------------|--------------------------------|
-| GET    | `/api/incidents`                         | Listar incidencias               | Cualquier rol autenticado      |
-| POST   | `/api/incidents`                         | Crear incidencia                 | employee, technician, admin    |
-| GET    | `/api/incidents/:id`                     | Detalle de incidencia            | Cualquier rol autenticado      |
-| POST   | `/api/incidents/:id/take`                | Técnico toma la incidencia       | technician, admin              |
-| POST   | `/api/incidents/:id/release`             | Técnico libera la incidencia     | technician, admin              |
-| PATCH  | `/api/incidents/:id/status`              | Actualizar estado                | technician, admin              |
-| POST   | `/api/incidents/:id/deliver`             | Registrar entrega de dispositivo | technician, admin              |
-| POST   | `/api/incidents/:id/validate`            | Empleado valida la resolución    | employee, technician, admin    |
-| POST   | `/api/incidents/:id/reopen`              | Reabrir incidencia               | employee, technician, admin    |
+| GET    | `/api/appointments`                         | Listar citas (paginado, filtros)               | Cualquier rol autenticado      |
+| POST   | `/api/appointments`                         | Crear cita                 | employee, technician, admin    |
+| GET    | `/api/appointments/:id`                     | Detalle de cita            | Cualquier rol autenticado      |
+| POST   | `/api/appointments/:id/take`                | Técnico toma la cita       | technician, admin              |
+| POST   | `/api/appointments/:id/release`             | Técnico libera la cita     | technician, admin              |
+| PATCH  | `/api/appointments/:id/status`              | Actualizar estado                | technician, admin              |
+| POST   | `/api/appointments/:id/deliver`             | Registrar entrega de dispositivo | technician, admin              |
+| POST   | `/api/appointments/:id/validate`            | Empleado valida la resolución    | employee, technician, admin    |
+| POST   | `/api/appointments/:id/reopen`              | Reabrir cita               | employee, technician, admin    |
 
 ### Corners
 
@@ -361,7 +372,7 @@ Todos los endpoints requieren `Authorization: Bearer <jwt>` salvo los marcados c
 | GET    | `/api/availability/slots`                | Slots disponibles por corner     |
 | GET    | `/api/availability/technicians`          | Disponibilidad de técnicos       |
 
-### Tipos de incidencia
+### Tipos de cita
 
 | Método | Ruta                                     | Descripción                      | Roles mínimos     |
 |--------|------------------------------------------|----------------------------------|-------------------|
@@ -370,15 +381,9 @@ Todos los endpoints requieren `Authorization: Bearer <jwt>` salvo los marcados c
 | PATCH  | `/api/issue-types/:id`                   | Actualizar tipo                  | admin, super-admin|
 | DELETE | `/api/issue-types/:id`                   | Eliminar tipo                    | admin, super-admin|
 
-### Solicitudes
+> **Solicitudes:** `/api/requests` como endpoints separados ya no existen — se unificaron en `/api/appointments` de arriba (`kind=REQUEST`).
 
-| Método | Ruta                                     | Descripción                      | Roles mínimos             |
-|--------|------------------------------------------|----------------------------------|---------------------------|
-| GET    | `/api/requests`                          | Listar solicitudes               | Autenticado               |
-| POST   | `/api/requests`                          | Crear solicitud                  | employee, technician, admin|
-| PATCH  | `/api/requests/:id/status`               | Cambiar estado                   | technician, admin         |
-
-### Batch Drafts — Creación masiva de incidencias
+### Batch Drafts — Creación masiva de citas
 
 | Método | Ruta                             | Descripción                                   |
 |--------|----------------------------------|-----------------------------------------------|
@@ -386,7 +391,7 @@ Todos los endpoints requieren `Authorization: Bearer <jwt>` salvo los marcados c
 | POST   | `/api/batch-drafts/items`        | Agregar item y retener slots (HELD, 15 min)   |
 | PATCH  | `/api/batch-drafts/items/:id`    | Editar item (reasigna holds si cambian slots) |
 | DELETE | `/api/batch-drafts/items/:id`    | Eliminar item y liberar holds                 |
-| POST   | `/api/batch-drafts/submit`       | Confirmar lote → crea incidencias en SN       |
+| POST   | `/api/batch-drafts/submit`       | Confirmar lote → crea citas en SN       |
 | DELETE | `/api/batch-drafts`              | Descartar draft y liberar todos los holds     |
 | POST   | `/api/batch-drafts/renew`        | Renovar TTL de holds activos                  |
 
@@ -394,7 +399,7 @@ Ver documentación completa en `docs/batch-drafts.md`.
 
 ---
 
-## Máquina de estados de incidencias
+## Máquina de estados de citas
 
 ```
 CREATED
@@ -423,9 +428,9 @@ El sistema usa un modelo RBAC + ABAC de dos capas:
 |--------------|--------------------------------------------------|
 | `super-admin`| Acceso total al sistema                          |
 | `admin`      | Gestión de corners, issue types, técnicos        |
-| `manager`    | Supervisión de incidencias y reportes            |
-| `technician` | Gestión operativa de incidencias                 |
-| `employee`   | Creación y seguimiento de sus propias incidencias|
+| `manager`    | Supervisión de citas y reportes            |
+| `technician` | Gestión operativa de citas                 |
+| `employee`   | Creación y seguimiento de sus propias citas|
 
 ### Tokens de comunicación interna
 
