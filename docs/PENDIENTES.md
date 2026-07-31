@@ -10,6 +10,22 @@ de dos fases (inmediato → async fallback) vive hoy en
 directo a `api-snowq-service`. El punto "Pendiente importante #1" de más abajo (actualizaciones/
 cierres sin pasar por api-snowq-service) **ya se resolvió** — ver sección Completado actualizada.
 
+**Nota 2026-07-31:** el monolito unificó `Incident`+`Request` en una única entidad `Appointment`
+(rama `feature/appointment-domain-remodel`). Todas las clases mencionadas más abajo con nombre
+`Incident*`/`Request*` (`IncidentService`, `IncidentStatusChangedHandler`, `IIncidentService`,
+etc.) son **históricas** — reflejan el código tal como existía cuando se escribió cada entrada,
+no el estado actual. Equivalencias: `IncidentService`/`RequestService` → `AppointmentService`;
+`IncidentServiceNowHandler`/`RequestServiceNowHandler` → `AppointmentServiceNowHandler`;
+`IncidentStatusChangedHandler` → `AppointmentStatusChangedHandler`; `servicenow_id`/`servicenow_
+number`/`snowq_correlation_id` (antes inline en `incidents`/`requests`) → entidad separada
+`ServiceNowTicketLink`. Como consecuencia directa de la unificación, los ítems **"2. Batch para
+Requests"** y **"3. Cierre deferred para Requests"** de la sección "Pendiente importante" de
+abajo quedaron **resueltos automáticamente**: ya no existe una clase `Request` separada a la que
+agregarle soporte — `AppointmentService.batchChangeStatus()` y `MonolithReconcilerJob` cubren
+`kind=ISSUE` y `kind=REQUEST` por igual desde el mismo código. Ver
+`monolito-event-corner_v3/docs/documentation.md` e `infrastructure-diagram.md` para la
+arquitectura actual.
+
 ---
 
 ## ✅ Completado
@@ -152,21 +168,18 @@ sin esa protección.
 Probado de punta a punta (create sync/async, update, close, state, reconcile) contra
 servicios reales corriendo — ver commit `df59bb2`.
 
-### 2. Batch para Requests
+### 2. ~~Batch para Requests~~ — Resuelto por la unificación Appointment (2026-07)
 
-Solo se implementó batch para `Incident`. Falta:
-- `BatchStatusChangeItem` + `BatchChangeResult` en el port de Request
-- `RequestService.batchChangeStatus()` — idempotencia, duplicados, routing por estado
-- `POST /internal/requests/batch-status` en controller
-- Handler equivalente a `IncidentStatusChangedHandler` para los estados de Request (CLOSED, REOPENED)
-- Límite de 50 items en el nuevo controller
+Ya no aplica: `Incident` y `Request` se unificaron en `Appointment`.
+`AppointmentService.batchChangeStatus()` (un único método, un único port) cubre
+`kind=ISSUE` y `kind=REQUEST` por igual — no hay una clase `Request` separada a la que
+agregarle batch. `POST /internal/appointments/batch-status` ya sirve ambos casos.
 
-### 3. Cierre deferred para Requests (equivalente al fix de Incidents)
+### 3. ~~Cierre deferred para Requests~~ — Resuelto por la unificación Appointment (2026-07)
 
-El `MonolithReconcilerJob` ya cierra incidents en SN cuando reconcilia un ticket
-en estado CLOSED. Falta aplicar la misma lógica para `Request`:
-- Al reconciliar un request con `status=CLOSED`, llamar `snService.closeRequestTicket()`
-  (o el equivalente para `sc_req_item` en el adapter)
+Ya no aplica, por la misma razón: `MonolithReconcilerJob` reconcilia el
+`ServiceNowTicketLink` de cualquier `Appointment` (sea `kind=ISSUE` o `kind=REQUEST`) con
+el mismo código — no hace falta un `closeRequestTicket()` separado.
 
 ---
 
@@ -196,9 +209,9 @@ Actualmente no hay métricas ni alertas para:
 ## Orden de ataque recomendado
 
 ```
-1. Decidir si updateTicket/closeIncident pasan por api-snowq-service
-2. Batch para Requests (si se necesita)
-3. Cierre deferred para Requests en ReconcilerJob
-4. Tests
+1. ~~Decidir si updateTicket/closeIncident pasan por api-snowq-service~~ — resuelto
+2. ~~Batch para Requests~~ — resuelto por la unificación Appointment (2026-07)
+3. ~~Cierre deferred para Requests en ReconcilerJob~~ — resuelto por la unificación Appointment (2026-07)
+4. Tests (renombrar Incident*→Appointment* en los nombres de test pendientes de escribir)
 5. Observabilidad
 ```

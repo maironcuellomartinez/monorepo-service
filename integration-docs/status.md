@@ -2,6 +2,8 @@
 
 Última actualización: 2026-03-28 (admin app ABAC completa; tests ABAC 50 tests; CRUD roles backend+frontend; UX mejoras; Fase 5 M2M replace pendiente)
 
+> **Nota 2026-07-31:** la sección "Monolith ↔ ServiceNow" fue corregida tras el remodelado `Incident`/`Request` → `Appointment` (rama `feature/appointment-domain-remodel`, 2026-07). `Incident`/`Request` ya no existen — todo pasa por `Appointment`; `servicenowId`/`servicenowNumber`/`snowq_correlation_id` se movieron a la entidad separada `ServiceNowTicketLink`; `user.principalName` se renombró a `user.upn`; `SnowSyncJob` fue **eliminado** (el monolito cierra el ticket SN directo, ya no polea estado). Ver `monolito-event-corner_v3/docs/documentation.md` e `infrastructure-diagram.md` para el detalle completo y actualizado.
+
 ---
 
 ## Monolith ↔ ServiceNow (via API Gateway → api-snowq-service)
@@ -10,16 +12,15 @@
 |------|--------|-------|
 | `ServiceNowProxyAdapter` (monolith → gateway) | ✅ | Llama a `API_GATEWAY_URL/outbound/servicenow` |
 | `ServiceNowOutboundController` (gateway) | ✅ | Proxy con `@InternalOnly`. Único egress hacia SN: llama directo a `api-snowq-service` vía `SNOWQ_URL` — `integration-service` ya no interviene en este flujo (refactor 2026-07-09) |
-| `ServiceNowIntegrationService.createIncidentTicket()` | ✅ | Resuelve grupo+category+caller_id |
-| `IncidentService` llama SN al crear incidente | ✅ | No-blocking si falla |
+| `ServiceNowIntegrationService.createTicket()` | ✅ | Resuelve grupo+category+caller_id. Reemplaza el viejo `createIncidentTicket()` — un único método sirve `incident` y `sc_req_item`/`sc_task` |
+| `AppointmentService` llama SN al crear la cita | ✅ | No-blocking si falla — async vía Outbox (`AppointmentServiceNowHandler`) |
 | Resolución de `assignment_group` via `CompanyIssueConfig` | ✅ | Cadena: config específica → default company (`SN_DEFAULT_COMPANY_ID`) → corner group. ADR-005 |
 | Campo SN `correlation_id` = serial del dispositivo | ✅ | Campo nativo SN para vincular ticket al activo físico (≠ header HTTP x-correlation-id) |
-| `caller_id` = UPN del usuario | ✅ | `user.principalName` |
-| Guardar `servicenowId` + `servicenowNumber` en Incident | ✅ | Se guarda solo si SN éxito |
-| Cierre de ticket SN al cerrar incidente | ✅ | `IncidentStatusChangedHandler` — escucha `INCIDENT_STATUS_CHANGED`; si `newStatus=CLOSED` llama `closeIncidentTicket()`. También maneja `INCIDENT_REOPENED` → state '2' en SN |
-| Reconciliación SN → monolith (polling) | ✅ | `SnowSyncJob` — cada 5 min consulta `queryIncidentState()` para incidentes activos con `servicenow_id`; si SN state=6/7 (Resolved/Closed) cierra en monolith |
+| `caller_id` = UPN del usuario | ✅ | `user.upn` (renombrado desde `principalName`, ahora único) |
+| Guardar `sys_id` + `number` del ticket SN | ✅ | Ya no son campos inline de la cita — viven en la entidad separada `ServiceNowTicketLink` (`servicenow_ticket_links`, `role='primary'`). Se guarda solo si SN éxito |
+| Cierre de ticket SN al cerrar la cita | ✅ | `AppointmentStatusChangedHandler` — escucha `APPOINTMENT_STATUS_CHANGED`; si `newStatus=CLOSED` llama `closeTicket()` y persiste `link.close()`. También maneja `APPOINTMENT_REOPENED` → state '2' en SN |
+| Reconciliación SN → monolith (polling) | ❌ eliminado | `SnowSyncJob` fue **eliminado** — el monolito ya nunca polea estado desde ServiceNow. Decisión de producto: el cierre siempre se dispara desde el monolito hacia SN (`AppointmentStatusChangedHandler`), nunca al revés |
 | `servicenow_groups` (catálogo de grupos) | ✅ | Tabla `servicenow_groups` + `TypeOrmServiceNowGroupRepository` + `ServiceNowGroupService`. CRUD en `GET/POST/PUT/DELETE /internal/servicenow-groups`. Seed incluido. Reemplaza la variable `servicenow_group_requests` del legacy |
-| `queryIncidentState` en cadena de proxy | ✅ | `IServiceNowClient.queryIncidentState()` → `ServiceNowProxyAdapter` → `GET /outbound/servicenow/incidents/:sysId/state` → `ServiceNowOutboundController` → `GET /snow-requests/immediate/incidents/:sysId` en api-snowq-service |
 
 ---
 
@@ -30,7 +31,7 @@
 | `CompanyIssueConfig` persistencia (tabla `company_issue_configs`) | ✅ | ADR-003 |
 | Eliminación de `client_name` en corners | ✅ | ADR-002 |
 | `AvailabilityService` filtra ventanas pasadas | ✅ | `windowStart <= new Date()` se omite |
-| `deviceId` en incidentes (resolución desde Minerva) | ✅ | `DeviceService.resolveDevice()` |
+| `deviceId` en citas (resolución desde Minerva) | ✅ | `DeviceService.resolveDevice()` |
 | `GET /internal/devices/user/:customerId` | ✅ | Dispositivos cacheados por usuario |
 | CRUD de `CompanyIssueConfig` (endpoints admin) | ✅ | `CompanyIssueConfigEntity` + `TypeOrmCompanyIssueConfigRepository` + `CompanyIssueConfigService`. CRUD en `GET/POST/PUT/DELETE /internal/company-issue-configs` |
 | `ServiceNowIntegrationService` usa `CompanyIssueConfig` | ✅ | `resolveAssignmentGroup()`: config específica → default company → corner group → warn |
@@ -167,7 +168,7 @@ Servicios a modificar:
 
 | Item | Estado | Notas |
 |------|--------|-------|
-| Recibe incidentes del monolith (via gateway) | ✅ | `/snow-requests/immediate/incidents` |
+| Recibe tickets del monolith (via gateway) — incidents y sc_req_item/sc_task | ✅ | `/snow-requests/immediate/incidents` (y equivalentes de service-catalog) |
 | Cola asíncrona con PQueue (concurrency=5) | ✅ | |
 | Circuit breaker + retry | ✅ | opossum |
 | DLQ (FAILED + /failed endpoints) | ✅ | |
@@ -212,8 +213,8 @@ El `OBSERVABILITY_SERVICE_NAME` token es opcional — por defecto usa `'app'`. P
 - [ ] Eliminar carpeta huérfana `apps/api-gateway/src/observability/` (movida a `libs/observability`)
 - [ ] Eliminar archivo huérfano `apps/api-gateway/src/outbound/servicenow/auth/servicenow-token.service.ts`
 - [ ] Variables de entorno documentadas y configuradas en todos los servicios
-- [x] Cierre de incidentes en SN al cerrar en monolith ✅
-- [x] Reconciliación SN → monolith (`SnowSyncJob`) ✅
+- [x] Cierre de tickets SN al cerrar la cita en monolith ✅
+- [x] ~~Reconciliación SN → monolith (`SnowSyncJob`)~~ — eliminado 2026-07; el monolito cierra el ticket directo, no polea estado desde SN ✅
 - [x] `servicenow_groups` — catálogo de grupos SN ✅
 - [x] Admin CRUD de `CompanyIssueConfig` ✅
 - [x] Seed de `company_issue_configs` + `servicenow_groups` ✅

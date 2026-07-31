@@ -1,13 +1,20 @@
 # Workspace — Documentación General
 
+> ⚠️ **Doc parcialmente superada.** Describe una arquitectura previa al refactor de 2026-07-09
+> (ver nota en `PENDIENTES.md`) y al remodelado `Incident`/`Request` → `Appointment` de 2026-07.
+> La carpeta `broker-queue-lite` mencionada abajo **ya no existe en el workspace** — no se pudo
+> verificar aquí si fue removida del flujo o reemplazada por otra cosa; no se corrigió ese punto
+> por estar fuera del alcance de esta pasada (terminología de dominio). Fuente de verdad actual:
+> `monolito-event-corner_v3/docs/documentation.md` e `infrastructure-diagram.md`.
+
 ## Servicios
 
 | Servicio | Puerto | Descripción |
 |---|---|---|
-| `servicenow-clone-backend` | `3000` | Simulador de la API de ServiceNow |
+| `servicenow-clone-backend` | `3000`\* | Simulador de la API de ServiceNow — \*CLAUDE.md (raíz) documenta `3010`; no verificado cuál es el vigente |
 | `api-snowq-service` | `3090` | Gateway de procesamiento de solicitudes |
-| `broker-queue-lite` | `5000` (HTTP) / `8000` (TCP) | Broker de mensajería interno |
-| `monolito-event-corner_v3 / monolith` | — | Monolito de negocio (gestión de incidentes y requests) |
+| `broker-queue-lite` | `5000` (HTTP) / `8000` (TCP) | Broker de mensajería interno — **carpeta no encontrada en el workspace actual**, posiblemente removido |
+| `monolito-event-corner_v3 / monolith` | — | Monolito de negocio (gestión de citas — `Appointment`, unifica lo que antes eran `Incident`/`Request`) |
 | `monolito-event-corner_v3 / api-gateway` | — | Gateway HTTP del monolito |
 
 ## Documentación por servicio
@@ -29,8 +36,9 @@
 │   ┌──────────────┐        ┌──────────────────────────────┐  │
 │   │  api-gateway │        │          monolith            │  │
 │   │              │        │                              │  │
-│   │  (HTTP in)   │◄──────►│  Dominio: Incident, Request  │  │
-│   │  SnowqAdapter│        │  Outbox Pattern              │  │
+│   │  (HTTP in)   │◄──────►│  Dominio: Appointment,       │  │
+│   │  SnowqAdapter│        │  ServiceNowTicketLink        │  │
+│   │              │        │  Outbox Pattern              │  │
 │   └──────┬───────┘        │  OutboxWorker + Handlers     │  │
 │          │                │  ReconcilerJob               │  │
 └──────────┼────────────────┴──────────────────────────────┘──┘
@@ -102,7 +110,7 @@ Operación de negocio
   Despacha al InMemoryEventBus
         │
         ▼
-  IncidentServiceNowHandler / RequestServiceNowHandler
+  AppointmentServiceNowHandler
         │
         ▼
   api-gateway → api-snowq-service → servicenow-clone-backend
@@ -113,8 +121,8 @@ Operación de negocio
 | Columna | Descripción |
 |---|---|
 | `event_id` | UUID del evento |
-| `event_type` | `INCIDENT_CREATED`, `REQUEST_CREATED`, etc. |
-| `aggregate_id` | ID del incidente o request |
+| `event_type` | `APPOINTMENT_CREATED`, etc. (evento único — ya no hay REQUEST_CREATED separado) |
+| `aggregate_id` | ID de la cita |
 | `payload` | Datos del evento (JSON) |
 | `published_at` | Fecha de publicación exitosa; `NULL` = pendiente |
 | `created_at` | Fecha de creación |
@@ -352,6 +360,16 @@ OutboxWorker vuelve a intentar (hasta max_retries = 3)
 
 ## Capa 3 — ReconcilerJob: modo diferido
 
+> **Nota de nomenclatura (2026-07-31):** los ejemplos de código de esta sección y de
+> "Actualización de tickets en ServiceNow" / "Cambio de estado en lote" más abajo usan la firma
+> anterior a la unificación `Appointment` — `incident.updateServiceNowInfo()`,
+> `incident.setSnowqCorrelationId()`, `incident.changeStatus()`, `incident.reopen()`. Hoy esa
+> lógica de ticket vive en la entidad separada `ServiceNowTicketLink`
+> (`link.resolveImmediate(sysId, number)`, `link.markDeferred(correlationId)`,
+> `link.reconcileDelivered(sysId, number)`), y el agregado de dominio es `Appointment`
+> (`appointment.changeStatus()`, `appointment.reopen()`). El flujo conceptual descrito (fases,
+> backoff, reconciliación, batch) sigue siendo válido — solo cambiaron los nombres.
+
 ### ¿Cuándo se usa el modo diferido?
 
 Cuando el `SnowqAdapter` activa el fallback async (ServiceNow caído, broker OK),
@@ -427,7 +445,7 @@ SnowqAdapter retorna { deferred: true, correlationId: "550e8400-..." }
 
 ### Columnas agregadas a la DB para soportar este flujo
 
-**Tabla `incidents`** y **tabla `requests`**:
+**Tabla `servicenow_ticket_links`** (antes columnas inline en `incidents` y `requests`):
 
 | Columna nueva          | Tipo          | Descripción                                                                                                                 |
 |------------------------|---------------|-----------------------------------------------------------------------------------------------------------------------------|
@@ -435,19 +453,19 @@ SnowqAdapter retorna { deferred: true, correlationId: "550e8400-..." }
 
 ---
 
-## Ciclo de vida completo — ejemplo de un incidente
+## Ciclo de vida completo — ejemplo de una cita
 
 ```
-1. Usuario crea un incidente en la app
+1. Usuario crea una cita en la app
          │
          ▼
-2. Monolith persiste el incidente + evento INCIDENT_CREATED en outbox
+2. Monolith persiste la cita + evento APPOINTMENT_CREATED en outbox
    ┌──────────────────────────────────────────────────────┐
    │  incidents:      incident_id = "inc-001"             │
    │                  status = "CREATED"                  │
    │                  servicenow_id = NULL                │
    │                                                      │
-   │  outbox_events:  event_type = "INCIDENT_CREATED"     │
+   │  outbox_events:  event_type = "APPOINTMENT_CREATED"     │
    │                  published_at = NULL                 │
    │                  retry_count = 0                     │
    └──────────────────────────────────────────────────────┘
@@ -457,7 +475,7 @@ SnowqAdapter retorna { deferred: true, correlationId: "550e8400-..." }
 3. OutboxWorkerService lee el evento → despacha al InMemoryEventBus
          │
          ▼
-4. IncidentServiceNowHandler recibe el evento
+4. AppointmentServiceNowHandler recibe el evento
          │
          ▼
 5. Llama a ServiceNowIntegrationService → SnowqAdapter
@@ -511,30 +529,30 @@ SnowqAdapter retorna { deferred: true, correlationId: "550e8400-..." }
 
 ## Actualización de tickets en ServiceNow — cierre y reapertura
 
-### El handler `IncidentStatusChangedHandler`
+### El handler `AppointmentStatusChangedHandler`
 
-Cuando un técnico cambia el estado de un incidente (ya sea individualmente o en lote),
+Cuando un técnico cambia el estado de una cita (ya sea individualmente o en lote),
 el dominio publica uno de estos dos eventos:
 
 | Evento | Cuándo se publica | Quién lo publica |
 |---|---|---|
-| `INCIDENT_STATUS_CHANGED` | Al llamar `incident.changeStatus()` | Cualquier transición vía máquina de estados |
-| `INCIDENT_REOPENED` | Al llamar `incident.reopen()` | Solo transición `CLOSED → REOPENED` |
+| `APPOINTMENT_STATUS_CHANGED` | Al llamar `incident.changeStatus()` | Cualquier transición vía máquina de estados |
+| `APPOINTMENT_REOPENED` | Al llamar `incident.reopen()` | Solo transición `CLOSED → REOPENED` |
 
-El `IncidentStatusChangedHandler` escucha ambos eventos y decide qué llamar en ServiceNow:
+El `AppointmentStatusChangedHandler` escucha ambos eventos y decide qué llamar en ServiceNow:
 
 ```
-INCIDENT_STATUS_CHANGED (newStatus = CLOSED)
+APPOINTMENT_STATUS_CHANGED (newStatus = CLOSED)
           │
           ▼
 ¿tiene servicenow_id?
           │
-          ├─► SÍ → snService.closeIncidentTicket(sysId, closeCategory, closeNotes)
+          ├─► SÍ → snService.closeTicket(sysId, closeCategory, closeNotes)
           │
           └─► NO → skip (el ticket fue encolado en modo async — todavía sin sysId)
                         ← el sysId llegará por ReconcilerJob; el cierre en SN quedará pendiente
 
-INCIDENT_REOPENED
+APPOINTMENT_REOPENED
           │
           ▼
 ¿tiene servicenow_id?
@@ -549,9 +567,9 @@ INCIDENT_REOPENED
 > internos del monolito sin representación directa en ServiceNow. Solo el cierre y la
 > reapertura tienen impacto observable en el ticket de SN.
 
-### Máquina de estados del incidente
+### Máquina de estados de la cita
 
-Las transiciones válidas definen qué estados puede alcanzar un incidente y por qué camino:
+Las transiciones válidas definen qué estados puede alcanzar una cita y por qué camino:
 
 ```
               CREATED
@@ -590,19 +608,19 @@ CANCELED  (terminal, alcanzable desde CREATED)
 
 ### ¿Por qué un endpoint de lote?
 
-Un técnico que cierra un turno puede acumular 20 o más incidencias resueltas
+Un técnico que cierra un turno puede acumular 20 o más citas resueltas
 que necesitan ser registradas en ServiceNow. Llamar `PATCH /:id/status` veinte
 veces desde el cliente implica veinte round-trips HTTP y exposición a fallos
 parciales sin un resumen claro.
 
-El endpoint `POST /incidents/batch-status` acepta todas en una sola llamada,
+El endpoint `POST /api/appointments/batch-status` acepta todas en una sola llamada,
 procesa cada una independientemente y devuelve un resumen con exactamente qué
 sucedió con cada una.
 
 ### Endpoint
 
 ```
-POST /internal/incidents/batch-status
+POST /internal/appointments/batch-status
 ```
 
 **Body:**
@@ -610,26 +628,26 @@ POST /internal/incidents/batch-status
 {
   "items": [
     {
-      "incidentId": "uuid-1",
+      "appointmentId": "uuid-1",
       "targetStatus": "CLOSED",
       "technicianId": "tech-001",
       "closeCategory": "resolved",
       "comment": "Pantalla reemplazada correctamente"
     },
     {
-      "incidentId": "uuid-2",
+      "appointmentId": "uuid-2",
       "targetStatus": "CLOSED",
       "technicianId": "tech-001",
       "closeCategory": "resolved"
     },
     {
-      "incidentId": "uuid-3",
+      "appointmentId": "uuid-3",
       "targetStatus": "REOPENED",
       "technicianId": "tech-001",
       "reason": "Cliente reporta que el problema persiste"
     },
     {
-      "incidentId": "uuid-4",
+      "appointmentId": "uuid-4",
       "targetStatus": "IN_PROGRESS",
       "technicianId": "tech-002"
     }
@@ -641,8 +659,8 @@ POST /internal/incidents/batch-status
 
 | Campo | Tipo | Obligatorio | Descripción |
 |---|---|---|---|
-| `incidentId` | string (UUID) | Sí | ID del incidente |
-| `targetStatus` | `IncidentStatus` | Sí | Estado destino |
+| `appointmentId` | string (UUID) | Sí | ID de la cita |
+| `targetStatus` | `AppointmentStatus` | Sí | Estado destino |
 | `technicianId` | string | Sí | Técnico que ejecuta la acción |
 | `comment` | string | No | Nota libre (aparece en el evento y en SN) |
 | `closeCategory` | string | Condicional | Requerido si `targetStatus === CLOSED` |
@@ -656,7 +674,7 @@ POST /internal/incidents/batch-status
   "failed": 1,
   "errors": [
     {
-      "incidentId": "uuid-3",
+      "appointmentId": "uuid-3",
       "reason": "Invalid transition: IN_PROGRESS → REOPENED (must be CLOSED)"
     }
   ]
@@ -667,25 +685,25 @@ POST /internal/incidents/batch-status
 
 | Campo | Descripción |
 |---|---|
-| `processed` | Incidencias guardadas y evento publicado al Outbox — SN se notifica de forma asíncrona |
-| `skipped` | Incidencias que ya estaban en el estado destino — skip silencioso, sin error |
-| `failed` | Incidencias con error de datos que no se procesaron |
-| `errors` | Detalle de los fallos: `incidentId` + mensaje de por qué falló |
+| `processed` | Citas guardadas y evento publicado al Outbox — SN se notifica de forma asíncrona |
+| `skipped` | Citas que ya estaban en el estado destino — skip silencioso, sin error |
+| `failed` | Citas con error de datos que no se procesaron |
+| `errors` | Detalle de los fallos: `appointmentId` + mensaje de por qué falló |
 
 ### Reglas de procesamiento del lote
 
 **1. Duplicados en el mismo lote**
 
-Si el mismo `incidentId` aparece dos veces en el array, el segundo ítem se marca
+Si el mismo `appointmentId` aparece dos veces en el array, el segundo ítem se marca
 como `failed` de inmediato:
 
 ```json
-{ "incidentId": "uuid-1", "reason": "Duplicate incidentId in batch" }
+{ "appointmentId": "uuid-1", "reason": "Duplicate appointmentId in batch" }
 ```
 
 **2. Idempotencia**
 
-Si una incidencia ya está en el estado destino, se cuenta como `skipped`.
+Si una cita ya está en el estado destino, se cuenta como `skipped`.
 No se genera ningún error ni se emite ningún evento. Permite reintentar el
 mismo lote con seguridad si hubo un error de red en el cliente.
 
@@ -701,27 +719,27 @@ El servicio enruta internamente según el estado destino:
 ```
 targetStatus === REOPENED
     └─► incident.reopen(reason)
-          └─► publica INCIDENT_REOPENED
+          └─► publica APPOINTMENT_REOPENED
 
 targetStatus === cualquier otro
     └─► incident.changeStatus(targetStatus, technicianId, comment, closeCategory)
-          └─► publica INCIDENT_STATUS_CHANGED
+          └─► publica APPOINTMENT_STATUS_CHANGED
 ```
 
-### Flujo completo: 20 incidencias cerradas en lote
+### Flujo completo: 20 citas cerradas en lote
 
 ```
-Técnico hace POST /internal/incidents/batch-status
+Técnico hace POST /internal/appointments/batch-status
 con 20 items { targetStatus: "CLOSED", closeCategory: "resolved" }
          │
          ▼
-IncidentService.batchChangeStatus(items)
+AppointmentService.batchChangeStatus(items)
          │
          │  Para cada item (independientemente):
-         ├─► Cargar incidente desde DB
+         ├─► Cargar cita desde DB
          ├─► Validar transición (la máquina de estados filtra las inválidas)
          ├─► incident.changeStatus(CLOSED, technicianId, comment, closeCategory)
-         │       └─► publica INCIDENT_STATUS_CHANGED con { newStatus: CLOSED, closeCategory }
+         │       └─► publica APPOINTMENT_STATUS_CHANGED con { newStatus: CLOSED, closeCategory }
          ├─► incidentRepository.save(incident)
          └─► eventBus.publishMany(events)
                └─► OutboxEventBusAdapter: INSERT INTO outbox_events
@@ -729,21 +747,21 @@ IncidentService.batchChangeStatus(items)
          ▼  (respuesta inmediata)
 { processed: 19, skipped: 0, failed: 1, errors: [...] }
          │
-         │  (≤ 5 segundos después, por incidencia)
+         │  (≤ 5 segundos después, por cita)
          ▼
-OutboxWorkerService lee cada evento INCIDENT_STATUS_CHANGED
+OutboxWorkerService lee cada evento APPOINTMENT_STATUS_CHANGED
          │
          ▼
-InMemoryEventBus despacha a IncidentStatusChangedHandler
+InMemoryEventBus despacha a AppointmentStatusChangedHandler
          │
          ▼
-handler: newStatus === CLOSED → snService.closeIncidentTicket(sysId, closeCategory, closeNotes)
+handler: newStatus === CLOSED → snService.closeTicket(sysId, closeCategory, closeNotes)
          │
          ├─► CASO A: ServiceNow OK
          │         └─► Ticket cerrado en SN al instante
          │
          └─► CASO B: ServiceNow caído
-                   └─► closeIncidentTicket falla → handler re-lanza excepción
+                   └─► closeTicket falla → handler re-lanza excepción
                          └─► OutboxWorker: retry_count++, retry_after += backoff
                                └─► Reintento automático cuando SN vuelva
 ```
@@ -752,9 +770,9 @@ handler: newStatus === CLOSED → snService.closeIncidentTicket(sysId, closeCate
 
 | Aspecto | `PATCH /:id/status` | `POST /batch-status` |
 |---|---|---|
-| Incidencias por llamada | 1 | N (sin límite fijo) |
+| Citas por llamada | 1 | N (sin límite fijo) |
 | Tipos de transición | Cualquiera | Cualquiera (heterogéneo) |
-| Respuesta | Incidencia actualizada | Resumen `{ processed, skipped, failed, errors }` |
+| Respuesta | Cita actualizada | Resumen `{ processed, skipped, failed, errors }` |
 | Fallos parciales | N/A (una sola) | Reportados ítem a ítem — los demás continúan |
 | Duplicados en lote | N/A | Rechazados con error explicativo |
 | Idempotencia | Falla si ya en ese estado | Skip silencioso |
