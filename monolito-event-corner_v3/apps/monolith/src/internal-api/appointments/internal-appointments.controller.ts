@@ -319,10 +319,10 @@ export class InternalAppointmentsController {
     }
 
     @Patch(':id/cancel')
-    @ApiOperation({ summary: 'Cliente cancela su cita', description: 'El cliente cancela la cita. Solo válido desde estado CREATED. Transiciona a CANCELED.' })
+    @ApiOperation({ summary: 'Cliente cancela su cita', description: 'El cliente cancela la cita desde cualquier estado activo (no terminal). Transiciona a CANCELED.' })
     @ApiParam({ name: 'id', example: 'uuid-appointment' })
     @ApiResponse({ status: 200, description: 'Cita cancelada' })
-    @ApiResponse({ status: 400, description: 'Solo se pueden cancelar citas en estado CREATED' })
+    @ApiResponse({ status: 400, description: 'No se puede cancelar una cita en estado terminal (CLOSED, VALIDATED o CANCELED)' })
     async cancel(@Param('id') id: string, @Body() dto: CancelAppointmentDto) {
         return this.tracing.run('monolith.controller.appointments.cancel', { kind: 'server', attributes: { 'appointment.id': id } }, () => this._cancel(id, dto));
     }

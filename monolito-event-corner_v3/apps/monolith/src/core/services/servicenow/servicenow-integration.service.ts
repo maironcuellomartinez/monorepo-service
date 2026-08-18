@@ -430,12 +430,31 @@ export class ServiceNowIntegrationService {
     this.logger.log(
       `[close] type=${ticketLink.type} | sysId=${ticketLink.sysId.value} | closeCategory=${closeCategory}`,
     );
-    const result = await this.snClient.closeTicket(
-      ticketLink.type,
-      ticketLink.sysId.value,
-      closeCategory,
-      closeNotes,
-    );
+
+    if (ticketLink.type === 'sc_task') {
+      // Igual que en creación (ver CreatableTicketType más arriba): sc_task
+      // no tiene endpoint dedicado en api-snowq-service todavía.
+      return Result.err(new Error('sc_task tickets cannot be closed — no close endpoint exists for them yet'));
+    }
+
+    // Solo 'incident' tiene endpoint de cierre dedicado en api-snowq-service
+    // (POST .../close, con close_code + state hardcodeado por SN). 'sc_req_item'
+    // (RITM) no tiene ese endpoint, pero sí soporta el PATCH genérico de
+    // actualización — con eso alcanza para setear state+close_code/close_notes.
+    const result =
+      ticketLink.type === 'incident'
+        ? await this.snClient.closeTicket(
+            ticketLink.type,
+            ticketLink.sysId.value,
+            closeCategory,
+            closeNotes,
+          )
+        : await this.snClient.updateTicket(ticketLink.type, ticketLink.sysId.value, {
+            state: 'closed',
+            close_code: closeCategory,
+            close_notes: closeNotes ?? '',
+          });
+
     if (result.isFailure) {
       this.logger.error(
         `[close] falló para ${ticketLink.type}/${ticketLink.sysId.value}: ${result.unwrapError().message}`,

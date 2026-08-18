@@ -13,15 +13,17 @@ export const APPOINTMENT_CONSTANTS = {
     // reopen() y validate() tienen sus propios métodos en la entidad.
     // El técnico puede cerrar la cita como resuelta desde cualquier estado
     // activo (paridad legacy) — no hace falta pasar por PENDING_PICKUP/PENDING_REPLACEMENT_DELIVERY.
+    // CANCELED es alcanzable desde cualquier estado activo (ver ACTIVE_STATUSES
+    // en appointment-status.enum.ts) — CLOSED/VALIDATED/CANCELED siguen sin salida.
     VALID_STATUS_TRANSITIONS: {
         CREATED: ['DELIVERED', 'CANCELED'],
-        DELIVERED: ['IN_PROGRESS', 'CLOSED'],
-        IN_PROGRESS: ['PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART', 'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY', 'CLOSED'],
-        PENDING_THIRD_PARTY: ['IN_PROGRESS', 'CLOSED'],
-        PENDING_USER: ['IN_PROGRESS', 'CLOSED'],
-        PENDING_SPARE_PART: ['IN_PROGRESS', 'CLOSED'],
-        PENDING_PICKUP: ['IN_PROGRESS', 'CLOSED'],
-        PENDING_REPLACEMENT_DELIVERY: ['IN_PROGRESS', 'CLOSED'],
+        DELIVERED: ['IN_PROGRESS', 'CLOSED', 'CANCELED'],
+        IN_PROGRESS: ['PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART', 'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY', 'CLOSED', 'CANCELED'],
+        PENDING_THIRD_PARTY: ['IN_PROGRESS', 'CLOSED', 'CANCELED'],
+        PENDING_USER: ['IN_PROGRESS', 'CLOSED', 'CANCELED'],
+        PENDING_SPARE_PART: ['IN_PROGRESS', 'CLOSED', 'CANCELED'],
+        PENDING_PICKUP: ['IN_PROGRESS', 'CLOSED', 'CANCELED'],
+        PENDING_REPLACEMENT_DELIVERY: ['IN_PROGRESS', 'CLOSED', 'CANCELED'],
         CLOSED: [],     // sale via reopen() (→REOPENED) o validate() (→VALIDATED)
         // REOPENED = nuevo slot, el cliente debe entregar el dispositivo de nuevo
         // (igual que CREATED) — no salta directo a IN_PROGRESS.

@@ -18,7 +18,10 @@ import { AppointmentStatus } from '@app/core/domain/enums/appointment-status.enu
  * nunca usar 'resolved'/'closed' acá — los tickets creados desde el monolito
  * SIEMPRE se cierran desde el monolito (no hay polling de estado desde SN,
  * ver decisión de quitar SnowSyncJob); solo el cierre real (closeTicket, más
- * abajo, disparado por APPOINTMENT_STATUS_CHANGED → CLOSED) puede usarlos.
+ * abajo, disparado por APPOINTMENT_STATUS_CHANGED → CLOSED o → CANCELED)
+ * puede usarlos. CANCELED no está en este mapa: tiene su propia rama más
+ * abajo porque también cierra el ticket (o abandona el link si aún no tenía
+ * sysId), igual que CLOSED.
  */
 const APPOINTMENT_STATUS_TO_SN_STATE: Partial<Record<AppointmentStatus, string>> = {
     [AppointmentStatus.IN_PROGRESS]: 'in_progress',
@@ -27,7 +30,6 @@ const APPOINTMENT_STATUS_TO_SN_STATE: Partial<Record<AppointmentStatus, string>>
     [AppointmentStatus.PENDING_SPARE_PART]: 'on_hold',
     [AppointmentStatus.PENDING_PICKUP]: 'on_hold',
     [AppointmentStatus.PENDING_REPLACEMENT_DELIVERY]: 'on_hold',
-    [AppointmentStatus.CANCELED]: 'canceled',
 };
 
 /** Reemplaza IncidentStatusChangedHandler — mismo comportamiento, sobre el ticket link "primary" de la cita en vez del campo servicenow_id inline. */
@@ -88,7 +90,45 @@ export class AppointmentStatusChangedHandler implements OnModuleInit {
             return;
         }
 
-        // Resto de las transiciones (IN_PROGRESS, PENDING_*, CANCELED) — quedan
+        if (newStatus === AppointmentStatus.CANCELED) {
+            if (!link.sysId) {
+                // Ticket todavía no creado en SN (modo diferido con solo
+                // snowqCorrelationId, o aún ni encolado) — no hay nada que cerrar.
+                // Se abandona el link para que SnowOrphanRecoveryJob no lo
+                // re-encole sobre una cita que ya está CANCELED.
+                link.abandon();
+                const abandonResult = await this.ticketLinkRepo.update(link);
+                if (abandonResult.isFailure) {
+                    const msg = `[APPOINTMENT_STATUS_CHANGED] Appointment canceled but failed to abandon link ${link.id} for appointment ${event.aggregateId}: ${abandonResult.unwrapError().message}`;
+                    this.logger.error(msg);
+                    throw new Error(msg);
+                }
+                this.logger.log(`[APPOINTMENT_STATUS_CHANGED] Link ${link.id} abandonado (sin sysId todavía) para appointment cancelada ${event.aggregateId}`);
+                return;
+            }
+
+            const closeNotes: string | undefined = event.data?.comment;
+            const result = await this.snService.closeTicket(link, 'canceled', closeNotes);
+
+            if (result.isFailure) {
+                const msg = `[APPOINTMENT_STATUS_CHANGED] Failed to close SN ticket (cancel) for appointment ${event.aggregateId}: ${result.unwrapError().message}`;
+                this.logger.error(msg);
+                throw new Error(msg);
+            }
+
+            link.close();
+            const updateResult = await this.ticketLinkRepo.update(link);
+            if (updateResult.isFailure) {
+                const msg = `[APPOINTMENT_STATUS_CHANGED] SN ticket closed (cancel) but failed to persist link ${link.id} for appointment ${event.aggregateId}: ${updateResult.unwrapError().message}`;
+                this.logger.error(msg);
+                throw new Error(msg);
+            }
+
+            this.logger.log(`[APPOINTMENT_STATUS_CHANGED] SN ticket closed (cancel) for appointment ${event.aggregateId} — sysId: ${link.sysId?.value}`);
+            return;
+        }
+
+        // Resto de las transiciones (IN_PROGRESS, PENDING_*) — quedan
         // como auditoría en el ticket (work_notes) para poder consultarlas desde SN.
         const snState = APPOINTMENT_STATUS_TO_SN_STATE[newStatus];
         if (!snState) {

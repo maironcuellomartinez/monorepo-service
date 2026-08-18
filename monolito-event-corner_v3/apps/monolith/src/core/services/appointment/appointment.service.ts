@@ -39,7 +39,7 @@ import {
 } from '../../domain/value-objects/ids';
 import { DateRange } from '../../domain/value-objects/date-range.value';
 import { AppointmentOrigin } from '../../domain/enums/appointment-origin.enum';
-import { AppointmentStatus } from '../../domain/enums/appointment-status.enum';
+import { AppointmentStatus, ACTIVE_STATUSES } from '../../domain/enums/appointment-status.enum';
 import { appointmentKindFromIssueCategory } from '../../domain/enums/appointment-kind.enum';
 import { IssueTypeNotAllowedForCompanyError } from '@app/shared/errors/domain-error';
 import { DeviceHasActiveAppointmentError, AppointmentNotFoundError } from '../../domain/errors/appointment.errors';
@@ -1085,13 +1085,10 @@ export class AppointmentService implements IAppointmentService {
     if (!appointment)
       return Result.err(new AppointmentNotFoundError(command.appointmentId));
 
-    if (
-      appointment.status !== AppointmentStatus.CREATED &&
-      appointment.status !== AppointmentStatus.REOPENED
-    ) {
+    if (!ACTIVE_STATUSES.includes(appointment.status)) {
       return Result.err(
         new Error(
-          `Solo se pueden cancelar citas en estado CREATED o REOPENED. Estado actual: ${appointment.status}`,
+          `No se puede cancelar una cita en estado terminal. Estado actual: ${appointment.status}`,
         ),
       );
     }

@@ -74,7 +74,9 @@ function makeAppointment(overrides?: { status?: AppointmentStatus }): Appointmen
     if (target === AppointmentStatus.REOPENED) { appointment.reopen(); return appointment; }
     if (target === AppointmentStatus.VALIDATED) { appointment.validate(); return appointment; }
     if (target === AppointmentStatus.CANCELED) {
-        // CANCELED solo es posible desde CREATED; empezamos de cero
+        // CANCELED es alcanzable desde cualquier estado activo, pero el
+        // `appointment` de este helper ya está en CLOSED a esta altura
+        // (terminal, sin salida a CANCELED) — empezamos de cero desde CREATED.
         const fresh = Appointment.create(
             AppointmentId('apt-1'), IssueTypeId('issue-1'), AppointmentKind.ISSUE, CustomerId('cust-1'),
             COMPANY, CornerId('corner-1'), [SlotId('slot-1')], futureRange(), AppointmentOrigin.CUSTOMER_APP,
