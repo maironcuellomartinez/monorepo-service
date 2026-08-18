@@ -1,6 +1,5 @@
-import { Entity, Column, PrimaryColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { CompanyEntity } from './company.entity';
-import { IncidentEntity } from './incident.entity';
 
 /**
  * Entidad que representa un usuario en la tabla users.
@@ -57,10 +56,11 @@ export class UserEntity {
     domain: string | null;
 
     /**
-     * Nombre principal del usuario.
+     * User Principal Name (UPN) — identificador de tipo correo usado para login/identidad
+     * (Entra ID), distinto de `email` (contacto, uso futuro para notificaciones). Único.
      */
-    @Column({ type: 'varchar', length: 200, nullable: true })
-    principal_name: string | null;
+    @Column({ type: 'varchar', length: 200, nullable: true, unique: true })
+    upn: string | null;
 
     /**
      * Tokens de dispositivo del usuario.
@@ -92,10 +92,4 @@ export class UserEntity {
     @ManyToOne(() => CompanyEntity, company => company.users)
     @JoinColumn({ name: 'company_id' })
     company: CompanyEntity;
-
-    /**
-     * Relación muchos users a muchos incidents
-     */
-    @OneToMany(() => IncidentEntity, incident => incident.customer)
-    incidents: IncidentEntity[];
 }

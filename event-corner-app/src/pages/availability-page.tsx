@@ -19,6 +19,8 @@ import { es } from 'date-fns/locale'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
 import { useUserSearch } from '@/hooks/use-user-search'
+import { useCompanyTree } from '@/hooks/use-company-tree'
+import { useAuth } from '@/context/auth'
 import { Header } from '@/components/header'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -29,8 +31,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
-  cornersApi, availabilityApi, usersApi, issueTypesApi, incidentsApi, devicesApi,
-  Corner, AvailabilitySlot, MonolithUser, IssueType, Incident, DeviceSummary,
+  cornersApi, availabilityApi, usersApi, issueTypesApi, appointmentsApi, devicesApi,
+  Corner, AvailabilitySlot, MonolithUser, IssueType, Appointment, DeviceSummary,
 } from '@/lib/api'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -94,17 +96,24 @@ function SlotEventCard({ event }: { event: SlotEvent }) {
   )
 }
 
-// ─── Create Incident Modal ───────────────────────────────────────────────────
+// ─── Create Appointment Modal ───────────────────────────────────────────────────
 
-interface CreateIncidentModalProps {
+interface CreateAppointmentModalProps {
   open: boolean
   onClose: () => void
   corner: Corner | undefined
   slot: AvailabilitySlot
-  onCreated: (incident: Incident) => void
+  onCreated: (incident: Appointment) => void
 }
 
-function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateIncidentModalProps) {
+function CreateAppointmentModal({ open, onClose, corner, slot, onCreated }: CreateAppointmentModalProps) {
+  const { user } = useAuth()
+  // Un técnico puede reutilizar cualquier slot (disponible u ocupado) — la
+  // ventana igual trae sus slotIds reales aunque available sea false
+  // (availability.service.ts siempre los calcula, independientemente del
+  // estado). El booking exclusivo lo saltea el backend al resolver al
+  // técnico como creador.
+  const isTechnician = !!user?.technicianId
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [selectedUser, setSelectedUser] = useState<MonolithUser | null>(null)
@@ -127,6 +136,14 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
   const [bookingWindow, setBookingWindow] = useState<AvailabilitySlot | null>(null)
   const [loadingWindow, setLoadingWindow] = useState(false)
   const [windowError, setWindowError] = useState('')
+
+  // El grupo (treeId) de la compañía del cliente filtra los tipos elegibles —
+  // el backend rechaza (IssueTypeNotAllowedForCompanyError) cualquier tipo
+  // que no pertenezca al mismo grupo que la compañía.
+  const { treeId: companyTreeId } = useCompanyTree(selectedUser?.companyId)
+  const filteredIssueTypes = issueTypes.filter(
+    (it) => !companyTreeId || !it.treeId || it.treeId === companyTreeId,
+  )
 
   // Reset state + load issue types when modal opens
   useEffect(() => {
@@ -161,7 +178,7 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
       setWindowError('')
       return
     }
-    const issueType = issueTypes.find((it) => it.id === selectedIssueTypeId)
+    const issueType = filteredIssueTypes.find((it) => it.id === selectedIssueTypeId)
     const duration = issueType?.workMinutes ?? 60
     setLoadingWindow(true)
     setWindowError('')
@@ -170,8 +187,8 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
       .getSlots(corner.id, slot.startTime.slice(0, 10), duration)
       .then((windows) => {
         const w = windows.find((x) => x.startTime === slot.startTime)
-        if (w?.available) {
-          setBookingWindow(w)
+        if (w?.available || (isTechnician && w?.slotIds?.length)) {
+          setBookingWindow(w!)
         } else {
           setWindowError(
             `Este tipo de incidencia requiere ${duration} min y no hay disponibilidad consecutiva a partir de este horario. Elegí otro slot del calendario.`,
@@ -181,7 +198,7 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
       .catch(() => setWindowError('No se pudo verificar la disponibilidad para la duración del tipo elegido'))
       .finally(() => setLoadingWindow(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, selectedIssueTypeId])
+  }, [open, selectedIssueTypeId, isTechnician, companyTreeId])
 
   // Load devices when a customer is selected — sync from Minerva first, then read local DB
   const loadDevices = async (userId: string) => {
@@ -244,7 +261,7 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
     setSubmitting(true)
     setError('')
     try {
-      const incident = await incidentsApi.create({
+      const incident = await appointmentsApi.create({
         cornerId: corner!.id,
         issueTypeId: selectedIssueTypeId,
         customerId: selectedUser.id,
@@ -309,7 +326,7 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
               <Input
                 ref={searchRef}
                 className="pl-9"
-                placeholder="Buscar por nombre o email..."
+                placeholder="Buscar por nombre o upn..."
                 value={userSearch}
                 onChange={(e) => {
                   setUserSearch(e.target.value)
@@ -339,7 +356,7 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
                       <p className="font-medium truncate">
                         {u.fullName ?? (`${u.name ?? ''} ${u.lastName ?? ''}`.trim() || 'Sin nombre')}
                       </p>
-                      <p className="text-xs text-muted-foreground truncate">{u.email ?? u.principalName ?? '—'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{u.upn ?? u.email ?? '—'}</p>
                     </div>
                     {selectedUser?.id === u.id && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
                   </div>
@@ -448,7 +465,7 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
                   <SelectValue placeholder="Seleccionar tipo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {issueTypes.map((it) => (
+                  {filteredIssueTypes.map((it) => (
                     <SelectItem key={it.id} value={it.id}>
                       {it.name}{it.workMinutes ? ` (${it.workMinutes} min)` : ''}
                     </SelectItem>
@@ -501,12 +518,12 @@ function CreateIncidentModal({ open, onClose, corner, slot, onCreated }: CreateI
 // ─── Success Modal ────────────────────────────────────────────────────────────
 
 interface SuccessModalProps {
-  incident: Incident
+  incident: Appointment
   onClose: () => void
-  onViewIncident: () => void
+  onViewAppointment: () => void
 }
 
-function SuccessModal({ incident, onClose, onViewIncident }: SuccessModalProps) {
+function SuccessModal({ incident, onClose, onViewAppointment }: SuccessModalProps) {
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
@@ -542,7 +559,7 @@ function SuccessModal({ incident, onClose, onViewIncident }: SuccessModalProps) 
             <Button variant="outline" className="flex-1" onClick={onClose}>
               Cerrar
             </Button>
-            <Button className="flex-1" onClick={onViewIncident}>
+            <Button className="flex-1" onClick={onViewAppointment}>
               Ver incidencia
             </Button>
           </div>
@@ -556,6 +573,12 @@ function SuccessModal({ incident, onClose, onViewIncident }: SuccessModalProps) 
 
 export function AvailabilityPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  // Un técnico puede reutilizar cualquier slot (disponible u ocupado) para
+  // registrar walk-ins — el backend ya salta el booking exclusivo cuando
+  // resuelve al creador como técnico (ver appointment.service.ts). Acá solo
+  // hace falta permitir el click; nada nuevo que mandar en el POST.
+  const isTechnician = !!user?.technicianId
 
   const [corners, setCorners] = useState<Corner[]>([])
   const [selectedCornerId, setSelectedCornerId] = useState('')
@@ -568,7 +591,7 @@ export function AvailabilityPage() {
 
   // Modal state
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
-  const [createdIncident, setCreatedIncident] = useState<Incident | null>(null)
+  const [createdAppointment, setCreatedAppointment] = useState<Appointment | null>(null)
 
   // ── Load corners and auto-select first ──────────────────────────────
   useEffect(() => {
@@ -676,6 +699,9 @@ export function AvailabilityPage() {
     // verde: disponible · amarillo: retenido en un lote (hold, puede liberarse) · gris: reservado
     const bg = available ? '#16a34a' : held ? '#f59e0b' : '#9ca3af'
     const border = available ? '#15803d' : held ? '#d97706' : '#6b7280'
+    // Para técnico, todo slot es clickeable (multi-cita) — mismo color, pero
+    // sin la opacidad reducida para que se note que sigue siendo usable.
+    const clickable = available || isTechnician
     return {
       style: {
         backgroundColor: bg,
@@ -683,19 +709,19 @@ export function AvailabilityPage() {
         color: 'white',
         borderRadius: '6px',
         border: '1px solid',
-        cursor: available ? 'pointer' : 'default',
-        opacity: available ? 1 : held ? 0.9 : 0.65,
+        cursor: clickable ? 'pointer' : 'default',
+        opacity: clickable ? 1 : held ? 0.9 : 0.65,
       },
     }
-  }, [])
+  }, [isTechnician])
 
-  // ── Click on available slot → open modal ────────────────────────────────
+  // ── Click on slot → open modal (técnico: cualquier slot, empleado: solo disponible) ──
   const handleSelectEvent = useCallback(
     (event: SlotEvent) => {
-      if (!event.resource.available) return
+      if (!event.resource.available && !isTechnician) return
       setSelectedSlot(event.resource)
     },
-    [],
+    [isTechnician],
   )
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -706,7 +732,7 @@ export function AvailabilityPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Disponibilidad" />
+      <Header title="Disponibilidad" icon={CalendarIcon} />
 
       <div className="flex-1 p-6 flex flex-col gap-3 overflow-auto min-h-0">
 
@@ -825,28 +851,28 @@ export function AvailabilityPage() {
         )}
       </div>
 
-      {/* Create Incident Modal */}
+      {/* Create Appointment Modal */}
       {selectedSlot && (
-        <CreateIncidentModal
+        <CreateAppointmentModal
           open={!!selectedSlot}
           onClose={() => setSelectedSlot(null)}
           corner={corner}
           slot={selectedSlot}
           onCreated={(incident) => {
             setSelectedSlot(null)
-            setCreatedIncident(incident)
+            setCreatedAppointment(incident)
           }}
         />
       )}
 
       {/* Success Modal */}
-      {createdIncident && (
+      {createdAppointment && (
         <SuccessModal
-          incident={createdIncident}
-          onClose={() => setCreatedIncident(null)}
-          onViewIncident={() => {
-            setCreatedIncident(null)
-            navigate(`/incidents/${createdIncident.id}`)
+          incident={createdAppointment}
+          onClose={() => setCreatedAppointment(null)}
+          onViewAppointment={() => {
+            setCreatedAppointment(null)
+            navigate(`/appointments/${createdAppointment.id}`)
           }}
         />
       )}

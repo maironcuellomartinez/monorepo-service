@@ -21,20 +21,13 @@ import {
   Select, SelectContent, SelectItem,
   SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { issueTypesApi, treesApi, IssueType, IssueTypeTree } from '@/lib/api'
+import { issueTypesApi, treesApi, DEVICE_TYPES, IssueType, IssueTypeTree } from '@/lib/api'
 
 // ── Catalogs ─────────────────────────────────────────────────────────────────
 
-// Debe coincidir con el vocabulario de dispositivos reales (ver DEVICE_TYPES en devices-page.tsx) —
-// es el que usan los dispositivos sincronizados vía Minerva.
-const DEVICE_TYPES = ['LAPTOP', 'CELULAR', 'TABLET', 'DESKTOP', 'IMPRESORA', 'OTRO']
-
-const CATEGORIES: { value: string; label: string }[] = [
-  { value: 'ISSUE',                label: 'INCIDENT' },
-  { value: 'REQUEST',              label: 'REQUEST' },
-  { value: 'REQUEST-ONBOARDING',   label: 'REQUEST-ONBOARDING' },
-  { value: 'REQUEST-DECOMMISSION', label: 'REQUEST-DECOMISSION' },
-]
+// Nombres tal cual los usa legacy/backend (IssueCategory) — sin traducir,
+// para evitar confusión al correlacionar con sistemas que usan el valor crudo.
+const CATEGORIES = ['ISSUE', 'CREATE-DELIVERY', 'CREATE-COLLECTION', 'REQUEST-ONBOARDING', 'REQUEST-DECOMISSION']
 
 // ── Issue type form ───────────────────────────────────────────────────────────
 
@@ -242,8 +235,7 @@ export function IssueTypesPage() {
 
   // ── Filtered issue types ──────────────────────────────────────────────────
 
-  const categoryLabel = (value?: string) =>
-    CATEGORIES.find((c) => c.value === value)?.label ?? value ?? '—'
+  const categoryLabel = (value?: string) => value ?? '—'
 
   const filtered = search.trim()
     ? issueTypes.filter((it) => {
@@ -260,7 +252,7 @@ export function IssueTypesPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Tipos de Citas" onRefresh={refresh} loading={treeLoading || itLoading} />
+      <Header title="Tipos de Citas" icon={Tag} onRefresh={refresh} loading={treeLoading || itLoading} />
 
       {error && (
         <div className="px-6 pt-3">
@@ -550,7 +542,7 @@ export function IssueTypesPage() {
               <Select value={itForm.category ?? ''} onValueChange={(v) => setItField('category', v)}>
                 <SelectTrigger><SelectValue placeholder="Seleccionar categoría" /></SelectTrigger>
                 <SelectContent>
-                  {CATEGORIES.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                  {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

@@ -28,9 +28,10 @@ export class SyncUserDto {
     @IsOptional()
     full_name?: string;
 
+    /** User Principal Name (UPN) — identificador de tipo correo usado para login/identidad. */
     @IsString()
     @IsOptional()
-    principal_name?: string;
+    upn?: string;
 
     @IsString()
     @IsOptional()
@@ -78,7 +79,7 @@ export class InternalUsersController {
             lastName: user.lastName,
             fullName: user.fullName,
             companyId: user.companyId?.toString() ?? null,
-            principalName: user.principalName,
+            upn: user.upn,
             isActive: user.isActive,
         };
     }
@@ -104,7 +105,7 @@ export class InternalUsersController {
             lastName: user.lastName,
             fullName: user.fullName,
             companyId: user.companyId?.toString() ?? null,
-            principalName: user.principalName,
+            upn: user.upn,
             isActive: user.isActive,
         }));
     }
@@ -130,7 +131,7 @@ export class InternalUsersController {
             lastName: user.lastName,
             fullName: user.fullName,
             companyId: user.companyId?.toString() ?? null,
-            principalName: user.principalName,
+            upn: user.upn,
             isActive: user.isActive,
         }));
     }
@@ -234,11 +235,11 @@ export class InternalUsersController {
     }
 
     /**
-     * Búsqueda de usuarios activos por nombre, email o principal_name (UPN).
+     * Búsqueda de usuarios activos por nombre, email o upn.
      * Reemplaza el filtrado client-side sobre el listado completo.
      */
     @Get('search')
-    @ApiOperation({ summary: 'Buscar usuarios por nombre, email o principal_name' })
+    @ApiOperation({ summary: 'Buscar usuarios por nombre, email o upn' })
     @ApiQuery({ name: 'q', required: true, description: 'Término de búsqueda (mínimo 2 caracteres)' })
     @ApiQuery({ name: 'withCompany', required: false, description: 'Si es "true", solo devuelve usuarios con empresa asignada' })
     @ApiQuery({ name: 'activeOnly', required: false, description: 'Si es "false", incluye usuarios inactivos (default: true)' })
@@ -268,7 +269,7 @@ export class InternalUsersController {
             lastName: user.lastName,
             fullName: user.fullName,
             companyId: user.companyId?.toString() ?? null,
-            principalName: user.principalName,
+            upn: user.upn,
             isActive: user.isActive,
         }));
     }
@@ -299,7 +300,7 @@ export class InternalUsersController {
             lastName: user.lastName,
             fullName: user.fullName,
             companyId: user.companyId?.toString() ?? null,
-            principalName: user.principalName,
+            upn: user.upn,
             isActive: user.isActive,
         };
     }
@@ -330,7 +331,7 @@ export class InternalUsersController {
             lastName: user.lastName,
             fullName: user.fullName,
             companyId: user.companyId?.toString() ?? null,
-            principalName: user.principalName,
+            upn: user.upn,
             isActive: user.isActive,
         };
     }
@@ -361,7 +362,7 @@ export class InternalUsersController {
             lastName: user.lastName,
             fullName: user.fullName,
             companyId: user.companyId?.toString() ?? null,
-            principalName: user.principalName,
+            upn: user.upn,
             isActive: user.isActive,
         };
     }

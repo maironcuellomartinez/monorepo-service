@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useBatchDraft, UIBatchItem } from '@/hooks/use-batch-draft'
 import { useUserSearch } from '@/hooks/use-user-search'
+import { useCompanyTree } from '@/hooks/use-company-tree'
 import { useAuth } from '@/context/auth'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
@@ -129,7 +130,7 @@ function IncidentWizardDialog({
         name: initial.customerName,
         lastName: null,
         companyId: null,
-        principalName: null,
+        upn: null,
         externalId: null,
         isActive: true,
       } as MonolithUser)
@@ -166,9 +167,13 @@ function IncidentWizardDialog({
   // solo se muestran los tipos de ese device_type + los genéricos (deviceType null).
   // Con serial manual (o en edición, donde solo se conoce el serial) no se filtra.
   const deviceType = selectedDevice?.deviceType ?? null
-  const filteredIssueTypes = deviceType
-    ? issueTypes.filter((it) => !it.deviceType || it.deviceType === deviceType)
-    : issueTypes
+  // El grupo (treeId) de la compañía del cliente filtra a su vez los tipos —
+  // el backend rechaza (IssueTypeNotAllowedForCompanyError) cualquier tipo
+  // que no pertenezca al mismo grupo que la compañía.
+  const { treeId: companyTreeId } = useCompanyTree(selectedUser?.companyId)
+  const filteredIssueTypes = issueTypes
+    .filter((it) => !deviceType || !it.deviceType || it.deviceType === deviceType)
+    .filter((it) => !companyTreeId || !it.treeId || it.treeId === companyTreeId)
 
   useEffect(() => {
     if (selectedIssueTypeId && !filteredIssueTypes.some((it) => it.id === selectedIssueTypeId)) {
@@ -177,7 +182,7 @@ function IncidentWizardDialog({
       setSlots([])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceType])
+  }, [deviceType, companyTreeId])
 
   // La duración de la cita la define el tipo de incidencia elegido en el paso 4
   const duration = issueTypes.find((it) => it.id === selectedIssueTypeId)?.workMinutes ?? 60
@@ -215,8 +220,8 @@ function IncidentWizardDialog({
       cornerId: selectedCornerId,
       cornerName: corner?.name ?? selectedCornerId,
       customerId: selectedUser.id,
-      customerName: selectedUser.fullName ?? selectedUser.email ?? selectedUser.id,
-      customerEmail: selectedUser.email ?? '',
+      customerName: selectedUser.fullName ?? selectedUser.upn ?? selectedUser.email ?? selectedUser.id,
+      customerEmail: selectedUser.upn ?? selectedUser.email ?? '',
       deviceSerial: serial,
       issueTypeId: selectedIssueTypeId,
       issueTypeName: issueType?.name ?? selectedIssueTypeId,
@@ -303,7 +308,7 @@ function IncidentWizardDialog({
           <div className="space-y-4">
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Buscar por nombre o email..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)} />
+              <Input className="pl-9" placeholder="Buscar por nombre o upn..." value={userSearch} onChange={(e) => setUserSearch(e.target.value)} />
             </div>
             {loadingUsers ? (
               <p className="text-sm text-muted-foreground text-center py-6">Buscando...</p>
@@ -321,7 +326,7 @@ function IncidentWizardDialog({
                     <User className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate">{u.fullName ?? (`${u.name ?? ''} ${u.lastName ?? ''}`.trim() || 'Sin nombre')}</p>
-                      <p className="text-xs text-muted-foreground truncate">{u.email ?? u.principalName ?? '—'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{u.upn ?? u.email ?? '—'}</p>
                     </div>
                     {selectedUser?.id === u.id && <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />}
                   </div>
@@ -549,7 +554,7 @@ function IncidentWizardDialog({
           <div className="space-y-4">
             <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Corner:</span><span className="font-medium">{corner?.name ?? selectedCornerId}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Cliente:</span><span className="font-medium">{selectedUser?.fullName ?? selectedUser?.email ?? '—'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Cliente:</span><span className="font-medium">{selectedUser?.fullName ?? selectedUser?.upn ?? selectedUser?.email ?? '—'}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Dispositivo:</span><span className="font-mono text-xs">{selectedDevice?.serialNumber ?? manualSerial.trim()}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Tipo:</span><span className="font-medium">{issueType?.name ?? selectedIssueTypeId}</span></div>
               {selectedSlot && (
@@ -609,7 +614,7 @@ function StatusBadge({ item }: { item: UIBatchItem }) {
 export function BatchIncidentPage() {
   const navigate = useNavigate()
   const { user, can } = useAuth()
-  const canCreateIncident = can('incident:create')
+  const canCreateIncident = can('appointment:create')
   // Editar/quitar items del PROPIO borrador es parte de componer incidencias a
   // crear — no existe incident:update en el catálogo ABAC y gatear con él
   // dejaba la columna Acciones vacía para todos.
@@ -698,7 +703,7 @@ export function BatchIncidentPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full">
-        <Header title="Lote de Incidencias" />
+        <Header title="Lote de Citas" icon={PackagePlus} />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
@@ -708,7 +713,7 @@ export function BatchIncidentPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Lote de Incidencias" />
+      <Header title="Lote de Citas" icon={PackagePlus} />
 
       <div className="flex-1 p-6 overflow-auto space-y-4">
 

@@ -1,7 +1,7 @@
 # Modelo Entidad-Relación — Event Corner v3
 
-> Generado a partir de las entidades TypeORM del monolito y ABAC.
-> Última actualización: 2026-07-09
+> Generado a partir de las entidades TypeORM del monolito y ABAC. Para el mapa de **infraestructura y servicios** (no solo el modelo de datos) ver [`infrastructure-diagram.md`](./infrastructure-diagram.md).
+> Última actualización: 2026-07-30 — remodelado `Incident`+`Request` → `Appointment` unificado (ver `1785500000000-BackfillAppointmentsFromIncidentsAndRequests` / `1785600000000-DropIncidentsAndRequestsLegacyTables`).
 ```mermaid
 erDiagram
 
@@ -18,36 +18,30 @@ erDiagram
     corners ||--o{ lockers : "tiene"
     corners ||--o{ corner_schedules : "tiene"
     corners ||--o{ corner_slots : "genera"
-    corners ||--o{ incidents : "recibe"
+    corners ||--o{ appointments : "recibe"
 
     technicians ||--o{ schedule_assignments : "asignado a"
     corner_schedules ||--o{ schedule_assignments : "asigna"
 
     corner_schedules ||--o{ corner_slots : "genera"
 
-    issue_types ||--o{ incidents : "clasifica"
-    users ||--o{ incidents : "crea"
-    technicians |o--o{ incidents : "atiende"
-    devices |o--o{ incidents : "involucra"
-    lockers |o--o{ incidents : "asignado"
+    issue_types ||--o{ appointments : "clasifica"
+    users ||--o{ appointments : "es cliente de"
+    companies ||--o{ appointments : "factura a"
+    technicians |o--o{ appointments : "atiende (current_technician_id)"
+    technicians |o--o{ appointments : "creó (created_by_technician_id)"
+    devices |o--o{ appointments : "involucra"
+    lockers |o--o{ appointments : "asignado"
 
-    incidents ||--o{ incident_slots : "ocupa"
-    corner_slots ||--o{ incident_slots : "reservado por"
+    appointments ||--o{ appointment_slots : "ocupa"
+    corner_slots ||--o{ appointment_slots : "reservado por"
 
-    incidents ||--o{ incident_timeline : "registra"
-    technicians |o--o{ incident_timeline : "actúa en"
+    appointments ||--o{ appointment_timeline : "registra"
+    technicians |o--o{ appointment_timeline : "actúa en"
 
-    issue_types ||--o{ requests : "clasifica"
-    technicians ||--o{ requests : "gestiona"
-    users |o--o{ requests : "beneficiario de"
-    companies ||--o{ requests : "asociada"
-    devices |o--o{ requests : "involucra"
+    appointments ||--o{ servicenow_ticket_links : "vincula (1:N — RITM + sc_task de cumplimiento)"
 
-    requests ||--o{ request_activities : "registra"
-    technicians |o--o{ request_activities : "actúa en"
-
-    incidents ||--o{ outbox_events : "emite"
-    requests  ||--o{ outbox_events : "emite"
+    appointments ||--o{ outbox_events : "emite"
 ```
 
 
@@ -65,8 +59,8 @@ erDiagram
     issue_types {
         varchar issue_type_id PK "Identificador único del tipo"
         varchar tree_id FK "Árbol al que pertenece"
-        varchar name "Nombre visible del tipo de incidencia"
-        varchar category "INCIDENT | REQUEST — clase del ticket"
+        varchar name "Nombre visible del tipo de cita"
+        varchar category "ISSUE | CREATE-DELIVERY | CREATE-COLLECTION | REQUEST-ONBOARDING | REQUEST-DECOMISSION — decide el AppointmentKind (ISSUE→incident, REQUEST→sc_req_item/sc_task)"
         varchar device_type "nullable — tipo de dispositivo afectado"
         varchar servicenow_category "nullable — categoría en ServiceNow"
         varchar servicenow_close_category "nullable — categoría de cierre en SN"
@@ -103,7 +97,7 @@ erDiagram
         varchar email "nullable — Correo electrónico corporativo"
         varchar company_id FK "nullable — Empresa asignada manualmente por admin"
         varchar domain "nullable — Dominio corporativo del proveedor de identidad"
-        varchar principal_name "nullable — UPN del proveedor de identidad (user@domain)"
+        varchar upn "nullable — UPN del proveedor de identidad (user@domain)"
         text    device_tokens "nullable — Tokens push para notificaciones (JSON array)"
         boolean is_active "false = usuario desactivado"
         timestamp created_at "Fecha de creación"
@@ -120,7 +114,7 @@ erDiagram
         varchar snow_assignment_group "nullable — Grupo de asignación en SN"
         decimal latitude "nullable — Latitud geográfica"
         decimal longitude "nullable — Longitud geográfica"
-        boolean only_technicians "true = solo técnicos pueden iniciar incidencias"
+        boolean only_technicians "true = solo técnicos pueden iniciar citas"
         boolean is_active "false = corner fuera de servicio"
         timestamp created_at "Fecha de creación"
         timestamp updated_at "Fecha de última modificación"
@@ -202,24 +196,26 @@ erDiagram
         timestamp updated_at "Fecha de último cambio de estado"
     }
 
-    %% ── Incidencias ───────────────────────────────────────────────────────────
-    incidents {
-        varchar incident_id PK "Identificador único de la incidencia"
-        varchar issue_type_id FK "Tipo de incidencia seleccionado"
-        varchar customer_id FK "Usuario que creó la cita"
+    %% ── Citas (unifica Incident + Request post-remodelado 2026-07) ────────────
+    appointments {
+        varchar appointment_id PK "Identificador único de la cita"
+        int     issue_id "Correlativo incremental (issue_sequences) — referencia externa estable"
+        varchar kind "ISSUE | REQUEST — mecanismo técnico de creación de ticket SN, no la categoría de negocio"
+        varchar issue_type_id FK "Tipo de cita seleccionado"
+        varchar customer_id FK "Usuario que la cita atiende/afecta"
+        varchar company_id FK "Empresa del cliente"
         varchar corner_id FK "Corner donde se atiende"
-        varchar current_technician_id FK "nullable — Técnico actualmente asignado"
-        varchar device_id FK "nullable — Dispositivo involucrado en la reparación"
+        varchar device_id FK "nullable — Dispositivo involucrado"
         varchar locker_id FK "nullable — Locker asignado durante la atención"
-        varchar status "CREATED|DELIVERED|IN_PROGRESS|PENDING_THIRD_PARTY|PENDING_USER|PENDING_SPARE_PART|PENDING_PICKUP|PENDING_REPLACEMENT_DELIVERY|CLOSED|REOPENED|VALIDATED|CANCELED — ver incident-status.enum.ts"
+        varchar current_technician_id FK "nullable — Técnico actualmente asignado"
+        varchar created_by_technician_id FK "nullable — Técnico que creó la cita (walk-in / REQUEST)"
+        varchar status "CREATED|DELIVERED|IN_PROGRESS|PAUSED|PENDING_THIRD_PARTY|PENDING_USER|PENDING_SPARE_PART|PENDING_PICKUP|PENDING_REPLACEMENT_DELIVERY|CLOSED|REOPENED|VALIDATED|CANCELED"
         int     priority "Prioridad del ticket (1 = alta)"
-        varchar origin_channel "Canal de origen: CUSTOMER_APP | TECHNICIAN_APP"
+        varchar origin_channel "Canal de origen: CUSTOMER_APP | event-corner-app-batch | gateway | ..."
         timestamp scheduled_start "Inicio planificado de la cita"
         timestamp scheduled_end "Fin planificado de la cita"
         int     duration_minutes "Duración calculada a partir de los slots ocupados"
-        varchar servicenow_id "nullable — sys_id del ticket en ServiceNow"
-        varchar servicenow_number "nullable — número legible del ticket (INC0012345)"
-        varchar snowq_correlation_id "nullable — correlationId de api-snowq-service mientras el ticket está en modo async; se limpia al reconciliar"
+        timestamp estimated_close_at "nullable — fecha estimada de cierre, editable por el técnico"
         json    metadata "nullable — datos extra del canal de origen"
         text    comment "nullable — último comentario registrado por el técnico"
         timestamp closed_at "nullable — fecha y hora de cierre efectivo"
@@ -227,16 +223,16 @@ erDiagram
         timestamp updated_at "Fecha de última modificación"
     }
 
-    incident_slots {
+    appointment_slots {
         uuid    relation_id PK "Identificador de la relación"
-        varchar incident_id FK "Incidencia que ocupa el slot"
-        varchar slot_id FK "Slot reservado por la incidencia"
+        varchar appointment_id FK "Cita que ocupa el slot"
+        varchar slot_id FK "Slot reservado por la cita"
         timestamp created_at "Fecha en que se reservó el slot"
     }
 
-    incident_timeline {
+    appointment_timeline {
         uuid    activity_id PK "Identificador de la entrada del historial"
-        varchar incident_id FK "Incidencia a la que pertenece"
+        varchar appointment_id FK "Cita a la que pertenece"
         varchar technician_id FK "nullable — Técnico que ejecutó la acción"
         varchar action_type "Tipo de acción: TAKEN | RELEASED | STATUS_CHANGED | ..."
         varchar from_status "nullable — Estado anterior a la acción"
@@ -247,34 +243,20 @@ erDiagram
         timestamp created_at "Fecha y hora de la acción"
     }
 
-    %% ── Solicitudes (REQ) ─────────────────────────────────────────────────────
-    requests {
-        varchar request_id PK "Identificador único de la solicitud"
-        varchar issue_type_id FK "Tipo de solicitud (category = REQUEST)"
-        varchar technician_id FK "Técnico que gestiona la solicitud"
-        varchar customer_id FK "Usuario beneficiario de la solicitud"
-        varchar corner_id FK "Corner donde se realiza la gestión"
-        varchar company_id FK "Empresa del usuario (valida árbol y resuelve SN)"
-        varchar device_id FK "nullable — Dispositivo involucrado (feature pendiente)"
-        varchar status "CREATED | IN_PROGRESS | CLOSED | CANCELLED"
-        timestamp scheduled_at "Fecha y hora programada para la atención"
-        varchar servicenow_id "nullable — sys_id del ticket en ServiceNow"
-        varchar servicenow_number "nullable — número legible del ticket (REQ0012345)"
+    %% ── Vínculo con ServiceNow (reemplaza servicenow_id/servicenow_number inline) ──
+    servicenow_ticket_links {
+        varchar id PK "Identificador único del vínculo"
+        varchar appointment_id FK "Cita asociada"
+        varchar type "incident | sc_req_item | sc_task — tabla SN del ticket"
+        varchar role "primary | fulfillment — cuál es *el* ticket a pollear/cerrar"
+        varchar sys_id "nullable — sys_id del ticket en ServiceNow"
+        varchar number "nullable — número legible del ticket (INC0012345, REQ0012345)"
+        varchar parent_request_sys_id "nullable — solo para type=sc_task: sys_id de la RITM padre"
         varchar snowq_correlation_id "nullable — correlationId de api-snowq-service mientras el ticket está en modo async; se limpia al reconciliar"
-        text    notes "nullable — Notas del técnico sobre la solicitud"
-        timestamp closed_at "nullable — Fecha y hora de cierre"
+        varchar status "PENDING | ACTIVE | CLOSED | ABANDONED"
+        timestamp closed_at "nullable — fecha y hora de cierre"
         timestamp created_at "Fecha de creación"
         timestamp updated_at "Fecha de última modificación"
-    }
-
-    request_activities {
-        uuid    activity_id PK "Identificador de la actividad"
-        varchar request_id FK "Solicitud a la que pertenece"
-        varchar technician_id FK "nullable — Técnico que realizó la acción"
-        varchar from_status "nullable — Estado anterior"
-        varchar to_status "Estado resultante de la acción"
-        varchar comment "nullable — Comentario de la acción"
-        timestamp created_at "Fecha y hora de la acción"
     }
 
     %% ── Batch Drafts (lote de incidencias) ──────────────────────────────────
@@ -370,36 +352,29 @@ erDiagram
     corners ||--o{ lockers : "tiene"
     corners ||--o{ corner_schedules : "tiene"
     corners ||--o{ corner_slots : "genera"
-    corners ||--o{ incidents : "recibe"
+    corners ||--o{ appointments : "recibe"
 
     technicians ||--o{ schedule_assignments : "asignado a"
     corner_schedules ||--o{ schedule_assignments : "asigna"
 
     corner_schedules ||--o{ corner_slots : "genera"
 
-    issue_types ||--o{ incidents : "clasifica"
-    users ||--o{ incidents : "crea"
-    technicians |o--o{ incidents : "atiende"
-    devices |o--o{ incidents : "involucra"
-    lockers |o--o{ incidents : "asignado"
+    issue_types ||--o{ appointments : "clasifica"
+    users ||--o{ appointments : "es cliente de"
+    companies ||--o{ appointments : "factura a"
+    technicians |o--o{ appointments : "atiende / creó"
+    devices |o--o{ appointments : "involucra"
+    lockers |o--o{ appointments : "asignado"
 
-    incidents ||--o{ incident_slots : "ocupa"
-    corner_slots ||--o{ incident_slots : "reservado por"
+    appointments ||--o{ appointment_slots : "ocupa"
+    corner_slots ||--o{ appointment_slots : "reservado por"
 
-    incidents ||--o{ incident_timeline : "registra"
-    technicians |o--o{ incident_timeline : "actúa en"
+    appointments ||--o{ appointment_timeline : "registra"
+    technicians |o--o{ appointment_timeline : "actúa en"
 
-    issue_types ||--o{ requests : "clasifica"
-    technicians ||--o{ requests : "gestiona"
-    users |o--o{ requests : "beneficiario de"
-    companies ||--o{ requests : "asociada"
-    devices |o--o{ requests : "involucra"
+    appointments ||--o{ servicenow_ticket_links : "vincula"
 
-    requests ||--o{ request_activities : "registra"
-    technicians |o--o{ request_activities : "actúa en"
-
-    incidents ||--o{ outbox_events : "emite"
-    requests  ||--o{ outbox_events : "emite"
+    appointments ||--o{ outbox_events : "emite"
 
     incident_batch_drafts ||--o{ incident_batch_draft_items : "contiene"
 ```
@@ -408,19 +383,20 @@ erDiagram
 
 ## Notas de diseño
 
+> **Nota:** `incident_batch_drafts`/`incident_batch_draft_items` conservan el nombre `incident_*` por compatibilidad histórica de tabla, pero desde el remodelado retienen slots para citas de cualquier `kind` (ISSUE o REQUEST), no solo incidencias.
+
 ### Grupos de tablas
 
 | Grupo | Tablas | Descripción |
 |---|---|---|
-| **Catálogo** | `issue_type_trees`, `issue_types` | Árbol de tipos de incidencia compartido entre empresas |
+| **Catálogo** | `issue_type_trees`, `issue_types` | Árbol de tipos de cita compartido entre empresas |
 | **Organización** | `companies`, `users` | Empresas y sus empleados |
 | **Infraestructura** | `corners`, `technicians`, `lockers`, `devices` | Física del corner |
 | **Disponibilidad** | `corner_schedules`, `schedule_assignments`, `corner_slots` | Horarios y slots generados |
-| **Operaciones** | `incidents`, `incident_slots`, `incident_timeline` | Ciclo de vida de incidencias |
-| **Solicitudes** | `requests`, `request_activities` | Ciclo de vida de solicitudes REQ |
-| **Catálogo SN** | `servicenow_profiles`, `servicenow_groups`, `company_issue_configs` | Catálogo de configuraciones ServiceNow. Una empresa referencia su perfil vía `profile_id FK`. `company_issue_configs` resuelve el grupo de asignación SN por empresa+tipo de incidencia (primer eslabón de `resolveAssignmentGroup()`); `servicenow_groups` es el catálogo local de grupos SN conocidos (sin FK entrante — solo referencia informativa). |
+| **Citas** | `appointments`, `appointment_slots`, `appointment_timeline`, `servicenow_ticket_links` | Ciclo de vida unificado de citas (reemplaza `incidents`/`requests` — ver `1785600000000-DropIncidentsAndRequestsLegacyTables`) |
+| **Catálogo SN** | `servicenow_profiles`, `servicenow_groups`, `company_issue_configs` | Catálogo de configuraciones ServiceNow. Una empresa referencia su perfil vía `profile_id FK`. `company_issue_configs` resuelve el grupo de asignación SN por empresa+tipo de cita (primer eslabón de `resolveAssignmentGroup()`); `servicenow_groups` es el catálogo local de grupos SN conocidos (sin FK entrante — solo referencia informativa). |
 | **Outbox** | `outbox_events` | Persistencia transaccional de eventos de dominio. El worker los despacha al bus in-memory cada 5 s. |
-| **Batch Drafts** | `incident_batch_drafts`, `incident_batch_draft_items` | Lote de incidencias pendiente de confirmación. Los slots se retienen (HELD) 15 min mientras el técnico arma el lote. |
+| **Batch Drafts** | `incident_batch_drafts`, `incident_batch_draft_items` | Lote de citas pendiente de confirmación. Los slots se retienen (HELD) 15 min mientras el técnico arma el lote. |
 
 ### Descripción de tablas
 
@@ -428,26 +404,26 @@ erDiagram
 
 | Tabla | Descripción |
 |---|---|
-| `issue_type_trees` | Árbol de clasificación de incidencias/solicitudes. Cada empresa apunta a un árbol (`company.tree_id`). Permite tener catálogos distintos por cliente sin duplicar filas. |
-| `issue_types` | Tipo concreto de incidencia o solicitud dentro de un árbol. Define tiempos operativos (`work_minutes`, `spare_minutes`, `close_minutes`), la categoría SN para crear el ticket, si es visible para el usuario final y su posición en el menú. |
+| `issue_type_trees` | Árbol de clasificación de tipos de cita. Cada empresa apunta a un árbol (`company.tree_id`). Permite tener catálogos distintos por cliente sin duplicar filas. |
+| `issue_types` | Tipo concreto de cita dentro de un árbol. Define tiempos operativos (`work_minutes`, `spare_minutes`, `close_minutes`), la categoría SN para crear el ticket, si es visible para el usuario final y su posición en el menú. `category` decide el `AppointmentKind` de las citas creadas con este tipo. |
 
 #### Organización
 
 | Tabla | Descripción |
 |---|---|
 | `servicenow_profiles` | Catálogo de configuraciones de empresa en ServiceNow. Almacena el `snow_company_sys_id` (sys_id del tenant SN) y el nombre tal como aparece en SN. Varias empresas del mismo cliente corporativo pueden compartir un perfil. |
-| `company_issue_configs` | Configuración de grupo de asignación SN por empresa + tipo de incidencia (`Unique(company_id, issue_type_id)`). Es el **primer eslabón** de `resolveAssignmentGroup()`: si existe fila, su `servicenow_group` gana sobre el fallback de `SN_DEFAULT_COMPANY_ID` y sobre `corners.snow_assignment_group`. También permite `work_minutes_override` por empresa. |
+| `company_issue_configs` | Configuración de grupo de asignación SN por empresa + tipo de cita (`Unique(company_id, issue_type_id)`). Es el **primer eslabón** de `resolveAssignmentGroup()`: si existe fila, su `servicenow_group` gana sobre el fallback de `SN_DEFAULT_COMPANY_ID` y sobre `corners.snow_assignment_group`. También permite `work_minutes_override` por empresa. |
 | `servicenow_groups` | Catálogo local de grupos de asignación SN conocidos (`group_id` = sys_id en SN). Tabla de referencia sin FK entrante — no impone integridad referencial sobre `company_issue_configs.servicenow_group` ni `corners.snow_assignment_group`, solo documenta qué grupos existen. |
-| `companies` | Empresa registrada en el sistema, identificada de forma única por su `name`. Vincula al árbol de tipos de incidencia que le corresponde y, opcionalmente, al perfil SN. Sin perfil asignado, los tickets SN usan la empresa DEFAULT del `.env`. La asignación de usuarios a una empresa la realiza un administrador de forma manual. |
-| `users` | Empleado del sistema. Se crea o actualiza automáticamente al hacer login (sync con el proveedor de identidad). Guarda tokens push para notificaciones móviles (`device_tokens`). No está ligado a un corner fijo: puede ser atendido en cualquier punto. |
+| `companies` | Empresa registrada en el sistema, identificada de forma única por su `name`. Vincula al árbol de tipos que le corresponde y, opcionalmente, al perfil SN. Sin perfil asignado, los tickets SN usan la empresa DEFAULT del `.env`. La asignación de usuarios a una empresa la realiza un administrador de forma manual. |
+| `users` | Empleado del sistema. Se crea o actualiza automáticamente al hacer login (sync con el proveedor de identidad). `upn` (User Principal Name, único) es el identificador primario en el frontend; `email` queda como campo separado para notificaciones futuras. No está ligado a un corner fijo: puede ser atendido en cualquier punto. |
 
 #### Infraestructura física
 
 | Tabla | Descripción |
 |---|---|
-| `corners` | Punto de servicio físico donde se atienden incidencias. Tiene coordenadas geográficas, grupo de asignación en SN (`snow_assignment_group`) y el flag `only_technicians` para corners que solo aceptan atención iniciada por técnicos. |
-| `technicians` | Personal técnico adscrito a un corner. Puede estar asignado a horarios de atención (`schedule_assignments`) y es el responsable de tomar y resolver incidencias o gestionar solicitudes. |
-| `lockers` | Casillero físico de un corner. Tres estados: `AVAILABLE` (libre), `OCCUPIED` (asignado a una incidencia activa), `OUT_OF_SERVICE` (avería o mantenimiento). |
+| `corners` | Punto de servicio físico donde se atienden citas. Tiene coordenadas geográficas, grupo de asignación en SN (`snow_assignment_group`) y el flag `only_technicians` para corners que solo aceptan atención iniciada por técnicos. |
+| `technicians` | Personal técnico adscrito a un corner. Puede estar asignado a horarios de atención (`schedule_assignments`) y es el responsable de tomar y resolver citas. |
+| `lockers` | Casillero físico de un corner. Tres estados: `AVAILABLE` (libre), `OCCUPIED` (asignado a una cita activa), `OUT_OF_SERVICE` (avería o mantenimiento). |
 | `devices` | Dispositivo de hardware (PC, laptop, tablet, etc.) sincronizado desde el inventario externo. La asignación a un usuario es una referencia blanda (sin FK) para no acoplar su ciclo de vida al del usuario. |
 
 #### Disponibilidad
@@ -456,33 +432,29 @@ erDiagram
 |---|---|
 | `corner_schedules` | Plantilla semanal de atención de un corner. Define el día de la semana, horario de inicio/fin, duración de cada slot y el rango de fechas en que aplica (`valid_from` / `valid_until`). |
 | `schedule_assignments` | Tabla pivot que asigna qué técnicos cubren un horario específico. Permite rotar técnicos por franja sin tocar la plantilla del horario. |
-| `corner_slots` | Slot de tiempo concreto materializado a partir de un `corner_schedule`. Estados: `AVAILABLE` (libre), `HELD` (retenido temporalmente por un técnico mientras arma un batch draft, TTL 15 min), `BOOKED` (reservado permanentemente por una incidencia), `EXPIRED` (venció sin uso). |
+| `corner_slots` | Slot de tiempo concreto materializado a partir de un `corner_schedule`. Estados: `AVAILABLE` (libre), `HELD` (retenido temporalmente por un técnico mientras arma un batch draft, TTL 15 min), `BOOKED` (reservado permanentemente por una cita), `EXPIRED` (venció sin uso). |
 
-#### Operaciones — Incidencias
-
-| Tabla | Descripción |
-|---|---|
-| `incidents` | Incidencia de soporte creada por un usuario. Registra el técnico actual, el dispositivo y locker involucrados (opcionales), los tiempos planificados y el ticket SN asociado. Máquina de estados completa (12 valores + transiciones válidas) en `apps/monolith/src/core/domain/enums/incident-status.enum.ts` — fuente de verdad, no repetir aquí para evitar desincronización. |
-| `incident_slots` | Tabla pivot que relaciona una incidencia con los slots que ocupa. Una incidencia puede requerir múltiples slots contiguos si la atención supera la duración de un slot. |
-| `incident_timeline` | Historial inmutable de cambios de estado de una incidencia. Cada fila registra quién actuó, qué cambio de estado ocurrió, los tiempos reales de trabajo y un comentario opcional. Es la fuente de verdad para auditoría y métricas. |
-
-#### Solicitudes
+#### Citas (unifica Incident + Request)
 
 | Tabla | Descripción |
 |---|---|
-| `requests` | Solicitud de servicio (tipo REQ) iniciada por un técnico a nombre de un usuario. A diferencia de las incidencias, el técnico queda asignado desde la creación y no ocupa slots de disponibilidad. Se agenda con un `scheduled_at` libre. |
-| `request_activities` | Historial de cambios de estado de una solicitud, equivalente al `incident_timeline`. Registra técnico actuante, transición de estado y comentario. |
+| `appointments` | Agregado raíz único de cita — reemplaza `incidents` + `requests`. `kind` (`ISSUE`/`REQUEST`) decide el mecanismo técnico de creación de ticket SN, derivado de `issueType.category`. Registra el técnico actual y el que la creó, el dispositivo y locker involucrados (opcionales), y los tiempos planificados. Máquina de estados completa (13 valores + transiciones válidas) en `apps/monolith/src/core/domain/enums/appointment-status.enum.ts` — fuente de verdad, no repetir aquí para evitar desincronización. |
+| `appointment_slots` | Tabla pivot que relaciona una cita con los slots que ocupa. Una cita puede requerir múltiples slots contiguos si la atención supera la duración de un slot. |
+| `appointment_timeline` | Historial inmutable de cambios de estado de una cita. Cada fila registra quién actuó, qué cambio de estado ocurrió, los tiempos reales de trabajo y un comentario opcional. Es la fuente de verdad para auditoría y métricas. |
+| `servicenow_ticket_links` | Vínculo polimórfico 1:N entre una cita y sus tickets SN — reemplaza los campos `servicenow_id`/`servicenow_number` inline que tenían `incidents`/`requests`. Soporta una RITM (`sc_req_item`, `role=primary`) con uno o más `sc_task` de cumplimiento (`role=fulfillment`) para citas `REQUEST`. |
 
 ---
 
 ### Decisiones clave
 
 - **`users` no tiene `corner_id`** — un usuario puede ser atendido en cualquier corner, la FK era restrictiva e incorrecta respecto al legacy.
-- **`company.tree_id`** vincula la empresa al árbol de tipos. Al crear una incidencia se valida que `issueType.treeId === company.treeId`.
+- **`company.tree_id`** vincula la empresa al árbol de tipos. Al crear una cita se valida que `issueType.treeId === company.treeId`.
 - **`corners.snow_assignment_group`** — reemplaza el `servicenow_group` del legacy (JSON global hardcodeado) con un campo DB por corner.
 - **`company.profile_id FK → servicenow_profiles`** — el perfil centraliza el `snow_company_sys_id` y el nombre SN. `null` = usar `SN_DEFAULT_COMPANY_SYS_ID` del `.env`. Varias empresas pueden compartir el mismo perfil SN.
 - **`devices.assigned_user_id`** — referencia soft (no FK) para evitar acoplamiento con el ciclo de vida del usuario.
-- **`incident_slots`** — tabla pivot que relaciona qué slots ocupa una incidencia (una incidencia puede ocupar múltiples slots contiguos).
+- **`appointment_slots`** — tabla pivot que relaciona qué slots ocupa una cita (una cita puede ocupar múltiples slots contiguos).
+- **`servicenow_ticket_links` es 1:N respecto a `appointment`** (no 1:1 como el viejo campo inline) — necesario porque una cita `REQUEST` puede generar una RITM + una o más `sc_task` de cumplimiento.
+- **`users.upn`** — reemplaza a `principal_name` (migración `1785700000000-RenamePrincipalNameToUpnOnUsers`), con constraint `UNIQUE`. `email` queda como campo de contacto separado, reservado para notificaciones futuras.
 
 ---
 
@@ -521,9 +493,8 @@ graph LR
             subgraph PIN["Puertos de Entrada\n(ports/incoming/)"]
                 direction LR
                 PI1["IIssueTypeService"]
-                PI2["IIncidentService"]
+                PI2["IAppointmentService"]
                 PI3["IAvailabilityService"]
-                PI4["IRequestService"]
                 PI5["ICornerService\nIScheduleService"]
                 PI6["ITechnicianService\nILockerService\nIDeviceService"]
                 PI7["IUserService\nICompanyService"]
@@ -533,9 +504,8 @@ graph LR
             subgraph SVC["Servicios de Aplicación\n(services/)"]
                 direction LR
                 S1["IssueTypeService"]
-                S2["IncidentService"]
+                S2["AppointmentService"]
                 S3["AvailabilityService"]
-                S4["RequestService"]
                 S5["CornerService\nScheduleService"]
                 S6["TechnicianService\nLockerService\nDeviceService"]
                 S7["UserService\nCompanyService"]
@@ -544,14 +514,14 @@ graph LR
 
             subgraph DOM["Dominio\n(domain/)"]
                 direction LR
-                ENT["Entidades\nCorner · Incident · Request\nUser · Technician · Locker\nSlot · IssueType · Device"]
+                ENT["Entidades\nCorner · Appointment · ServiceNowTicketLink\nUser · Technician · Locker\nSlot · IssueType · Device"]
                 VO["Value Objects\nUserId · Email · DateRange"]
-                EV["Domain Events\nIncidentCreated · ..."]
+                EV["Domain Events\nAPPOINTMENT_STATUS_CHANGED · ..."]
             end
 
             subgraph POUT["Puertos de Salida\n(ports/outgoing/)"]
                 direction LR
-                POR["IIssueTypeRepository\nIIncidentRepository\nISlotRepository\nICornerRepository\nIScheduleRepository\nITechnicianRepository\nILockerRepository\nIDeviceRepository\nIUserRepository\nICompanyRepository\nIRequestRepository"]
+                POR["IIssueTypeRepository\nIAppointmentRepository\nIServiceNowTicketLinkRepository\nISlotRepository\nICornerRepository\nIScheduleRepository\nITechnicianRepository\nILockerRepository\nIDeviceRepository\nIUserRepository\nICompanyRepository"]
                 POI["IEventBus\nICache\nIServiceNowClient\nIExternalInventoryService"]
             end
         end
@@ -624,9 +594,8 @@ graph LR
 | Token | Tipo | Implementación |
 |---|---|---|
 | `ISSUE_TYPE_SERVICE` | `IIssueTypeService` | `IssueTypeService` |
-| `INCIDENT_SERVICE` | `IIncidentService` | `IncidentService` |
+| `APPOINTMENT_SERVICE` | `IAppointmentService` | `AppointmentService` |
 | `AVAILABILITY_SERVICE` | `IAvailabilityService` | `AvailabilityService` |
-| `REQUEST_SERVICE` | `IRequestService` | `RequestService` |
 | `CORNER_SERVICE` | `ICornerService` | `CornerService` |
 | `SCHEDULE_SERVICE` | `IScheduleService` | `ScheduleService` |
 | `TECHNICIAN_SERVICE` | `ITechnicianService` | `TechnicianService` |
@@ -635,7 +604,8 @@ graph LR
 | `USER_SERVICE` | `IUserService` | `UserService` |
 | `COMPANY_SERVICE` | `ICompanyService` | `CompanyService` |
 | `SERVICENOW_INTEGRATION_SERVICE` | `IServiceNowIntegrationService` | `ServiceNowIntegrationService` |
-| `INCIDENT_REPOSITORY` | `IIncidentRepository` | `TypeOrmIncidentRepository` |
+| `APPOINTMENT_REPOSITORY` | `IAppointmentRepository` | `TypeOrmAppointmentRepository` |
+| `SERVICENOW_TICKET_LINK_REPOSITORY` | `IServiceNowTicketLinkRepository` | `TypeOrmServiceNowTicketLinkRepository` |
 | `CORNER_REPOSITORY` | `ICornerRepository` | `TypeOrmCornerRepository` |
 | `SLOT_REPOSITORY` | `ISlotRepository` | `TypeOrmSlotRepository` |
 | `USER_REPOSITORY` | `IUserRepository` | `TypeOrmUserRepository` |
@@ -645,6 +615,8 @@ graph LR
 | `EXTERNAL_INVENTORY_SERVICE` | `IExternalInventoryService` | `InventoryHttpAdapter` |
 
 ---
+
+> ⚠️ **Pendiente de actualizar:** de acá en adelante (`Modelo UML del Dominio`, `Diagrama de flujo de implementación`, `Checklist por entidad nueva`) el documento todavía describe las clases `Incident`/`Request` separadas, `IncidentServiceNowHandler`/`IncidentStatusChangedHandler`, y menciona `SnowSyncJob` — que **ya no existe** (se decidió que el monolito cierra los tickets SN directamente en vez de pollear estado, ver comentario en `appointment-status-changed.handler.ts`). Los diagramas ER, de relaciones y el mapa de tokens DI de más arriba en este archivo, y todo `documentation.md`, ya están actualizados al modelo `Appointment` unificado. Reemplazar `Incident`/`Request` por `Appointment` + `ServiceNowTicketLink` en las clases UML de abajo (`AppointmentServiceNowHandler`, `AppointmentStatusChangedHandler`) es el trabajo que falta — pendiente por el volumen de diagramas mermaid involucrados.
 
 ## Modelo UML del Dominio
 
@@ -745,7 +717,7 @@ classDiagram
         +Email? email
         +CompanyId? companyId
         +string? domain
-        +string? principalName
+        +string? upn
         +string[] deviceTokens
         +bool isActive
         +syncFromProvider(data) void

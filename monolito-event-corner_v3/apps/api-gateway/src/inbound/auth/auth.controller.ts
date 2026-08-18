@@ -142,7 +142,7 @@ export class AuthController {
     const monolithUser = await this.monolith.post<{
       id: string;
       companyId: string | null;
-      principalName: string | null;
+      upn: string | null;
       isActive: boolean;
     }>('/users/sync', {
       external_id: user.sub,
@@ -151,7 +151,7 @@ export class AuthController {
       last_name: user.lastName,
       full_name:
         `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || undefined,
-      principal_name: user.email,
+      upn: user.email,
     });
 
     // Bloquear acceso si el usuario fue desactivado en el monolito
@@ -200,7 +200,7 @@ export class AuthController {
       // Monolith fields
       monolithUserId: monolithUser.id,
       companyId: monolithUser.companyId,
-      principalName: monolithUser.principalName,
+      upn: monolithUser.upn,
       isActive: monolithUser.isActive,
       // Technician field (null si no es técnico o aún no tiene corner asignado)
       technicianId,

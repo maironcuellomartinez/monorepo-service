@@ -1,17 +1,19 @@
 // core/services/servicenow/servicenow-integration.service.spec.ts
 import { ServiceNowIntegrationService } from './servicenow-integration.service';
 import { Result } from '@app/result';
-import { Incident } from '../../domain/entities/incident.entity';
+import { Appointment } from '../../domain/entities/appointment.entity';
 import { IssueType } from '../../domain/entities/issue-type.entity';
 import { Corner } from '../../domain/entities/corner.entity';
 import { Company } from '../../domain/entities/company.entity';
 import {
-  IncidentId,
+  AppointmentId,
   IssueTypeId,
   CustomerId,
   CornerId,
   CompanyId,
 } from '@app/shared/types/branded-ids';
+import { AppointmentKind } from '../../domain/enums/appointment-kind.enum';
+import { ServiceNowTicketLink } from '../../domain/entities/servicenow-ticket-link.entity';
 import { TracingService } from '@app/observability';
 
 // Tracing: ejecuta el callback sin instrumentar (patrón usado en los otros specs).
@@ -49,17 +51,19 @@ function fakeCompany(): Company {
   return { id: CompanyId('comp-1'), profileId: null } as unknown as Company;
 }
 
-function fakeIncident(): Incident {
+function fakeAppointment(): Appointment {
   return {
-    id: IncidentId('inc-1'),
+    id: AppointmentId('apt-1'),
     issueId: 1526,
     issueTypeId: IssueTypeId('issue-1'),
     cornerId: CornerId('corner-1'),
     customerId: CustomerId('cust-1'),
+    companyId: CompanyId('comp-1'),
+    kind: AppointmentKind.ISSUE,
+    createdByTechnicianId: null,
+    metadata: {},
     scheduledRange: { start: new Date('2026-08-01T10:00:00.000Z') },
-    setSnowqCorrelationId: jest.fn(),
-    updateServiceNowInfo: jest.fn(),
-  } as unknown as Incident;
+  } as unknown as Appointment;
 }
 
 function buildService(overrides: {
@@ -89,7 +93,7 @@ function buildService(overrides: {
 }
 
 describe('ServiceNowIntegrationService — clasificación SN desde IssueType', () => {
-  it('createIncidentTicket envía urgency/impact/severity del IssueType', async () => {
+  it('createTicket(incident) envía urgency/impact/severity del IssueType', async () => {
     const createIncident = jest.fn().mockResolvedValue(
       Result.ok({
         sysId: '',
@@ -103,13 +107,16 @@ describe('ServiceNowIntegrationService — clasificación SN desde IssueType', (
       snClient: { createIncident },
     });
 
-    const result = await service.createIncidentTicket(
-      fakeIncident(),
+    const result = await service.createTicket(
+      fakeAppointment(),
+      'incident',
       fakeCompany(),
       'user@corp.com',
     );
 
     expect(result.isSuccess).toBe(true);
+    expect(result.unwrap().type).toBe('incident');
+    expect(result.unwrap().snowqCorrelationId).toBe('corr-1');
     expect(createIncident).toHaveBeenCalledTimes(1);
     expect(createIncident).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -121,7 +128,7 @@ describe('ServiceNowIntegrationService — clasificación SN desde IssueType', (
     );
   });
 
-  it('reQueueIncidentTicket (recuperación) también envía la clasificación', async () => {
+  it('reQueueTicket (recuperación) también envía la clasificación', async () => {
     const enqueueIncident = jest
       .fn()
       .mockResolvedValue(Result.ok({ correlationId: 'corr-2' }));
@@ -130,8 +137,17 @@ describe('ServiceNowIntegrationService — clasificación SN desde IssueType', (
       snClient: { enqueueIncident },
     });
 
-    const result = await service.reQueueIncidentTicket(
-      fakeIncident(),
+    const linkResult = ServiceNowTicketLink.createPending(
+      'link-1',
+      AppointmentId('apt-1'),
+      'incident',
+      'primary',
+    );
+    const link = linkResult.unwrap();
+
+    const result = await service.reQueueTicket(
+      fakeAppointment(),
+      link,
       fakeCompany(),
     );
 
@@ -146,7 +162,7 @@ describe('ServiceNowIntegrationService — clasificación SN desde IssueType', (
     );
   });
 
-  it('createIncidentTicket cae al UUID si issueId aún no fue asignado por la DB', async () => {
+  it('createTicket cae al UUID si issueId aún no fue asignado por la DB', async () => {
     const createIncident = jest.fn().mockResolvedValue(
       Result.ok({
         sysId: '',
@@ -160,16 +176,17 @@ describe('ServiceNowIntegrationService — clasificación SN desde IssueType', (
       snClient: { createIncident },
     });
 
-    const incidentWithoutIssueId = { ...fakeIncident(), issueId: null };
+    const appointmentWithoutIssueId = { ...fakeAppointment(), issueId: null };
 
-    const result = await service.createIncidentTicket(
-      incidentWithoutIssueId as unknown as Incident,
+    const result = await service.createTicket(
+      appointmentWithoutIssueId as unknown as Appointment,
+      'incident',
       fakeCompany(),
     );
 
     expect(result.isSuccess).toBe(true);
     expect(createIncident).toHaveBeenCalledWith(
-      expect.objectContaining({ externalId: 'inc-1_corner_a' }),
+      expect.objectContaining({ externalId: 'apt-1_corner_a' }),
     );
   });
 });

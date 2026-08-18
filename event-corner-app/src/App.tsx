@@ -5,11 +5,9 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { Sidebar } from '@/components/sidebar'
 import { LoginPage } from '@/pages/login-page'
 import { DashboardPage } from '@/pages/dashboard-page'
-import { IncidentsPage } from '@/pages/incidents-page'
-import { CreateIncidentPage } from '@/pages/create-incident-page'
-import { IncidentDetailPage } from '@/pages/incident-detail-page'
-import { RequestsPage } from '@/pages/requests-page'
-import { CreateRequestPage } from '@/pages/create-request-page'
+import { AppointmentsPage } from '@/pages/appointments-page'
+import { CreateAppointmentPage } from '@/pages/create-appointment-page'
+import { AppointmentDetailPage } from '@/pages/appointment-detail-page'
 import { CornersPage } from '@/pages/corners-page'
 import { AvailabilityPage } from '@/pages/availability-page'
 import { IssueTypesPage } from '@/pages/issue-types-page'
@@ -111,18 +109,14 @@ function AppRoutes() {
       <Route element={<ProtectedLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/incidents" element={
-          <PermissionRoute permission="incident:list"><IncidentsPage /></PermissionRoute>
+        <Route path="/appointments" element={
+          <PermissionRoute permission="appointment:list"><AppointmentsPage /></PermissionRoute>
         } />
-        {/* /incidents/new and /incidents/:id are accessible to any authenticated user
-            (employees reach them from the Dashboard; technicians from the Incidents page) */}
-        <Route path="/incidents/new" element={<CreateIncidentPage />} />
-        <Route path="/incidents/batch" element={<BatchIncidentPage />} />
-        <Route path="/incidents/:id" element={<IncidentDetailPage />} />
-        <Route path="/requests" element={
-          <PermissionRoute permission="request:list"><RequestsPage /></PermissionRoute>
-        } />
-        <Route path="/requests/new" element={<CreateRequestPage />} />
+        {/* /appointments/new and /appointments/:id are accessible to any authenticated user
+            (employees reach them from the Dashboard; technicians from the Appointments page) */}
+        <Route path="/appointments/new" element={<CreateAppointmentPage />} />
+        <Route path="/appointments/batch" element={<BatchIncidentPage />} />
+        <Route path="/appointments/:id" element={<AppointmentDetailPage />} />
         {/* schedule:create: lo tienen admin y manager (corner CRUD queda gateado
             adentro de CornersPage con corner:create/update/delete, admin-only) */}
         <Route path="/corners" element={

@@ -17,7 +17,6 @@ import { HealthModule } from './health/health.module';
 import { EventHandlersModule } from './infrastructure/event-handlers/event-handlers.module';
 import { DeviceSyncJob } from './infrastructure/jobs/device-sync.job';
 import { MonolithReconcilerJob } from './infrastructure/jobs/monolith-reconciler.job';
-import { SnowSyncJob } from './infrastructure/jobs/snow-sync.job';
 import { SnowOrphanRecoveryJob } from './infrastructure/jobs/snow-orphan-recovery.job';
 import { SlotHoldCleanupJob } from './infrastructure/jobs/slot-hold-cleanup.job';
 import { SnCompanySyncJob } from './infrastructure/jobs/sn-company-sync.job';
@@ -30,14 +29,13 @@ import { CornerScheduleEntity } from './infrastructure/persistence/typeorm/entit
 import { ScheduleAssignmentEntity } from './infrastructure/persistence/typeorm/entities/schedule-assignment.entity';
 import { TechnicianEntity } from './infrastructure/persistence/typeorm/entities/technician.entity';
 import { CornerSlotEntity } from './infrastructure/persistence/typeorm/entities/corner-slot.entity';
-import { IncidentEntity } from './infrastructure/persistence/typeorm/entities/incident.entity';
-import { IncidentSlotEntity } from './infrastructure/persistence/typeorm/entities/incident-slot.entity';
-import { IncidentTimelineEntity } from './infrastructure/persistence/typeorm/entities/incident-timeline.entity';
 import { UserEntity } from './infrastructure/persistence/typeorm/entities/user.entity';
 import { DeviceEntity } from './infrastructure/persistence/typeorm/entities/device.entity';
 import { LockerEntity } from './infrastructure/persistence/typeorm/entities/locker.entity';
-import { RequestEntity } from './infrastructure/persistence/typeorm/entities/request.entity';
-import { RequestActivityEntity } from './infrastructure/persistence/typeorm/entities/request-activity.entity';
+import { AppointmentEntity } from './infrastructure/persistence/typeorm/entities/appointment.entity';
+import { AppointmentSlotEntity } from './infrastructure/persistence/typeorm/entities/appointment-slot.entity';
+import { AppointmentTimelineEntity } from './infrastructure/persistence/typeorm/entities/appointment-timeline.entity';
+import { ServiceNowTicketLinkEntity } from './infrastructure/persistence/typeorm/entities/servicenow-ticket-link.entity';
 import { OutboxEventEntity } from './infrastructure/persistence/typeorm/entities/outbox-event.entity';
 import { CompanyIssueConfigEntity } from './infrastructure/persistence/typeorm/entities/corner-issue-config.entity';
 import { ServiceNowGroupEntity } from './infrastructure/persistence/typeorm/entities/servicenow-group.entity';
@@ -53,6 +51,13 @@ import { AddSnClassificationToIssueTypes1784600000000 } from './infrastructure/p
 import { AddCodeToCorners1784700000000 } from './infrastructure/persistence/typeorm/migrations/1784700000000-AddCodeToCorners';
 import { AddIncrementalIssueIdToIncidentsAndRequests1784800000000 } from './infrastructure/persistence/typeorm/migrations/1784800000000-AddIncrementalIssueIdToIncidentsAndRequests';
 import { AddEstimatedCloseToIncidents1784900000000 } from './infrastructure/persistence/typeorm/migrations/1784900000000-AddEstimatedCloseToIncidents';
+import { WidenIncidentTimelineActionType1785000000000 } from './infrastructure/persistence/typeorm/migrations/1785000000000-WidenIncidentTimelineActionType';
+import { CreateAppointmentsTable1785100000000 } from './infrastructure/persistence/typeorm/migrations/1785100000000-CreateAppointmentsTable';
+import { CreateAppointmentSlotsTable1785200000000 } from './infrastructure/persistence/typeorm/migrations/1785200000000-CreateAppointmentSlotsTable';
+import { CreateServicenowTicketLinksTable1785300000000 } from './infrastructure/persistence/typeorm/migrations/1785300000000-CreateServicenowTicketLinksTable';
+import { CreateAppointmentTimelineTable1785400000000 } from './infrastructure/persistence/typeorm/migrations/1785400000000-CreateAppointmentTimelineTable';
+import { BackfillAppointmentsFromIncidentsAndRequests1785500000000 } from './infrastructure/persistence/typeorm/migrations/1785500000000-BackfillAppointmentsFromIncidentsAndRequests';
+import { DropIncidentsAndRequestsLegacyTables1785600000000 } from './infrastructure/persistence/typeorm/migrations/1785600000000-DropIncidentsAndRequestsLegacyTables';
 
 @Module({
   imports: [
@@ -73,14 +78,13 @@ import { AddEstimatedCloseToIncidents1784900000000 } from './infrastructure/pers
         ScheduleAssignmentEntity,
         TechnicianEntity,
         CornerSlotEntity,
-        IncidentEntity,
-        IncidentSlotEntity,
-        IncidentTimelineEntity,
         UserEntity,
         DeviceEntity,
         LockerEntity,
-        RequestEntity,
-        RequestActivityEntity,
+        AppointmentEntity,
+        AppointmentSlotEntity,
+        AppointmentTimelineEntity,
+        ServiceNowTicketLinkEntity,
         OutboxEventEntity,
         CompanyIssueConfigEntity,
         ServiceNowGroupEntity,
@@ -101,6 +105,13 @@ import { AddEstimatedCloseToIncidents1784900000000 } from './infrastructure/pers
         AddCodeToCorners1784700000000,
         AddIncrementalIssueIdToIncidentsAndRequests1784800000000,
         AddEstimatedCloseToIncidents1784900000000,
+        WidenIncidentTimelineActionType1785000000000,
+        CreateAppointmentsTable1785100000000,
+        CreateAppointmentSlotsTable1785200000000,
+        CreateServicenowTicketLinksTable1785300000000,
+        CreateAppointmentTimelineTable1785400000000,
+        BackfillAppointmentsFromIncidentsAndRequests1785500000000,
+        DropIncidentsAndRequestsLegacyTables1785600000000,
       ],
       migrationsRun: true,
     }),
@@ -130,7 +141,6 @@ import { AddEstimatedCloseToIncidents1784900000000 } from './infrastructure/pers
   providers: [
     DeviceSyncJob,
     MonolithReconcilerJob,
-    SnowSyncJob,
     SnowOrphanRecoveryJob,
     SlotHoldCleanupJob,
     SnCompanySyncJob,

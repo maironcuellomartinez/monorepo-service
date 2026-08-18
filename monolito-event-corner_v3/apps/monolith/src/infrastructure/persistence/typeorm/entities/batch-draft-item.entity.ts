@@ -1,4 +1,3 @@
-// infrastructure/persistence/typeorm/entities/batch-draft-item.entity.ts
 import { Entity, Column, PrimaryColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BatchDraftEntity } from './batch-draft.entity';
 

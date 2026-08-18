@@ -60,6 +60,42 @@ export class TypeOrmIssueTypeRepository implements IIssueTypeRepository {
     }
   }
 
+  async findAllByTree(treeId: string): Promise<Result<IssueType[]>> {
+    try {
+      const entities = await this.repo.find({
+        where: { tree_id: treeId },
+        order: { position: 'ASC' },
+      });
+      return Result.ok(entities.map((e) => this.toDomain(e)));
+    } catch (error) {
+      return Result.err(error);
+    }
+  }
+
+  async isReferenced(id: IssueTypeId | string): Promise<Result<boolean>> {
+    try {
+      const issueTypeId = id.toString();
+      const [{ count }] = await this.repo.manager.query(
+        `SELECT
+          (SELECT COUNT(*) FROM appointments WHERE issue_type_id = ?) +
+          (SELECT COUNT(*) FROM company_issue_configs WHERE issue_type_id = ?) AS count`,
+        [issueTypeId, issueTypeId],
+      );
+      return Result.ok(Number(count) > 0);
+    } catch (error) {
+      return Result.err(error);
+    }
+  }
+
+  async hardDelete(id: IssueTypeId | string): Promise<Result<void>> {
+    try {
+      await this.repo.delete({ issue_type_id: id.toString() });
+      return Result.ok(undefined);
+    } catch (error) {
+      return Result.err(error);
+    }
+  }
+
   async findAllActive(): Promise<Result<IssueType[]>> {
     try {
       const entities = await this.repo.find({

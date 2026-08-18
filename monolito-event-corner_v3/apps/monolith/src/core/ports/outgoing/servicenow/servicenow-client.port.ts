@@ -33,6 +33,14 @@ export interface ServiceNowRequestPayload {
   requested_for?: string;
   /** ID del request en el monolito — usado por snowq para deduplicar reintentos/re-encolados. */
   externalId?: string;
+  /**
+   * sys_id del catalog item de ServiceNow a ordenar (campo `cat_item` de
+   * sc_req_item). Necesario para que el workflow propio del catalog item
+   * dispare la generación de sc_task — sin esto, el RITM se crea "vacío",
+   * sin vincularse al flujo de fulfillment real. Extraído de
+   * `IssueType.servicenowCategory` vía `parseCatalogItemSysId()`.
+   */
+  cat_item?: string;
 }
 
 export interface ServiceNowTicketResult {
@@ -113,15 +121,18 @@ export interface IServiceNowClient {
     fields: Record<string, any>,
   ): Promise<Result<void>>;
 
-  /** Cierra un ticket de incident con categoría y notas de cierre */
-  closeIncident(
+  /**
+   * Cierra un ticket con categoría y notas de cierre. `table` es polimórfico
+   * (incident | sc_req_item | sc_task) — hoy solo `incident` está cableado de
+   * punta a punta contra api-snowq-service; los otros devuelven error hasta
+   * que ese servicio agregue las rutas correspondientes (ver Fase 4 del plan).
+   */
+  closeTicket(
+    table: string,
     sysId: string,
     closeCategory: string,
     closeNotes?: string,
   ): Promise<Result<void>>;
-
-  /** Consulta el estado actual de un incident en ServiceNow. Retorna el state code ('1','2','6','7') o null si no existe. */
-  queryIncidentState(sysId: string): Promise<Result<string | null>>;
 
   /** Lista el catálogo de empresas de ServiceNow (usado por SnCompanySyncJob) */
   getCompanies(): Promise<Result<Array<{ sys_id: string; name: string }>>>;

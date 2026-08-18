@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { IDeviceService } from '../../ports/incoming/device/device-service.port';
 import { IDeviceRepository } from '../../ports/outgoing/repositories/device-repository.port';
-import { IIncidentRepository } from '../../ports/outgoing/repositories/incident-repository.port';
+import { IAppointmentRepository } from '../../ports/outgoing/repositories/appointment-repository.port';
 import {
     IExternalInventoryService,
     InventoryDeviceData,
@@ -19,7 +19,7 @@ export class DeviceService implements IDeviceService {
     constructor(
         private readonly deviceRepo: IDeviceRepository,
         private readonly inventoryService: IExternalInventoryService,
-        private readonly incidentRepo: IIncidentRepository,
+        private readonly appointmentRepo: IAppointmentRepository,
         private readonly tracing: TracingService,
     ) { }
 
@@ -318,7 +318,7 @@ export class DeviceService implements IDeviceService {
      * El fallback on-demand (resolveDevice) cubre el resto cuando sea necesario.
      */
     async syncAllUsersDevices(): Promise<Result<{ usersProcessed: number; synced: number; errors: number }>> {
-        const idsResult = await this.incidentRepo.findActiveCustomerIds();
+        const idsResult = await this.appointmentRepo.findActiveCustomerIds();
         if (idsResult.isFailure) return Result.err(idsResult.unwrapError());
 
         const customers = idsResult.unwrap();

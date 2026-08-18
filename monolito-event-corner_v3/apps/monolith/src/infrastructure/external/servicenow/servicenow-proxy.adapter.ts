@@ -237,22 +237,24 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     }
   }
 
-  async closeIncident(
+  async closeTicket(
+    table: string,
     sysId: string,
     closeCategory: string,
     closeNotes = 'Cerrado desde Event Corner',
   ): Promise<Result<void>> {
     return this.tracing.run(
-      'monolith.proxy.sn.closeIncident',
+      'monolith.proxy.sn.closeTicket',
       {
         kind: 'client',
-        attributes: { 'sn.sysId': sysId, 'sn.closeCategory': closeCategory },
+        attributes: { 'sn.table': table, 'sn.sysId': sysId, 'sn.closeCategory': closeCategory },
       },
-      () => this._closeIncident(sysId, closeCategory, closeNotes),
+      () => this._closeTicket(table, sysId, closeCategory, closeNotes),
     );
   }
 
-  private async _closeIncident(
+  private async _closeTicket(
+    table: string,
     sysId: string,
     closeCategory: string,
     closeNotes: string,
@@ -260,41 +262,17 @@ export class ServiceNowProxyAdapter implements IServiceNowClient {
     try {
       await firstValueFrom(
         this.http.post(
-          `${this.baseUrl}/incidents/${sysId}/close`,
+          `${this.baseUrl}/${table}/${sysId}/close`,
           { closeCategory, closeNotes },
           { headers: this.headers },
         ),
       );
       return Result.ok(undefined);
     } catch (err) {
-      return this.handleError('closeIncident', err);
+      return this.handleError('closeTicket', err);
     }
   }
 
-  async queryIncidentState(sysId: string): Promise<Result<string | null>> {
-    return this.tracing.run(
-      'monolith.proxy.sn.queryIncidentState',
-      { kind: 'client', attributes: { 'sn.sysId': sysId } },
-      () => this._queryIncidentState(sysId),
-    );
-  }
-
-  private async _queryIncidentState(
-    sysId: string,
-  ): Promise<Result<string | null>> {
-    try {
-      const { data } = await firstValueFrom(
-        this.http.get<{ state: string }>(
-          `${this.baseUrl}/incidents/${sysId}/state`,
-          { headers: this.headers },
-        ),
-      );
-      return Result.ok(data?.state ?? null);
-    } catch (err: any) {
-      if (err?.response?.status === 404) return Result.ok(null);
-      return this.handleError('queryIncidentState', err);
-    }
-  }
 
   async getCompanies(): Promise<
     Result<Array<{ sys_id: string; name: string }>>

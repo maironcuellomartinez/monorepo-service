@@ -22,7 +22,7 @@ export function LoginPage() {
     setError('')
 
     if (!email.trim()) {
-      setError('El email es obligatorio')
+      setError('El upn es obligatorio')
       return
     }
     if (!oid.trim()) {
@@ -32,7 +32,7 @@ export function LoginPage() {
 
     setLoading(true)
     try {
-      await login(email.trim(), oid.trim(), name.trim() || email.trim())
+      await login(email.trim(), oid.trim(), name.trim() || email.trim().split('@')[0])
       navigate('/dashboard')
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? err?.message ?? 'Error al iniciar sesión'
@@ -72,7 +72,7 @@ export function LoginPage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">UPN</Label>
                 <Input
                   id="email"
                   type="email"

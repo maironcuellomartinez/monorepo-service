@@ -73,7 +73,7 @@ export class TypeOrmUserRepository implements IUserRepository {
         try {
             const like = `%${query}%`;
             const qb = this.repo.createQueryBuilder('u')
-                .where('(u.full_name LIKE :like OR u.email LIKE :like OR u.principal_name LIKE :like)', { like });
+                .where('(u.full_name LIKE :like OR u.email LIKE :like OR u.upn LIKE :like)', { like });
             if (activeOnly) {
                 qb.andWhere('u.is_active = :active', { active: true });
             }
@@ -204,7 +204,7 @@ export class TypeOrmUserRepository implements IUserRepository {
         entity.email = domain.email?.value || null;
         entity.company_id = domain.companyId?.toString() || null;
         entity.domain = domain.domain;
-        entity.principal_name = domain.principalName;
+        entity.upn = domain.upn;
         entity.device_tokens = domain.deviceTokens ? JSON.stringify(domain.deviceTokens) : null;
         entity.is_active = domain.isActive;
         entity.created_at = domain.createdAt;
@@ -233,7 +233,7 @@ export class TypeOrmUserRepository implements IUserRepository {
             email,
             entity.company_id ? CompanyId(entity.company_id as any) : null,
             entity.domain,
-            entity.principal_name,
+            entity.upn,
             deviceTokens,
             entity.is_active,
             entity.created_at,

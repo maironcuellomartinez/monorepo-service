@@ -6,6 +6,13 @@
 **Contexto:** empresa cliente con 5000+ empleados, alta concurrencia de técnicos creando/atendiendo incidencias.
 **Infraestructura:** sin Redis — cache local in-process + MySQL.
 
+> **Nota 2026-07-31:** plan histórico — describe el código tal como existía en 2026-04-19.
+> `incident.service.createIncident()` y `POST /api/incidents` mencionados abajo se renombraron
+> a `appointmentService.createAppointment()` y `POST /api/appointments` tras el remodelado
+> `Incident`/`Request` → `Appointment` (2026-07). El comportamiento descrito (holds HELD→BOOKED,
+> `bookManyAtomic`) sigue vigente — ver `monolito-event-corner_v3/docs/batch-drafts.md` (fuente
+> de verdad actualizada).
+
 ---
 
 ## 1. Contexto

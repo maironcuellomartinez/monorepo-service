@@ -4,7 +4,7 @@ import {
   MapPin, Tag, AlertCircle, ClipboardList, Plus, Info, Monitor,
   RefreshCw, Calendar, ChevronRight, Clock, CheckCircle2,
   ArrowRight, ArrowLeft, Zap, XCircle, RotateCcw, ThumbsUp,
-  Wrench, Inbox, MessageSquare, History, Send, LogIn,
+  Wrench, Inbox, MessageSquare, History, Send, LogIn, LayoutDashboard,
 } from 'lucide-react'
 import { Header } from '@/components/header'
 import { SlotPicker } from '@/components/slot-picker'
@@ -21,35 +21,35 @@ import {
 } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import {
-  cornersApi, issueTypesApi, availabilityApi, incidentsApi, devicesApi, requestsApi,
-  Corner, IssueType, AvailabilitySlot, Incident, IncidentStatus, DeviceSummary, ServiceRequest,
-  IncidentTimelineEntry,
+  cornersApi, issueTypesApi, availabilityApi, appointmentsApi, devicesApi,
+  Corner, IssueType, AvailabilitySlot, Appointment, AppointmentStatus, DeviceSummary,
+  AppointmentTimelineEntry,
 } from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import { useAuth } from '@/context/auth'
-import { IncidentStatusBadge } from './incidents-page'
+import { AppointmentStatusBadge } from './appointments-page'
 
 // ── Statuses considered "active" ──────────────────────────────────────────
 
-const ACTIVE_STATUSES = new Set<IncidentStatus>([
+const ACTIVE_STATUSES = new Set<AppointmentStatus>([
   'CREATED', 'DELIVERED', 'IN_PROGRESS', 'PAUSED', 'REOPENED',
   'PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART',
   'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY',
 ])
 
-// ── Create Incident Modal ──────────────────────────────────────────────────
+// ── Create Appointment Modal ──────────────────────────────────────────────────
 // Steps: setup (corner + issue type) → schedule (slot picker / auto) → confirm
 
 type CreateStep = 'setup' | 'schedule' | 'confirm' | 'done'
 
-interface CreateIncidentModalProps {
+interface CreateAppointmentModalProps {
   device: DeviceSummary | null
   open: boolean
   onClose: () => void
-  onCreated: (incident: Incident) => void
+  onCreated: (incident: Appointment) => void
 }
 
-function CreateIncidentModal({ device, open, onClose, onCreated }: CreateIncidentModalProps) {
+function CreateAppointmentModal({ device, open, onClose, onCreated }: CreateAppointmentModalProps) {
   const { user } = useAuth()
 
   const [step, setStep] = useState<CreateStep>('setup')
@@ -69,7 +69,7 @@ function CreateIncidentModal({ device, open, onClose, onCreated }: CreateInciden
   const [loadingAuto, setLoadingAuto] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [createdIncident, setCreatedIncident] = useState<Incident | null>(null)
+  const [createdAppointment, setCreatedAppointment] = useState<Appointment | null>(null)
 
   // Reset and load on open
   useEffect(() => {
@@ -83,7 +83,7 @@ function CreateIncidentModal({ device, open, onClose, onCreated }: CreateInciden
     setNotes('')
     setSlots([])
     setError('')
-    setCreatedIncident(null)
+    setCreatedAppointment(null)
 
     setLoadingData(true)
     Promise.all([cornersApi.list(), issueTypesApi.list()])
@@ -149,7 +149,7 @@ function CreateIncidentModal({ device, open, onClose, onCreated }: CreateInciden
     setLoading(true)
     setError('')
     try {
-      const incident = await incidentsApi.create({
+      const incident = await appointmentsApi.create({
         cornerId,
         issueTypeId,
         customerId: user.monolithUserId,
@@ -160,11 +160,11 @@ function CreateIncidentModal({ device, open, onClose, onCreated }: CreateInciden
         notes: notes.trim() || undefined,
         device: { serialNumber: device.serialNumber },
       })
-      setCreatedIncident(incident)
+      setCreatedAppointment(incident)
       setStep('done')
       onCreated(incident)
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Error al crear la incidencia')
+      setError((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Error al crear la cita')
     } finally {
       setLoading(false)
     }
@@ -182,7 +182,7 @@ function CreateIncidentModal({ device, open, onClose, onCreated }: CreateInciden
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nueva Incidencia</DialogTitle>
+          <DialogTitle>Nueva Cita</DialogTitle>
           {device && (
             <DialogDescription className="font-mono text-xs">
               {deviceName} · {device.serialNumber}
@@ -243,7 +243,7 @@ function CreateIncidentModal({ device, open, onClose, onCreated }: CreateInciden
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Tipo de incidencia</Label>
+                  <Label>Tipo de cita</Label>
                   <Select value={issueTypeId} onValueChange={setIssueTypeId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar tipo..." />
@@ -420,7 +420,7 @@ function CreateIncidentModal({ device, open, onClose, onCreated }: CreateInciden
                 <ArrowLeft className="h-4 w-4" /> Atrás
               </Button>
               <Button onClick={handleSubmit} disabled={loading}>
-                {loading ? 'Creando...' : 'Crear incidencia'}
+                {loading ? 'Creando...' : 'Crear cita'}
                 <CheckCircle2 className="h-4 w-4" />
               </Button>
             </DialogFooter>
@@ -428,18 +428,18 @@ function CreateIncidentModal({ device, open, onClose, onCreated }: CreateInciden
         )}
 
         {/* ── Step: Done ─────────────────────────────────────────────────── */}
-        {step === 'done' && createdIncident && (
+        {step === 'done' && createdAppointment && (
           <div className="space-y-4 text-center py-2">
             <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
             <div>
-              <p className="font-semibold text-base">¡Incidencia creada!</p>
+              <p className="font-semibold text-base">¡Cita creada!</p>
               <p className="text-sm text-muted-foreground mt-1">
                 Tu solicitud fue registrada.
-                {createdIncident.snowqCorrelationId && ' El número ServiceNow se asignará en breve.'}
+                {createdAppointment.snowqCorrelationId && ' El número ServiceNow se asignará en breve.'}
               </p>
             </div>
-            {createdIncident.servicenowNumber && (
-              <Badge variant="outline" className="font-mono mx-auto">{createdIncident.servicenowNumber}</Badge>
+            {createdAppointment.servicenowNumber && (
+              <Badge variant="outline" className="font-mono mx-auto">{createdAppointment.servicenowNumber}</Badge>
             )}
             <DialogFooter className="sm:justify-center">
               <Button onClick={onClose}>Cerrar</Button>
@@ -451,16 +451,16 @@ function CreateIncidentModal({ device, open, onClose, onCreated }: CreateInciden
   )
 }
 
-// ── Incident Actions Modal ─────────────────────────────────────────────────
+// ── Appointment Actions Modal ─────────────────────────────────────────────────
 
-interface IncidentActionsModalProps {
-  incident: Incident | null
+interface AppointmentActionsModalProps {
+  incident: Appointment | null
   open: boolean
   onClose: () => void
-  onUpdated: (incident: Incident) => void
+  onUpdated: (incident: Appointment) => void
 }
 
-function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentActionsModalProps) {
+function AppointmentActionsModal({ incident, open, onClose, onUpdated }: AppointmentActionsModalProps) {
   const { user } = useAuth()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -483,13 +483,13 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
     setLoading(true)
     setError('')
     try {
-      let updated: Incident
+      let updated: Appointment
       if (action === 'cancel') {
-        updated = await incidentsApi.cancel(incident.id, user.monolithUserId, reason.trim() || undefined)
+        updated = await appointmentsApi.cancel(incident.id, user.monolithUserId, reason.trim() || undefined)
       } else if (action === 'validate') {
-        updated = await incidentsApi.validate(incident.id, user.monolithUserId)
+        updated = await appointmentsApi.validate(incident.id, user.monolithUserId)
       } else {
-        updated = await incidentsApi.reopen(incident.id, user.monolithUserId, { reason: reason.trim() || undefined })
+        updated = await appointmentsApi.reopen(incident.id, user.monolithUserId, { reason: reason.trim() || undefined })
       }
       onUpdated(updated)
     } catch (err: unknown) {
@@ -507,7 +507,7 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{incident.issueType?.name ?? 'Incidencia'}</DialogTitle>
+          <DialogTitle>{incident.issueType?.name ?? 'Cita'}</DialogTitle>
           {deviceLabel && (
             <DialogDescription className="font-mono text-xs">{deviceLabel}</DialogDescription>
           )}
@@ -517,7 +517,7 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
         <div className="bg-muted/50 rounded-lg p-3 space-y-2 text-sm">
           <div className="flex justify-between items-center gap-2">
             <span className="text-muted-foreground">Estado:</span>
-            <IncidentStatusBadge status={incident.status} />
+            <AppointmentStatusBadge status={incident.status} />
           </div>
           {incident.corner?.name && (
             <div className="flex justify-between gap-2">
@@ -556,7 +556,7 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
                 onClick={() => setAction('cancel')}
               >
                 <XCircle className="h-4 w-4" />
-                Cancelar incidencia
+                Cancelar cita
               </Button>
             )}
             {canValidate && (
@@ -576,7 +576,7 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
                 onClick={() => setAction('reopen')}
               >
                 <RotateCcw className="h-4 w-4" />
-                Reabrir incidencia
+                Reabrir cita
               </Button>
             )}
           </div>
@@ -586,14 +586,14 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
         {action && (
           <div className="space-y-3 border rounded-lg p-3">
             <p className="text-sm font-medium">
-              {action === 'cancel' && 'Cancelar incidencia'}
+              {action === 'cancel' && 'Cancelar cita'}
               {action === 'validate' && 'Confirmar resolución'}
-              {action === 'reopen' && 'Reabrir incidencia'}
+              {action === 'reopen' && 'Reabrir cita'}
             </p>
 
             {action === 'validate' && (
               <p className="text-sm text-muted-foreground">
-                Confirmás que el técnico resolvió el problema. La incidencia quedará como <strong>Validada</strong>.
+                Confirmás que el técnico resolvió el problema. La cita quedará como <strong>Validada</strong>.
               </p>
             )}
 
@@ -657,13 +657,16 @@ function IncidentActionsModal({ incident, open, onClose, onUpdated }: IncidentAc
   )
 }
 
-// ── Technician Incident Modal ──────────────────────────────────────────────
+// ── Technician Appointment Modal ──────────────────────────────────────────────
 // Transiciones válidas que puede ejecutar un técnico
 
 // El técnico puede cerrar como resuelta desde cualquier estado activo (paridad
 // legacy) — no hace falta pasar por PENDING_PICKUP/PENDING_REPLACEMENT_DELIVERY.
-const TECHNICIAN_TRANSITIONS: Partial<Record<IncidentStatus, IncidentStatus[]>> = {
-  CREATED:                    ['DELIVERED', 'CANCELED'],
+const TECHNICIAN_TRANSITIONS: Partial<Record<AppointmentStatus, AppointmentStatus[]>> = {
+  // IN_PROGRESS directo: el sistema registra el DELIVERED intermedio solo
+  // (ver appointment.entity.ts changeStatus()) — el técnico no tiene que
+  // pasar manualmente por "Entregado" si ya sabe que va a empezar a trabajar.
+  CREATED:                    ['DELIVERED', 'IN_PROGRESS', 'CANCELED'],
   DELIVERED:                  ['IN_PROGRESS', 'CLOSED'],
   IN_PROGRESS:                ['PENDING_THIRD_PARTY', 'PENDING_USER', 'PENDING_SPARE_PART', 'PENDING_PICKUP', 'PENDING_REPLACEMENT_DELIVERY', 'CLOSED'],
   PENDING_THIRD_PARTY:        ['IN_PROGRESS', 'CLOSED'],
@@ -677,7 +680,7 @@ const TECHNICIAN_TRANSITIONS: Partial<Record<IncidentStatus, IncidentStatus[]>> 
 }
 
 export const STATUS_LABELS: Record<string, string> = {
-  CREATED: 'Creada', DELIVERED: 'Entregada', IN_PROGRESS: 'En progreso',
+  CREATED: 'Creada', DELIVERED: 'Entregado', IN_PROGRESS: 'En progreso',
   PENDING_THIRD_PARTY: 'Pend. tercero', PENDING_USER: 'Pend. usuario',
   PENDING_SPARE_PART: 'Pend. repuesto', PENDING_PICKUP: 'Pend. recogida',
   PENDING_REPLACEMENT_DELIVERY: 'Pend. sustitución', CLOSED: 'Cerrada',
@@ -686,19 +689,19 @@ export const STATUS_LABELS: Record<string, string> = {
   STATUS_CHANGED: 'Estado cambiado',
   // Nombres reales de action_type que persiste saveEvents() (event.type del dominio,
   // sin normalizar contra el enum TimelineAction — ese enum quedó sin usar).
-  INCIDENT_CREATED: 'Creada',
-  INCIDENT_DELIVERED: 'Entregada',
-  INCIDENT_TAKEN: 'Tomada por técnico',
-  INCIDENT_RELEASED: 'Liberada por técnico',
-  INCIDENT_STATUS_CHANGED: 'Estado cambiado',
-  INCIDENT_VALIDATED: 'Validada',
-  INCIDENT_REOPENED: 'Reabierta',
-  INCIDENT_COMMENT_ADDED: 'Comentario añadido',
-  INCIDENT_RESCHEDULED: 'Reprogramada',
-  INCIDENT_ESTIMATED_CLOSE_CHANGED: 'Cierre estimado actualizado',
-  INCIDENT_LOCKER_ASSIGNED: 'Locker asignado',
-  INCIDENT_LOCKER_RELEASED: 'Locker liberado',
-  INCIDENT_SERVICENOW_UPDATED: 'Ticket ServiceNow actualizado',
+  APPOINTMENT_CREATED: 'Creada',
+  APPOINTMENT_DELIVERED: 'Entregado',
+  APPOINTMENT_TAKEN: 'Tomada por técnico',
+  APPOINTMENT_RELEASED: 'Liberada por técnico',
+  APPOINTMENT_STATUS_CHANGED: 'Estado cambiado',
+  APPOINTMENT_VALIDATED: 'Validada',
+  APPOINTMENT_REOPENED: 'Reabierta',
+  APPOINTMENT_COMMENT_ADDED: 'Comentario añadido',
+  APPOINTMENT_RESCHEDULED: 'Reprogramada',
+  APPOINTMENT_ESTIMATED_CLOSE_CHANGED: 'Cierre estimado actualizado',
+  APPOINTMENT_LOCKER_ASSIGNED: 'Locker asignado',
+  APPOINTMENT_LOCKER_RELEASED: 'Locker liberado',
+  APPOINTMENT_SERVICENOW_UPDATED: 'Ticket ServiceNow actualizado',
 }
 
 export const TIMELINE_ICON: Record<string, React.ElementType> = {
@@ -706,27 +709,27 @@ export const TIMELINE_ICON: Record<string, React.ElementType> = {
   ASSIGNED: LogIn,
   ACCEPTED: CheckCircle2,
   TECHNICIAN_CHANGED: RefreshCw,
-  INCIDENT_CREATED: Plus,
-  INCIDENT_DELIVERED: Inbox,
-  INCIDENT_TAKEN: LogIn,
-  INCIDENT_RELEASED: XCircle,
-  INCIDENT_STATUS_CHANGED: RefreshCw,
-  INCIDENT_VALIDATED: ThumbsUp,
-  INCIDENT_REOPENED: RotateCcw,
-  INCIDENT_COMMENT_ADDED: MessageSquare,
+  APPOINTMENT_CREATED: Plus,
+  APPOINTMENT_DELIVERED: Inbox,
+  APPOINTMENT_TAKEN: LogIn,
+  APPOINTMENT_RELEASED: XCircle,
+  APPOINTMENT_STATUS_CHANGED: RefreshCw,
+  APPOINTMENT_VALIDATED: ThumbsUp,
+  APPOINTMENT_REOPENED: RotateCcw,
+  APPOINTMENT_COMMENT_ADDED: MessageSquare,
 }
 
-interface TechnicianIncidentModalProps {
-  incident: Incident | null
+interface TechnicianAppointmentModalProps {
+  incident: Appointment | null
   open: boolean
   onClose: () => void
-  onUpdated: (incident: Incident) => void
+  onUpdated: (incident: Appointment) => void
   onReleased: () => void
 }
 
-function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onReleased }: TechnicianIncidentModalProps) {
+function TechnicianAppointmentModal({ incident, open, onClose, onUpdated, onReleased }: TechnicianAppointmentModalProps) {
   const { user } = useAuth()
-  const [timeline, setTimeline] = useState<IncidentTimelineEntry[]>([])
+  const [timeline, setTimeline] = useState<AppointmentTimelineEntry[]>([])
   const [loadingTimeline, setLoadingTimeline] = useState(false)
 
   // Status change
@@ -764,7 +767,7 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
     setEstimatedCloseValue(incident.estimatedCloseAt ? incident.estimatedCloseAt.slice(0, 10) : '')
     setEstimatedCloseError('')
     setLoadingTimeline(true)
-    incidentsApi.getTimeline(incident.id)
+    appointmentsApi.getTimeline(incident.id)
       .then(setTimeline)
       .catch(() => setTimeline([]))
       .finally(() => setLoadingTimeline(false))
@@ -776,7 +779,7 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
   const technicianId = user?.technicianId ?? undefined
 
   const refreshTimeline = async () => {
-    const tl = await incidentsApi.getTimeline(incident.id).catch(() => timeline)
+    const tl = await appointmentsApi.getTimeline(incident.id).catch(() => timeline)
     setTimeline(tl)
   }
 
@@ -784,19 +787,19 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
     if (!newStatus) return
     if (!technicianId) {
       // Antes: return silencioso — el boton parecia no hacer nada
-      setStatusError('Tu usuario no tiene perfil de técnico: no puede cambiar el estado de incidencias.')
+      setStatusError('Tu usuario no tiene perfil de técnico: no puede cambiar el estado de citas.')
       return
     }
     setLoadingStatus(true)
     setStatusError('')
     try {
-      await incidentsApi.changeStatus(incident.id, {
+      await appointmentsApi.changeStatus(incident.id, {
         technicianId,
-        newStatus: newStatus as IncidentStatus,
+        newStatus: newStatus as AppointmentStatus,
         comment: statusComment.trim() || undefined,
       })
-      // Recargar la incidencia completa con relaciones desde el servidor
-      const fresh = await incidentsApi.getById(incident.id)
+      // Recargar la cita completa con relaciones desde el servidor
+      const fresh = await appointmentsApi.getById(incident.id)
       await refreshTimeline()
       setNewStatus('')
       setStatusComment('')
@@ -813,11 +816,11 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
     setLoadingStatus(true)
     setStatusError('')
     try {
-      await incidentsApi.release(incident.id, technicianId)
+      await appointmentsApi.release(incident.id, technicianId)
       onClose()
       onReleased()
     } catch (err: unknown) {
-      setStatusError((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Error al liberar la incidencia')
+      setStatusError((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Error al liberar la cita')
     } finally {
       setLoadingStatus(false)
     }
@@ -828,7 +831,7 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
     setLoadingNote(true)
     setNoteError('')
     try {
-      await incidentsApi.addNote(incident.id, { technicianId, comment: noteText.trim() })
+      await appointmentsApi.addNote(incident.id, { technicianId, comment: noteText.trim() })
       await refreshTimeline()
       setNoteText('')
     } catch (err: unknown) {
@@ -843,7 +846,7 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
     setLoadingReschedule(true)
     setRescheduleError('')
     try {
-      const updated = await incidentsApi.reschedule(incident.id, {
+      const updated = await appointmentsApi.reschedule(incident.id, {
         technicianId,
         slotIds: selectedRescheduleSlot.slotIds,
       })
@@ -863,7 +866,7 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
     setLoadingEstimatedClose(true)
     setEstimatedCloseError('')
     try {
-      const updated = await incidentsApi.setEstimatedClose(incident.id, {
+      const updated = await appointmentsApi.setEstimatedClose(incident.id, {
         technicianId,
         estimatedCloseAt: new Date(`${estimatedClose}T00:00:00`).toISOString(),
       })
@@ -888,8 +891,8 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Wrench className="h-4 w-4" />
-            {incident.issueType?.name ?? 'Incidencia'}
-            <IncidentStatusBadge status={incident.status} />
+            {incident.issueType?.name ?? 'Cita'}
+            <AppointmentStatusBadge status={incident.status} />
           </DialogTitle>
           {deviceLabel && (
             <DialogDescription className="font-mono text-xs">{deviceLabel}</DialogDescription>
@@ -1022,7 +1025,7 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
               <Textarea
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Escribe una nota sobre el avance de la incidencia..."
+                placeholder="Escribe una nota sobre el avance de la cita..."
                 rows={3}
                 maxLength={500}
               />
@@ -1105,7 +1108,7 @@ function TechnicianIncidentModal({ incident, open, onClose, onUpdated, onRelease
             disabled={loadingStatus}
           >
             <XCircle className="h-4 w-4 mr-1.5" />
-            Liberar incidencia
+            Liberar cita
           </Button>
           <Button variant="outline" onClick={onClose}>Cerrar</Button>
         </div>
@@ -1214,32 +1217,32 @@ function EmployeeDashboard() {
   const { user } = useAuth()
 
   const [devices, setDevices] = useState<DeviceSummary[]>([])
-  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [incidents, setAppointments] = useState<Appointment[]>([])
   const [loadingDevices, setLoadingDevices] = useState(true)
-  const [loadingIncidents, setLoadingIncidents] = useState(true)
+  const [loadingAppointments, setLoadingAppointments] = useState(true)
   const [error, setError] = useState('')
 
   // Modal state
   const [createDevice, setCreateDevice] = useState<DeviceSummary | null>(null)
-  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
 
   const loadAll = async () => {
     if (!user) return
     setError('')
     setLoadingDevices(true)
-    setLoadingIncidents(true)
+    setLoadingAppointments(true)
 
     const [incResult] = await Promise.allSettled([
-      incidentsApi.mine(),
+      appointmentsApi.mine(),
       devicesApi.syncForUser(user.monolithUserId).catch(() => null),
     ])
 
     if (incResult.status === 'fulfilled') {
-      setIncidents(incResult.value.data)
+      setAppointments(incResult.value.data)
     } else {
-      setError('No se pudieron cargar las incidencias')
+      setError('No se pudieron cargar las citas')
     }
-    setLoadingIncidents(false)
+    setLoadingAppointments(false)
 
     try {
       const devData = await devicesApi.listByUser(user.monolithUserId)
@@ -1252,13 +1255,13 @@ function EmployeeDashboard() {
 
   useEffect(() => { loadAll() }, [user?.monolithUserId])
 
-  const deviceIdsWithActiveIncident = new Set(
+  const deviceIdsWithActiveAppointment = new Set(
     incidents
       .filter((i) => ACTIVE_STATUSES.has(i.status) && i.deviceId)
       .map((i) => i.deviceId as string),
   )
 
-  const activeIncidents = incidents
+  const activeAppointments = incidents
     .filter((i) => ACTIVE_STATUSES.has(i.status))
     .sort((a, b) => {
       const ta = a.scheduledRange?.start ?? a.createdAt
@@ -1266,18 +1269,18 @@ function EmployeeDashboard() {
       return new Date(ta).getTime() - new Date(tb).getTime()
     })
 
-  const closedIncidents = incidents
+  const closedAppointments = incidents
     .filter((i) => !ACTIVE_STATUSES.has(i.status))
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 5)
 
-  const handleIncidentCreated = (incident: Incident) => {
-    setIncidents((prev) => [incident, ...prev])
+  const handleAppointmentCreated = (incident: Appointment) => {
+    setAppointments((prev) => [incident, ...prev])
   }
 
-  const handleIncidentUpdated = (updated: Incident) => {
-    setIncidents((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
-    setSelectedIncident(null)
+  const handleAppointmentUpdated = (updated: Appointment) => {
+    setAppointments((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
+    setSelectedAppointment(null)
   }
 
   return (
@@ -1293,7 +1296,7 @@ function EmployeeDashboard() {
         <Alert>
           <Info className="h-4 w-4" />
           <AlertDescription>
-            Tu cuenta no tiene empresa asignada. Contacta al administrador para poder crear incidencias.
+            Tu cuenta no tiene empresa asignada. Contacta al administrador para poder crear citas.
           </AlertDescription>
         </Alert>
       )}
@@ -1308,7 +1311,7 @@ function EmployeeDashboard() {
                   <Monitor className="h-4 w-4" />
                   Mis Dispositivos
                 </CardTitle>
-                <CardDescription>Seleccioná un dispositivo para crear una incidencia</CardDescription>
+                <CardDescription>Seleccioná un dispositivo para crear una cita</CardDescription>
               </div>
               <Button
                 variant="ghost"
@@ -1340,8 +1343,8 @@ function EmployeeDashboard() {
             ) : (
               <div className="space-y-3">
                 {devices.map((device) => {
-                  const hasActiveIncident = deviceIdsWithActiveIncident.has(device.id)
-                  const canCreate = !!user?.companyId && !hasActiveIncident
+                  const hasActiveAppointment = deviceIdsWithActiveAppointment.has(device.id)
+                  const canCreate = !!user?.companyId && !hasActiveAppointment
                   const deviceName = [device.brand, device.model].filter(Boolean).join(' ') || device.deviceType || 'Dispositivo'
 
                   return (
@@ -1355,9 +1358,9 @@ function EmployeeDashboard() {
                         <p className="text-xs font-mono text-muted-foreground">{device.serialNumber}</p>
                         <div className="flex items-center gap-2 mt-1">
                           <DeviceStatusBadge status={device.status} />
-                          {hasActiveIncident && (
+                          {hasActiveAppointment && (
                             <span className="text-xs text-amber-600 dark:text-amber-400">
-                              Incidencia activa
+                              Cita activa
                             </span>
                           )}
                         </div>
@@ -1368,15 +1371,15 @@ function EmployeeDashboard() {
                         disabled={!canCreate}
                         onClick={() => setCreateDevice(device)}
                         title={
-                          hasActiveIncident
-                            ? 'Ya tiene una incidencia activa'
+                          hasActiveAppointment
+                            ? 'Ya tiene una cita activa'
                             : !user?.companyId
                             ? 'Necesitás empresa asignada'
                             : undefined
                         }
                       >
                         <Plus className="h-3.5 w-3.5" />
-                        {hasActiveIncident ? 'En atención' : 'Incidencia'}
+                        {hasActiveAppointment ? 'En atención' : 'Cita'}
                       </Button>
                     </div>
                   )
@@ -1386,21 +1389,21 @@ function EmployeeDashboard() {
           </CardContent>
         </Card>
 
-        {/* ── Mis Incidencias ── */}
+        {/* ── Mis Citas ── */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Calendar className="h-4 w-4" />
-              Mis Incidencias
+              Mis Citas
             </CardTitle>
             <CardDescription>
-              {loadingIncidents
+              {loadingAppointments
                 ? '...'
-                : `${activeIncidents.length} activa(s) · ${incidents.length} total — clic para gestionar`}
+                : `${activeAppointments.length} activa(s) · ${incidents.length} total — clic para gestionar`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {loadingIncidents ? (
+            {loadingAppointments ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="h-14 bg-muted animate-pulse rounded" />
@@ -1409,35 +1412,35 @@ function EmployeeDashboard() {
             ) : incidents.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-center">
                 <ClipboardList className="h-8 w-8 text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">No tenés incidencias registradas</p>
+                <p className="text-sm text-muted-foreground">No tenés citas registradas</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {activeIncidents.length > 0 && (
+                {activeAppointments.length > 0 && (
                   <>
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
                       Activas
                     </p>
-                    {activeIncidents.map((inc) => (
-                      <IncidentRow
+                    {activeAppointments.map((inc) => (
+                      <AppointmentRow
                         key={inc.id}
                         incident={inc}
-                        onClick={() => setSelectedIncident(inc)}
+                        onClick={() => setSelectedAppointment(inc)}
                       />
                     ))}
                   </>
                 )}
 
-                {closedIncidents.length > 0 && (
+                {closedAppointments.length > 0 && (
                   <>
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mt-3 mb-1">
                       Recientes cerradas
                     </p>
-                    {closedIncidents.map((inc) => (
-                      <IncidentRow
+                    {closedAppointments.map((inc) => (
+                      <AppointmentRow
                         key={inc.id}
                         incident={inc}
-                        onClick={() => setSelectedIncident(inc)}
+                        onClick={() => setSelectedAppointment(inc)}
                       />
                     ))}
                   </>
@@ -1449,24 +1452,24 @@ function EmployeeDashboard() {
       </div>
 
       {/* Modals */}
-      <CreateIncidentModal
+      <CreateAppointmentModal
         device={createDevice}
         open={!!createDevice}
         onClose={() => setCreateDevice(null)}
-        onCreated={handleIncidentCreated}
+        onCreated={handleAppointmentCreated}
       />
 
-      <IncidentActionsModal
-        incident={selectedIncident}
-        open={!!selectedIncident}
-        onClose={() => setSelectedIncident(null)}
-        onUpdated={handleIncidentUpdated}
+      <AppointmentActionsModal
+        incident={selectedAppointment}
+        open={!!selectedAppointment}
+        onClose={() => setSelectedAppointment(null)}
+        onUpdated={handleAppointmentUpdated}
       />
     </div>
   )
 }
 
-function IncidentRow({ incident, onClick }: { incident: Incident; onClick: () => void }) {
+function AppointmentRow({ incident, onClick }: { incident: Appointment; onClick: () => void }) {
   const deviceLabel = incident.device
     ? ([incident.device.brand, incident.device.model].filter(Boolean).join(' ') || incident.device.serialNumber)
     : incident.deviceId
@@ -1488,7 +1491,7 @@ function IncidentRow({ incident, onClick }: { incident: Incident; onClick: () =>
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <IncidentStatusBadge status={incident.status} />
+          <AppointmentStatusBadge status={incident.status} />
           {incident.issueType?.name && (
             <span className="text-xs text-muted-foreground truncate">{incident.issueType.name}</span>
           )}
@@ -1573,29 +1576,20 @@ function AdminDashboard() {
           <StatCardItem label="Corners activos" value={activeCorners.length} icon={MapPin} description={`${corners.length} totales`} loading={loadingCorners} />
         )}
         {can('issue-type:list') && (
-          <StatCardItem label="Tipos de incidencia" value={activeIssueTypes.length} icon={Tag} description="configurados activos" loading={loadingIssueTypes} />
+          <StatCardItem label="Tipos de cita" value={activeIssueTypes.length} icon={Tag} description="configurados activos" loading={loadingIssueTypes} />
         )}
-        {can('incident:list') && (
-          <StatCardItem label="Incidencias" value="—" icon={AlertCircle} description="Filtra por corner para ver" loading={false} />
-        )}
-        {can('request:list') && (
-          <StatCardItem label="Requests" value="—" icon={ClipboardList} description="Filtrar por cliente" loading={false} />
+        {can('appointment:list') && (
+          <StatCardItem label="Citas" value="—" icon={AlertCircle} description="Filtra por corner para ver" loading={false} />
         )}
       </div>
 
       <div>
         <h3 className="text-base font-semibold mb-3">Acciones rápidas</h3>
         <div className="flex flex-wrap gap-3">
-          {can('incident:create') && (
-            <Button onClick={() => navigate('/incidents/new')}>
+          {can('appointment:create') && (
+            <Button onClick={() => navigate('/appointments/new')}>
               <Plus className="h-4 w-4" />
-              Nueva Incidencia
-            </Button>
-          )}
-          {can('request:create') && (
-            <Button variant="outline" onClick={() => navigate('/requests/new')}>
-              <Plus className="h-4 w-4" />
-              Nuevo Request
+              Nueva Cita
             </Button>
           )}
           {can('corner:manage-schedules') && (
@@ -1645,7 +1639,7 @@ function AdminDashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Tipos de incidencia</CardTitle>
+            <CardTitle className="text-base">Tipos de cita</CardTitle>
             <CardDescription>Catálogo configurado</CardDescription>
           </CardHeader>
           <CardContent>
@@ -1681,30 +1675,22 @@ function AdminDashboard() {
 
 // ── Technician dashboard ───────────────────────────────────────────────────
 
-const ACTIVE_REQUEST_STATUSES = new Set(['CREATED', 'IN_PROGRESS'])
-
 function TechnicianDashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [incidents, setIncidents] = useState<Incident[]>([])
-  const [requests, setRequests] = useState<ServiceRequest[]>([])
+  const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null)
 
   const load = async () => {
     if (!user?.technicianId) return
     setLoading(true)
     setError('')
     try {
-      const [inc, req] = await Promise.allSettled([
-        incidentsApi.byTechnician(user.technicianId),
-        requestsApi.list({ technicianId: user.technicianId }),
-      ])
-      if (inc.status === 'fulfilled') setIncidents(inc.value)
-      if (req.status === 'fulfilled') setRequests(req.value)
-      if (inc.status === 'rejected' && req.status === 'rejected')
-        setError('Error al cargar datos. Verifica que el api-gateway esté activo.')
+      setAppointments(await appointmentsApi.byTechnician(user.technicianId))
+    } catch {
+      setError('Error al cargar datos. Verifica que el api-gateway esté activo.')
     } finally {
       setLoading(false)
     }
@@ -1712,17 +1698,16 @@ function TechnicianDashboard() {
 
   useEffect(() => { load() }, [])
 
-  const activeIncidents = incidents.filter((i) => ACTIVE_STATUSES.has(i.status))
-  const inProgress = incidents.filter((i) => i.status === 'IN_PROGRESS')
-  const activeRequests = requests.filter((r) => ACTIVE_REQUEST_STATUSES.has(r.status))
+  const activeAppointments = appointments.filter((i) => ACTIVE_STATUSES.has(i.status))
+  const inProgress = appointments.filter((i) => i.status === 'IN_PROGRESS')
 
-  // Next incident: active with scheduledRange, sorted ascending
-  const next = activeIncidents
+  // Próxima cita: activa con scheduledRange, ordenada ascendente
+  const next = activeAppointments
     .filter((i) => i.scheduledRange)
     .sort((a, b) => new Date(a.scheduledRange!.start).getTime() - new Date(b.scheduledRange!.start).getTime())[0]
 
-  // Work queue: active incidents sorted by scheduledRange (nulls last)
-  const incidentQueue = [...activeIncidents].sort((a, b) => {
+  // Cola de trabajo: citas activas ordenadas por scheduledRange (nulls al final)
+  const appointmentQueue = [...activeAppointments].sort((a, b) => {
     if (!a.scheduledRange && !b.scheduledRange) return 0
     if (!a.scheduledRange) return 1
     if (!b.scheduledRange) return -1
@@ -1755,17 +1740,11 @@ function TechnicianDashboard() {
       <div>
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Acciones rápidas</h3>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => navigate('/incidents/new')}>
-            <Plus className="h-4 w-4" /> Nueva incidencia
+          <Button size="sm" onClick={() => navigate('/appointments/new')}>
+            <Plus className="h-4 w-4" /> Nueva cita
           </Button>
-          <Button size="sm" variant="outline" onClick={() => navigate('/requests/new')}>
-            <Plus className="h-4 w-4" /> Nuevo request
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => navigate('/incidents')}>
-            <AlertCircle className="h-4 w-4" /> Ver incidencias
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => navigate('/requests')}>
-            <ClipboardList className="h-4 w-4" /> Ver requests
+          <Button size="sm" variant="outline" onClick={() => navigate('/appointments')}>
+            <AlertCircle className="h-4 w-4" /> Ver citas
           </Button>
           <Button size="sm" variant="outline" onClick={() => navigate('/availability')}>
             <Calendar className="h-4 w-4" /> Disponibilidad
@@ -1774,26 +1753,15 @@ function TechnicianDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium">Incidencias activas</CardTitle>
+            <CardTitle className="text-sm font-medium">Citas activas</CardTitle>
             <Inbox className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loading ? <div className="h-8 w-12 bg-muted animate-pulse rounded" /> : <div className="text-2xl font-bold">{activeIncidents.length}</div>}
+            {loading ? <div className="h-8 w-12 bg-muted animate-pulse rounded" /> : <div className="text-2xl font-bold">{activeAppointments.length}</div>}
             <p className="text-xs text-muted-foreground mt-1">{inProgress.length} en progreso ahora</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium">Requests activos</CardTitle>
-            <ClipboardList className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? <div className="h-8 w-12 bg-muted animate-pulse rounded" /> : <div className="text-2xl font-bold">{activeRequests.length}</div>}
-            <p className="text-xs text-muted-foreground mt-1">asignados a ti</p>
           </CardContent>
         </Card>
 
@@ -1820,137 +1788,75 @@ function TechnicianDashboard() {
         </Card>
       </div>
 
-      {/* Work queues side by side */}
-      <div className="grid gap-6 lg:grid-cols-2">
-
-        {/* Incidents queue */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Wrench className="h-4 w-4 text-muted-foreground" />
-                <CardTitle className="text-base">Incidencias</CardTitle>
-                {!loading && <Badge variant="secondary" className="text-xs">{incidentQueue.length}</Badge>}
-              </div>
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/incidents')}>
-                Ver todas <ChevronRight className="h-3 w-3 ml-0.5" />
-              </Button>
+      {/* Work queue */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Citas</CardTitle>
+              {!loading && <Badge variant="secondary" className="text-xs">{appointmentQueue.length}</Badge>}
             </div>
-            <CardDescription>Activas asignadas a ti</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-14 bg-muted animate-pulse rounded" />)}</div>
-            ) : incidentQueue.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <CheckCircle2 className="h-7 w-7 mx-auto mb-2 text-green-500" />
-                <p className="text-sm">Sin incidencias activas</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {incidentQueue.slice(0, 6).map((inc) => (
-                  <div
-                    key={inc.id}
-                    className="flex items-center gap-3 p-2.5 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => setSelectedIncident(inc)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <IncidentStatusBadge status={inc.status} />
-                        <span className="text-xs font-medium truncate">{inc.issueType?.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                        {inc.corner?.name && <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" />{inc.corner.name}</span>}
-                        <span className="flex items-center gap-1 shrink-0">
-                          <Clock className="h-3 w-3" />
-                          {inc.scheduledRange ? formatDate(inc.scheduledRange.start) : formatDate(inc.createdAt)}
-                        </span>
-                      </div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  </div>
-                ))}
-                {incidentQueue.length > 6 && (
-                  <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/incidents')}>
-                    Ver {incidentQueue.length - 6} más
-                  </Button>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Requests queue */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-muted-foreground" />
-                <CardTitle className="text-base">Requests</CardTitle>
-                {!loading && <Badge variant="secondary" className="text-xs">{activeRequests.length}</Badge>}
-              </div>
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/requests')}>
-                Ver todos <ChevronRight className="h-3 w-3 ml-0.5" />
-              </Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/appointments')}>
+              Ver todas <ChevronRight className="h-3 w-3 ml-0.5" />
+            </Button>
+          </div>
+          <CardDescription>Activas asignadas a ti</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-14 bg-muted animate-pulse rounded" />)}</div>
+          ) : appointmentQueue.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground">
+              <CheckCircle2 className="h-7 w-7 mx-auto mb-2 text-green-500" />
+              <p className="text-sm">Sin citas activas</p>
             </div>
-            <CardDescription>Activos asignados a ti</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-14 bg-muted animate-pulse rounded" />)}</div>
-            ) : activeRequests.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <CheckCircle2 className="h-7 w-7 mx-auto mb-2 text-green-500" />
-                <p className="text-sm">Sin requests activos</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {activeRequests.slice(0, 6).map((req) => (
-                  <div
-                    key={req.id}
-                    className="flex items-center gap-3 p-2.5 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate('/requests')}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Badge variant={req.status === 'IN_PROGRESS' ? 'default' : 'secondary'} className="text-xs">{req.status}</Badge>
-                        <span className="text-xs font-medium truncate">{req.issueType?.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                        {req.corner?.name && <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" />{req.corner.name}</span>}
-                        <span className="flex items-center gap-1 shrink-0">
-                          <Clock className="h-3 w-3" />
-                          {req.scheduledRange ? formatDate(req.scheduledRange.start) : formatDate(req.createdAt)}
-                        </span>
-                      </div>
+          ) : (
+            <div className="space-y-2">
+              {appointmentQueue.slice(0, 6).map((inc) => (
+                <div
+                  key={inc.id}
+                  className="flex items-center gap-3 p-2.5 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => setSelectedAppointment(inc)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <AppointmentStatusBadge status={inc.status} />
+                      <span className="text-xs font-medium truncate">{inc.issueType?.name}</span>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                      {inc.corner?.name && <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" />{inc.corner.name}</span>}
+                      <span className="flex items-center gap-1 shrink-0">
+                        <Clock className="h-3 w-3" />
+                        {inc.scheduledRange ? formatDate(inc.scheduledRange.start) : formatDate(inc.createdAt)}
+                      </span>
+                    </div>
                   </div>
-                ))}
-                {activeRequests.length > 6 && (
-                  <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/requests')}>
-                    Ver {activeRequests.length - 6} más
-                  </Button>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </div>
+              ))}
+              {appointmentQueue.length > 6 && (
+                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/appointments')}>
+                  Ver {appointmentQueue.length - 6} más
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      </div>
-
-      <TechnicianIncidentModal
-        incident={selectedIncident}
-        open={!!selectedIncident}
-        onClose={() => setSelectedIncident(null)}
+      <TechnicianAppointmentModal
+        incident={selectedAppointment}
+        open={!!selectedAppointment}
+        onClose={() => setSelectedAppointment(null)}
         onUpdated={(updated) => {
-          setIncidents((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
-          setSelectedIncident(updated)
+          setAppointments((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
+          setSelectedAppointment(updated)
         }}
         onReleased={() => {
-          // Quitar la incidencia de la lista del técnico (ya no le pertenece)
-          setIncidents((prev) => prev.filter((i) => i.id !== selectedIncident?.id))
-          setSelectedIncident(null)
+          // Quitar la cita de la lista del técnico (ya no le pertenece)
+          setAppointments((prev) => prev.filter((i) => i.id !== selectedAppointment?.id))
+          setSelectedAppointment(null)
         }}
       />
     </div>
@@ -1964,8 +1870,7 @@ function TechnicianDashboard() {
 function ManagerDashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [incidents, setIncidents] = useState<Incident[]>([])
-  const [requests, setRequests] = useState<ServiceRequest[]>([])
+  const [appointments, setAppointments] = useState<Appointment[]>([])
   const [corners, setCorners] = useState<Corner[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1974,15 +1879,13 @@ function ManagerDashboard() {
     setLoading(true)
     setError('')
     try {
-      const [inc, req, corn] = await Promise.allSettled([
-        incidentsApi.listFiltered({ limit: 100 }),
-        requestsApi.list(),
+      const [inc, corn] = await Promise.allSettled([
+        appointmentsApi.listFiltered({ limit: 100 }),
         cornersApi.list(),
       ])
-      if (inc.status === 'fulfilled') setIncidents(inc.value.data)
-      if (req.status === 'fulfilled') setRequests(req.value)
+      if (inc.status === 'fulfilled') setAppointments(inc.value.data)
       if (corn.status === 'fulfilled') setCorners(corn.value)
-      if (inc.status === 'rejected' && req.status === 'rejected')
+      if (inc.status === 'rejected')
         setError('Error al cargar datos. Verifica que el api-gateway esté activo.')
     } finally {
       setLoading(false)
@@ -1991,11 +1894,10 @@ function ManagerDashboard() {
 
   useEffect(() => { load() }, [])
 
-  const activeIncidents = incidents.filter((i) => ACTIVE_STATUSES.has(i.status))
-  const activeRequests = requests.filter((r) => ACTIVE_REQUEST_STATUSES.has(r.status))
-  const unassignedIncidents = activeIncidents.filter((i) => !i.currentTechnicianId)
+  const activeAppointments = appointments.filter((i) => ACTIVE_STATUSES.has(i.status))
+  const unassignedAppointments = activeAppointments.filter((i) => !i.currentTechnicianId)
 
-  const incidentQueue = [...activeIncidents].sort((a, b) => {
+  const appointmentQueue = [...activeAppointments].sort((a, b) => {
     if (!a.scheduledRange && !b.scheduledRange) return 0
     if (!a.scheduledRange) return 1
     if (!b.scheduledRange) return -1
@@ -2028,17 +1930,11 @@ function ManagerDashboard() {
       <div>
         <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Acciones rápidas</h3>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => navigate('/incidents/new')}>
-            <Plus className="h-4 w-4" /> Nueva incidencia
+          <Button size="sm" onClick={() => navigate('/appointments/new')}>
+            <Plus className="h-4 w-4" /> Nueva cita
           </Button>
-          <Button size="sm" variant="outline" onClick={() => navigate('/requests/new')}>
-            <Plus className="h-4 w-4" /> Nuevo request
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => navigate('/incidents')}>
-            <AlertCircle className="h-4 w-4" /> Ver incidencias
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => navigate('/requests')}>
-            <ClipboardList className="h-4 w-4" /> Ver requests
+          <Button size="sm" variant="outline" onClick={() => navigate('/appointments')}>
+            <AlertCircle className="h-4 w-4" /> Ver citas
           </Button>
           <Button size="sm" variant="outline" onClick={() => navigate('/availability')}>
             <Calendar className="h-4 w-4" /> Disponibilidad
@@ -2047,14 +1943,14 @@ function ManagerDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium">Incidencias activas</CardTitle>
+            <CardTitle className="text-sm font-medium">Citas activas</CardTitle>
             <Inbox className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loading ? <div className="h-8 w-12 bg-muted animate-pulse rounded" /> : <div className="text-2xl font-bold">{activeIncidents.length}</div>}
+            {loading ? <div className="h-8 w-12 bg-muted animate-pulse rounded" /> : <div className="text-2xl font-bold">{activeAppointments.length}</div>}
             <p className="text-xs text-muted-foreground mt-1">de todo el equipo</p>
           </CardContent>
         </Card>
@@ -2068,22 +1964,11 @@ function ManagerDashboard() {
             {loading ? (
               <div className="h-8 w-12 bg-muted animate-pulse rounded" />
             ) : (
-              <div className={cn('text-2xl font-bold', unassignedIncidents.length > 0 && 'text-amber-600 dark:text-amber-400')}>
-                {unassignedIncidents.length}
+              <div className={cn('text-2xl font-bold', unassignedAppointments.length > 0 && 'text-amber-600 dark:text-amber-400')}>
+                {unassignedAppointments.length}
               </div>
             )}
             <p className="text-xs text-muted-foreground mt-1">requieren asignación</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium">Requests activos</CardTitle>
-            <ClipboardList className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? <div className="h-8 w-12 bg-muted animate-pulse rounded" /> : <div className="text-2xl font-bold">{activeRequests.length}</div>}
-            <p className="text-xs text-muted-foreground mt-1">de todo el equipo</p>
           </CardContent>
         </Card>
 
@@ -2099,127 +1984,65 @@ function ManagerDashboard() {
         </Card>
       </div>
 
-      {/* Work queues side by side */}
-      <div className="grid gap-6 lg:grid-cols-2">
-
-        {/* Incidents queue */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Wrench className="h-4 w-4 text-muted-foreground" />
-                <CardTitle className="text-base">Incidencias</CardTitle>
-                {!loading && <Badge variant="secondary" className="text-xs">{incidentQueue.length}</Badge>}
-              </div>
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/incidents')}>
-                Ver todas <ChevronRight className="h-3 w-3 ml-0.5" />
-              </Button>
+      {/* Work queue */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Citas</CardTitle>
+              {!loading && <Badge variant="secondary" className="text-xs">{appointmentQueue.length}</Badge>}
             </div>
-            <CardDescription>Activas del equipo — sin filtrar por técnico</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-14 bg-muted animate-pulse rounded" />)}</div>
-            ) : incidentQueue.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <CheckCircle2 className="h-7 w-7 mx-auto mb-2 text-green-500" />
-                <p className="text-sm">Sin incidencias activas</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {incidentQueue.slice(0, 6).map((inc) => (
-                  <div
-                    key={inc.id}
-                    className="flex items-center gap-3 p-2.5 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/incidents/${inc.id}`)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <IncidentStatusBadge status={inc.status} />
-                        <span className="text-xs font-medium truncate">{inc.issueType?.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                        {inc.corner?.name && <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" />{inc.corner.name}</span>}
-                        <span className="flex items-center gap-1 shrink-0">
-                          <Clock className="h-3 w-3" />
-                          {inc.scheduledRange ? formatDate(inc.scheduledRange.start) : formatDate(inc.createdAt)}
-                        </span>
-                        {!inc.currentTechnicianId && (
-                          <span className="text-amber-600 dark:text-amber-400 shrink-0">· sin asignar</span>
-                        )}
-                      </div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  </div>
-                ))}
-                {incidentQueue.length > 6 && (
-                  <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/incidents')}>
-                    Ver {incidentQueue.length - 6} más
-                  </Button>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Requests queue */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-muted-foreground" />
-                <CardTitle className="text-base">Requests</CardTitle>
-                {!loading && <Badge variant="secondary" className="text-xs">{activeRequests.length}</Badge>}
-              </div>
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/requests')}>
-                Ver todos <ChevronRight className="h-3 w-3 ml-0.5" />
-              </Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => navigate('/appointments')}>
+              Ver todas <ChevronRight className="h-3 w-3 ml-0.5" />
+            </Button>
+          </div>
+          <CardDescription>Activas del equipo — sin filtrar por técnico</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-14 bg-muted animate-pulse rounded" />)}</div>
+          ) : appointmentQueue.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground">
+              <CheckCircle2 className="h-7 w-7 mx-auto mb-2 text-green-500" />
+              <p className="text-sm">Sin citas activas</p>
             </div>
-            <CardDescription>Activos del equipo</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-14 bg-muted animate-pulse rounded" />)}</div>
-            ) : activeRequests.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <CheckCircle2 className="h-7 w-7 mx-auto mb-2 text-green-500" />
-                <p className="text-sm">Sin requests activos</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {activeRequests.slice(0, 6).map((req) => (
-                  <div
-                    key={req.id}
-                    className="flex items-center gap-3 p-2.5 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate('/requests')}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Badge variant={req.status === 'IN_PROGRESS' ? 'default' : 'secondary'} className="text-xs">{req.status}</Badge>
-                        <span className="text-xs font-medium truncate">{req.issueType?.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                        {req.corner?.name && <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" />{req.corner.name}</span>}
-                        <span className="flex items-center gap-1 shrink-0">
-                          <Clock className="h-3 w-3" />
-                          {req.scheduledRange ? formatDate(req.scheduledRange.start) : formatDate(req.createdAt)}
-                        </span>
-                      </div>
+          ) : (
+            <div className="space-y-2">
+              {appointmentQueue.slice(0, 6).map((inc) => (
+                <div
+                  key={inc.id}
+                  className="flex items-center gap-3 p-2.5 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => navigate(`/appointments/${inc.id}`)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <AppointmentStatusBadge status={inc.status} />
+                      <span className="text-xs font-medium truncate">{inc.issueType?.name}</span>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                      {inc.corner?.name && <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" />{inc.corner.name}</span>}
+                      <span className="flex items-center gap-1 shrink-0">
+                        <Clock className="h-3 w-3" />
+                        {inc.scheduledRange ? formatDate(inc.scheduledRange.start) : formatDate(inc.createdAt)}
+                      </span>
+                      {!inc.currentTechnicianId && (
+                        <span className="text-amber-600 dark:text-amber-400 shrink-0">· sin asignar</span>
+                      )}
+                    </div>
                   </div>
-                ))}
-                {activeRequests.length > 6 && (
-                  <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/requests')}>
-                    Ver {activeRequests.length - 6} más
-                  </Button>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-      </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                </div>
+              ))}
+              {appointmentQueue.length > 6 && (
+                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => navigate('/appointments')}>
+                  Ver {appointmentQueue.length - 6} más
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -2232,15 +2055,18 @@ export function DashboardPage() {
   // Permisos explícitos de dashboard (post-seed) con fallback por permisos de negocio.
   // isAdmin usa permisos exclusivos de admin — company:list/user:list se comparten
   // con manager y readonly, así que no sirven para distinguir el rol.
+  // isManager/isTechnician NO usan fallback de appointment:* — desde que
+  // incident+request se unificaron en un solo recurso 'appointment', manager
+  // Y technician comparten appointment:list-all/take/release, así que esos
+  // permisos ya no distinguen el rol (technician:list-all volvía true a
+  // isManager y mandaba al técnico al dashboard equivocado). dashboard-manager:read
+  // / dashboard-technician:read son marcadores exclusivos por rol, siempre
+  // presentes desde el seed — no necesitan fallback.
   const isAdmin = can('dashboard-admin:read')
     || can('corner:manage-schedules') || can('user:update') || can('company:update')
-  const isManager = !isAdmin && (
-    can('dashboard-manager:read')
-    || (can('incident:list-all') && can('request:list-all'))
-  )
+  const isManager = !isAdmin && can('dashboard-manager:read')
   const isTechnician = !isAdmin && !isManager && (
-    can('dashboard-technician:read')
-    || (!!(user?.technicianId) && (can('incident:take') || can('incident:release')))
+    can('dashboard-technician:read') || !!user?.technicianId
   )
   const isEmployee = !isAdmin && !isManager && !isTechnician
 
@@ -2254,7 +2080,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title={title} />
+      <Header title={title} icon={LayoutDashboard} />
       {isAdmin ? <AdminDashboard />
         : isManager ? <ManagerDashboard />
         : isTechnician ? <TechnicianDashboard />

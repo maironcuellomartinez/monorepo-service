@@ -1,7 +1,7 @@
 # Architecture Diagrams — monolito-event-corner_v3
 
 > Diagramas de componentes y secuencias para entender cómo funciona el sistema Event Corner v3.
-> Actualizado 2026-07-09. Esquemas en texto plano (sin Mermaid) para poder leerlos directo en
+> Actualizado 2026-07-31 — remodelado `Incident`+`Request` → `Appointment` unificado (`AppointmentService`, `ServiceNowTicketLink`; ver `docs/documentation.md` y `docs/infrastructure-diagram.md`). Esquemas en texto plano (sin Mermaid) para poder leerlos directo en
 > el editor o en `cat`/`less` sin renderizador.
 
 ---
@@ -15,8 +15,9 @@ Customer App / event-corner-app (cliente real de Entra ID — hace login contra 
 ┌──────────────────────────────────────────────────────────────────────┐
 │ API GATEWAY  (staging/prod :3000 · dev :4000)                        │
 │  Guards globales (orden): JwtGuard → RolesGuard → AbacGuard          │
-│  Controllers: Incidents, Corners, Availability, IssueTypes,          │
-│    Requests, Devices, Admin(*), ServiceNowOutbound, ExternalRecords  │
+│  Controllers: Appointments, Corners, Availability, IssueTypes,       │
+│    Devices, BatchDrafts, Admin(*), ServiceNowOutbound,               │
+│    ExternalRecords                                                   │
 │  Proxy HTTP → monolith (/internal/*) con Bearer M2M EdDSA            │
 └───────────┬──────────────────────────────────────┬───────────────────┘
             │ Bearer M2M EdDSA                       │ POST /auth/validate-entra
@@ -24,13 +25,17 @@ Customer App / event-corner-app (cliente real de Entra ID — hace login contra 
 ┌────────────────────────────────┐        ┌──────────────────────────────────────┐
 │ MONOLITH (Hexagonal)           │        │ ABAC MICROSERVICE :3005              │
 │  staging/prod :3001 · dev :3002│        │  AuthService: login M2M/OAuth,       │
-│  Core: Incident, Corner,       │        │    validateEntraToken (JWKS)         │
+│  Core: Appointment, Corner,    │        │    validateEntraToken (JWKS)         │
 │    Technician, Device, Locker, │        │  EntraIdService: jwks-rsa + jose     │
-│    Request, IssueType          │        │    contra login.microsoftonline.com  │
-│  Outbox pattern → eventos      │        │  AbacService: canAccess(),           │
-│  ReconcilerJob, SnowSyncJob,   │        │    json-rules-engine                 │
-│    SnowOrphanRecoveryJob       │        │  MySQL: abac_db                      │
-│  MySQL: event_corner           │        └──────────────────────────────────────┘
+│    IssueType, ServiceNowTicket │        │    contra login.microsoftonline.com  │
+│    Link                        │        │  AbacService: canAccess(),           │
+│  Outbox pattern → eventos      │        │    json-rules-engine                 │
+│  MonolithReconcilerJob,        │        │  MySQL: abac_db                      │
+│    SnowOrphanRecoveryJob       │        └──────────────────────────────────────┘
+│  (SnowSyncJob fue ELIMINADO —  │
+│   el monolito cierra el ticket │
+│   directo, no polea estado SN) │
+│  MySQL: event_corner           │
 └───────────┬────────────────────┘
             │ Bearer M2M EdDSA → {API_GATEWAY_URL}/outbound/servicenow/*
             ▼
@@ -126,27 +131,28 @@ Authorization: Bearer <token>
                                  ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Puertos de entrada (Incoming Ports)                                  │
-│  IIncidentService · ICornerService · IAvailabilityService            │
-│  IRequestService · IScheduleService · ITechnicianService             │
-│  IDeviceService                                                      │
+│  IAppointmentService · ICornerService · IAvailabilityService         │
+│  IScheduleService · ITechnicianService · IDeviceService              │
 └────────────────────────────────┬─────────────────────────────────────┘
                                  ▼
 ┌───────────────────────────────────────────────────────────────────────┐
 │ Servicios (Use Cases)                                                 │
-│  IncidentService · AvailabilityService · CornerService                │
+│  AppointmentService · AvailabilityService · CornerService             │
 │  ServiceNowIntegrationService (resolveAssignmentGroup,                │
-│    resolveSnowCompanySysId, createIncidentTicket, closeIncidentTicket)│
+│    resolveSnowCompanySysId, createTicket, closeTicket, updateTicket)  │
 └──────────┬────────────────────────────────────────┬───────────────────┘
            ▼                                        ▼
 ┌──────────────────────────┐              ┌─────────────────────────────┐
 │ Dominio (Core)           │              │ Puertos de salida           │
-│  Entities: Incident,     │              │  IIncidentRepository        │
-│    Corner, Technician,   │              │  ICornerRepository          │
-│    Device, Locker,       │              │  IServiceNowClient          │
-│    Request, IssueType    │              │  ICachePort                 │
-│  Value Objects: Incident │              └───────────┬─────────────────┘
-│    Id, Email, ServiceNow │                          ▼
-│    Id/Number, DateRange  │              ┌───────────────────────────────┐
+│  Entities: Appointment,  │              │  IAppointmentRepository     │
+│    Corner, Technician,   │              │  IServiceNowTicketLink      │
+│    Device, Locker,       │              │    Repository               │
+│    IssueType,            │              │  ICornerRepository          │
+│    ServiceNowTicketLink  │              │  IServiceNowClient          │
+│  Value Objects: Appoint- │              │  ICachePort                 │
+│    mentId, Email,        │              └───────────┬─────────────────┘
+│    ServiceNowId/Number/  │                          ▼
+│    TicketType, DateRange │              ┌───────────────────────────────┐
 │  Domain Errors           │              │ Adaptadores (Infrastructure)  │
 └──────────────────────────┘              │  TypeORM Repositories         │
                                           │  Redis CacheAdapter           │
@@ -156,14 +162,18 @@ Authorization: Bearer <token>
                                           │  Outbox pattern:              │
                                           │    OutboxWorkerService (5s)   │
                                           │    → OutboxEventBusAdapter    │
-                                          │    → IncidentServiceNowHandler│
+                                          │    → AppointmentServiceNow    │
+                                          │      Handler (creación),      │
+                                          │      AppointmentStatusChanged │
+                                          │      Handler (cierre/estado)  │
                                           └───────────┬───────────────────┘
                                                       ▼
                                          ┌──────────────────────────────┐
                                          │ Jobs programados             │
                                          │  MonolithReconcilerJob (30s) │
-                                         │  SnowSyncJob (5min)          │
                                          │  SnowOrphanRecoveryJob(10min)│
+                                         │  (SnowSyncJob ELIMINADO —    │
+                                         │   ver nota abajo)            │
                                          └──────────────────────────────┘
                                          ┌──────────────────────────────┐
                                          │ Persistencia                 │
@@ -175,6 +185,12 @@ Authorization: Bearer <token>
 > Nota: no hay un `EventBus` síncrono llamando directo a ServiceNow. La creación de tickets
 > pasa por el patrón Outbox (evento persistido en `outbox_events`, procesado async por
 > `OutboxWorkerService`) y de ahí a `api-gateway → api-snowq-service → SN`. Ver diagrama 6.
+>
+> **`SnowSyncJob` fue eliminado** (existía en versiones previas, pollaba el estado en SN cada
+> 5 min para auto-cerrar incidencias). Decisión de producto: el monolito **siempre** cierra el
+> ticket SN directamente cuando la cita pasa a `CLOSED` (vía `AppointmentStatusChangedHandler`
+> → `ServiceNowTicketLink`), nunca al revés — no hace falta pollear SN para saber que algo se
+> cerró.
 
 ---
 
@@ -213,7 +229,7 @@ App Externa (client_id/secret)              ABAC :3005                  Gateway 
       │    expires_in, scope }                   │                             │                  │
       │◄─────────────────────────────────────────┤                             │                  │
       │                                                                        │                  │
-      │  GET /api/incidents  Authorization: Bearer <JWT>                       │                  │
+      │  GET /api/appointments  Authorization: Bearer <JWT>                       │                  │
       ├───────────────────────────────────────────────────────────────────────►│                  │
       │                                          JwtGuard: sin decorator       │                  │
       │                                          → POST /auth/validate-entra   │                  │
@@ -222,7 +238,7 @@ App Externa (client_id/secret)              ABAC :3005                  Gateway 
       │                                                                        │ GET /internal/…  │
       │                                                                        ├─────────────────►│
       │                                                                        │◄─────────────────┤
-      │◄───────────────────────────────────────────────────────────────────────┤ 200 [incidents]  │
+      │◄───────────────────────────────────────────────────────────────────────┤ 200 [appointments]  │
 ```
 
 > Nota: hoy `JwtGuard` delega **todo** token sin `@InternalOnly()` a `/auth/validate-entra`
@@ -241,7 +257,7 @@ event-corner-app                 API Gateway :3000        ABAC :3005            
       │  Login MSAL contra Azure AD (fuera de este diagrama)
       │  obtiene un token con iss=login.microsoftonline.com/{tenant}/v2.0
       │
-      │  GET /api/incidents  Authorization: Bearer <token Entra ID>
+      │  GET /api/appointments  Authorization: Bearer <token Entra ID>
       ├─────────────────────────►│
       │                          │  JwtGuard: sin decorator → delega a ABAC
       │                          │  POST /auth/validate-entra
@@ -266,8 +282,8 @@ event-corner-app                 API Gateway :3000        ABAC :3005            
       │                          │◄───────────────────────────┤
       │                          │  request.user = { sub, email, permissions, tokenType:'entra' }│
       │                          │  RolesGuard / AbacGuard evalúan sobre ese user                │
-      │                          │  GW → MON: GET /internal/incidents (Bearer M2M EdDSA)         │
-      │  200 [incidents]         │
+      │                          │  GW → MON: GET /internal/appointments (Bearer M2M EdDSA)         │
+      │  200 [appointments]         │
       │◄─────────────────────────┤
 ```
 
@@ -339,7 +355,7 @@ Servicio Interno (ej. monolith)                                    API Gateway :
 ```
 Usuario/Frontend            API Gateway :3000                    ABAC :3005
       │
-      │  POST /api/incidents
+      │  POST /api/appointments
       │  Authorization: Bearer <token Entra ID>
       ├──────────────────────────►│
       │                            │
@@ -361,7 +377,7 @@ Usuario/Frontend            API Gateway :3000                    ABAC :3005
       │                            │
       │  ── 3. AbacGuard ─────────┤  (solo si el endpoint tiene @Permission(resource, action))
       │                            │  POST /abac/can-access
-      │                            │  { userId, resource:'incident', action:'create', context }
+      │                            │  { userId, resource:'appointment', action:'create', context }
       │                            ├──────────────────────────►│
       │                            │                            │  json-rules-engine evalúa
       │                            │◄──────────────────────────┤ { allowed: true/false }
@@ -369,27 +385,27 @@ Usuario/Frontend            API Gateway :3000                    ABAC :3005
       │◄──────────────────────────┤
       │                            │
       │  ── 4. Controller + Proxy ┤
-      │                            │  POST /internal/incidents
+      │                            │  POST /internal/appointments
       │                            │  Authorization: Bearer <M2M EdDSA JWT>
-      │  201 Created { incident }  │
+      │  201 Created { appointment }  │
       │◄──────────────────────────┤
 ```
 
 ---
 
-## 6. Crear un Incidente (flujo completo, con outbox + ServiceNow)
+## 6. Crear una Cita ISSUE (flujo completo, con outbox + ServiceNow)
 
 ```
 Técnico          API Gateway         Monolith              MySQL      Outbox      snowq/SN
   │
-  │ POST /api/incidents
-  │ { cornerId, issueTypeId, customerId, deviceId, scheduledDate }
+  │ POST /api/appointments
+  │ { cornerId, issueTypeId, customerId, slotIds, device }
   ├──────────────►│
   │                │ (Guards: JWT ✓ Roles ✓ ABAC ✓)
-  │                │ POST /internal/incidents
+  │                │ POST /internal/appointments
   │                │ Authorization: Bearer M2M EdDSA
   │                ├──────────────►│
-  │                │                │ IncidentService.createIncident()
+  │                │                │ AppointmentService.createAppointment()
   │                │                │ SELECT issue_type, corner, slots disponibles
   │                │                ├──────────────►│
   │                │                │◄──────────────┤
@@ -397,20 +413,22 @@ Técnico          API Gateway         Monolith              MySQL      Outbox   
   │                │  409 Conflict  │
   │◄───────────────┤◄───────────────┤
   │                │                │ Slot OK:
-  │                │                │  Crea Incident (CREATED) + IncidentSlot + timeline
-  │                │                │  INSERT incident, incident_slot, incident_timeline
+  │                │                │  Crea Appointment (CREATED) + AppointmentSlot + timeline
+  │                │                │    + ServiceNowTicketLink(PENDING, role=primary)
+  │                │                │  INSERT appointment, appointment_slot,
+  │                │                │    appointment_timeline, servicenow_ticket_links
   │                │                │  UPDATE corner_slot (reservado)
   │                │                ├──────────────►│
-  │                │                │  Publica evento IncidentCreated → tabla outbox_events
+  │                │                │  Publica evento APPOINTMENT_CREATED → tabla outbox_events
   │                │                ├───────────────────────────►│
   │                │  201 Created   │
   │◄───────────────┤◄───────────────┤ (la creación NO espera al ticket SN — es async)
   │                │                │
   │                │                │                             │ OutboxWorkerService (5s)
   │                │                │                             │ toma el evento pendiente
-  │                │                │                             │ → IncidentServiceNowHandler
+  │                │                │                             │ → AppointmentServiceNowHandler
   │                │                │                             │ → ServiceNowIntegrationService
-  │                │                │                             │   .createIncidentTicket()
+  │                │                │                             │   .createTicket()
   │                │                │                             │   resolveAssignmentGroup()
   │                │                │                             │   resolveSnowCompanySysId()
   │                │                │◄────────────────────────────┤
@@ -420,32 +438,33 @@ Técnico          API Gateway         Monolith              MySQL      Outbox   
   │                ├───────────────────────────────────────────────────────────►│ snowq
   │                │                │                                            │
   │                │                │  ÉXITO INMEDIATO: sysId+number ────────────┤
-  │                │                │  → incident.updateServiceNowInfo()          │
+  │                │                │  → link.resolveImmediate(sysId, number)     │
   │                │                │  DEFERRED: correlationId ───────────────────┤
-  │                │                │  → incident.setSnowqCorrelationId()         │
-  │                │                ├──────────────►│ UPDATE incident              │
+  │                │                │  → link.markDeferred(correlationId)         │
+  │                │                ├──────────────►│ UPDATE servicenow_ticket_links│
   │                │                │                │                            │
   │                │                │  MonolithReconcilerJob (30s) poll si DEFERRED
-  │                │                │  → DELIVERED: guarda sysId+number, limpia correlationId
+  │                │                │  → DELIVERED: link.reconcileDelivered(), limpia correlationId
   │                │                │  → FAILED fatal: limpia correlationId → huérfana
   │                │                │  → FAILED temporal: pide retry a snowq (mismo correlationId)
 ```
 
 > Si la llamada inicial monolith→snowq falla del todo (no HTTP response), el `OutboxWorkerService`
-> reintenta hasta 5 veces (~2.5min de backoff). Si se agotan, la incidencia queda sin
-> `servicenow_id` ni `correlationId` — la recupera `SnowOrphanRecoveryJob` (cada 10min, si
-> `SNOW_ORPHAN_RECOVERY_ENABLED=true`). Ver `docs/1. Flujo_de_reconciliación_estado_final.md`
-> y `docs/2.ciclo-incidencia.md` para el detalle completo de reintentos y reconciliación.
+> reintenta hasta 5 veces (~2.5min de backoff). Si se agotan, la cita queda con su
+> `ServiceNowTicketLink` sin `sys_id` ni `correlationId` — la recupera `SnowOrphanRecoveryJob`
+> (cada 10min, si `SNOW_ORPHAN_RECOVERY_ENABLED=true`). Ver
+> `docs/1. Flujo_de_reconciliación_estado_final.md` y `docs/2.ciclo-incidencia.md` para el
+> detalle completo de reintentos y reconciliación.
 
 ---
 
-## 7. Máquina de estados del incidente
+## 7. Máquina de estados de la cita
 
-Fuente de verdad: `apps/monolith/src/core/domain/enums/incident-status.enum.ts`
+Fuente de verdad: `apps/monolith/src/core/domain/enums/appointment-status.enum.ts`
 
 ```
                                    ┌─────────┐
-                    POST /incidents│ CREATED │
+                  POST /appointments│ CREATED │
                     (técnico crea) └────┬────┘
                                         │ dispositivo entregado
                                         ▼
@@ -489,13 +508,16 @@ Fuente de verdad: `apps/monolith/src/core/domain/enums/incident-status.enum.ts`
   CREATED también puede ir directo a CANCELED (cliente cancela) — terminal, sin retorno.
 ```
 
+> No dibujado arriba: `PAUSED` — estado agregado en el remodelado, entra/sale de `IN_PROGRESS`
+> igual que los `PENDING_*`. La cadena completa de 13 estados vive en `appointment-status.enum.ts`.
+
 Notas:
 - `VALIDATED` y `CANCELED` son los únicos estados **verdaderamente terminales**
   (`TERMINAL_STATUSES`) — sin transición de salida.
 - `CLOSED` no tiene salidas por `changeStatus()` genérico: solo se sale vía los métodos
-  dedicados `validate()` y `reopen()` de la entidad `Incident`.
-- Al crear (`CREATED`): se reserva el slot en `corner_slots`, se agrega timeline "Incidente
-  creado" y se publica el evento `IncidentCreated` al outbox (ver diagrama 6) — no hay una
+  dedicados `validate()` y `reopen()` de la entidad `Appointment`.
+- Al crear (`CREATED`): se reserva el slot en `corner_slots`, se agrega timeline "Cita creada"
+  y se publica el evento `APPOINTMENT_CREATED` al outbox (ver diagrama 6) — no hay una
   llamada síncrona a ServiceNow en el mismo request.
 
 ---
@@ -526,7 +548,7 @@ Frontend         API Gateway            Monolith                Redis        MyS
   │              │              │  SELECT corner_slots WHERE corner_id IN(1,2) AND date=?
   │              │              ├──────────────────────────────────────────────►│
   │              │              │◄──────────────────────────────────────────────┤
-  │              │              │  SELECT incident_slots WHERE slot_id IN(...) (ocupados)
+  │              │              │  SELECT appointment_slots WHERE slot_id IN(...) (ocupados)
   │              │              ├──────────────────────────────────────────────►│
   │              │              │◄──────────────────────────────────────────────┤
   │              │              │  slots_libres = todos_los_slots - reservados
@@ -544,7 +566,7 @@ Frontend         API Gateway            Monolith                Redis        MyS
 API Gateway (AbacGuard)              ABAC :3005                    MySQL abac_db
       │
       │ POST /abac/can-access
-      │ { userId, applicationId, resource:'incident', action:'create',
+      │ { userId, applicationId, resource:'appointment', action:'create',
       │   context:{ hour, ip, path, method } }
       ├─────────────────────────►│
       │                           │ AbacService.canAccess()
@@ -702,7 +724,7 @@ El monolith no usa `@Injectable()` + inyección por tipo para sus casos de uso �
 único en memoria (evita colisiones de nombre) y actúa de "enchufe": el dominio define el enchufe,
 la infraestructura provee lo que se enchufa ahí. Verificado contra el código real (2026-07-10).
 
-### Las 4 etapas, con el flujo de `Incident` como ejemplo real end-to-end
+### Las 4 etapas, con el flujo de `Appointment` como ejemplo real end-to-end
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────┐
@@ -710,18 +732,18 @@ la infraestructura provee lo que se enchufa ahí. Verificado contra el código r
 │ Solo define el Symbol + la interfaz. CERO conocimiento de implementación.      │
 │                                                                                │
 │   core/ports/tokens.ts:                                                        │
-│     export const INCIDENT_SERVICE = Symbol('IIncidentService')      ← puerto   │
+│     export const APPOINTMENT_SERVICE = Symbol('IAppointmentService') ← puerto  │
 │                                                                        entrada │
 │   core/ports/outgoing/repositories/tokens.ts:                                  │
-│     export const INCIDENT_REPOSITORY = Symbol('INCIDENT_REPOSITORY')← puerto   │
-│                                                                        salida  │
+│     export const APPOINTMENT_REPOSITORY = Symbol('APPOINTMENT_REPOSITORY')     │
+│                                                              ← puerto salida   │
 │   core/ports/outgoing/infrastructure-tokens.ts:                                │
 │     export const EVENT_BUS  = Symbol('EVENT_BUS')                              │
 │     export const CACHE      = Symbol('CACHE')                                  │
 │     export { SERVICENOW_CLIENT } from '@app/shared/contracts/tokens'           │
 │                                                                                │
-│   Interfaces hermanas (mismo puerto, sin Symbol): IIncidentService,            │
-│   IIncidentRepository, IServiceNowClient, IEventBus, ICachePort                │
+│   Interfaces hermanas (mismo puerto, sin Symbol): IAppointmentService,         │
+│   IAppointmentRepository, IServiceNowClient, IEventBus, ICachePort             │
 └───────────────────────────────────┬────────────────────────────────────────────┘
                                     │ el Symbol viaja como identidad, no la interfaz
                                     ▼
@@ -730,7 +752,7 @@ la infraestructura provee lo que se enchufa ahí. Verificado contra el código r
 │ 3 patrones distintos de binding usados en el código real:                      │
 │                                                                                │
 │  (a) useClass — typeorm-persistence.module.ts (repositorios TypeORM)           │
-│      { provide: INCIDENT_REPOSITORY, useClass: TypeOrmIncidentRepository }     │
+│      { provide: APPOINTMENT_REPOSITORY, useClass: TypeOrmAppointmentRepository}│
 │                                                                                │
 │  (b) useExisting — infrastructure.module.ts (adapters con nombre propio,       │
 │      inyectables tanto por su clase como por su token)                         │
@@ -747,7 +769,7 @@ la infraestructura provee lo que se enchufa ahí. Verificado contra el código r
 │  Ambos módulos son @Global() → no hace falta reimportarlos en cada módulo      │
 │  que consume los tokens de salida.                                             │
 └───────────────────────────────────┬────────────────────────────────────────────┘
-                                    │ INCIDENT_REPOSITORY, EVENT_BUS, CACHE, SERVICENOW_CLIENT
+                                    │ APPOINTMENT_REPOSITORY, EVENT_BUS, CACHE, SERVICENOW_CLIENT
                                     │ ya resuelven a instancias concretas
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────────────┐
@@ -755,38 +777,38 @@ la infraestructura provee lo que se enchufa ahí. Verificado contra el código r
 │ a partir de los Symbols de SALIDA — vía useFactory + inject: [...]             │
 │                                                                                │
 │  {                                                                             │
-│    provide: INCIDENT_SERVICE,                                                  │
-│    useFactory: (incidentRepo, slotRepo, technicianRepo, cornerRepo,            │
+│    provide: APPOINTMENT_SERVICE,                                               │
+│    useFactory: (appointmentRepo, slotRepo, technicianRepo, cornerRepo,         │
 │                  userRepo, companyRepo, issueTypeRepo, eventBus, cache,        │
 │                  logger, tracing, deviceService) =>                            │
-│        new IncidentService(incidentRepo, slotRepo, technicianRepo,             │
+│        new AppointmentService(appointmentRepo, slotRepo, technicianRepo,       │
 │                  cornerRepo, userRepo, companyRepo, issueTypeRepo,             │
 │                  eventBus, cache, logger, tracing, deviceService),             │
-│    inject: [INCIDENT_REPOSITORY, SLOT_REPOSITORY, TECHNICIAN_REPOSITORY,       │
+│    inject: [APPOINTMENT_REPOSITORY, SLOT_REPOSITORY, TECHNICIAN_REPOSITORY,    │
 │             CORNER_REPOSITORY, USER_REPOSITORY, COMPANY_REPOSITORY,            │
 │             ISSUE_TYPE_REPOSITORY, EVENT_BUS, CACHE, LoggerService,            │
 │             TracingService, DEVICE_SERVICE],   ← ¡otro Symbol de ENTRADA!      │
 │  }                                                                             │
 │                                                                                │
-│  `IncidentService` (la clase) NO tiene `@Injectable()` ni decoradores —        │
+│  `AppointmentService` (la clase) NO tiene `@Injectable()` ni decoradores —     │
 │  es una clase de dominio pura, construida a mano con `new` dentro del          │
 │  factory. Nest solo resuelve los argumentos del factory por Symbol.            │
 │  Nótese que DEVICE_SERVICE (un puerto de ENTRADA) se inyecta como              │
 │  dependencia de otro puerto de entrada — los casos de uso se componen          │
 │  entre sí, no solo con puertos de salida.                                      │
 └───────────────────────────────────┬────────────────────────────────────────────┘
-                                    │ INCIDENT_SERVICE ya resuelve a una instancia
-                                    │ completamente armada de IncidentService
+                                    │ APPOINTMENT_SERVICE ya resuelve a una instancia
+                                    │ completamente armada de AppointmentService
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────────────┐
 │ ETAPA 4 — PRESENTACIÓN: internal-api controllers consumen el Symbol con        │
 │ @Inject() (necesario porque un Symbol no es un tipo TS inferible)              │
 │                                                                                │
-│  internal-incidents.controller.ts:                                             │
+│  internal-appointments.controller.ts:                                          │
 │    constructor(                                                                │
-│      @Inject(INCIDENT_SERVICE)    private readonly service: IIncidentService,  │
-│      @Inject(INCIDENT_REPOSITORY) private readonly repository:                 │
-│                                              IIncidentRepository,              │
+│      @Inject(APPOINTMENT_SERVICE) private readonly service: IAppointmentService,│
+│      @Inject(APPOINTMENT_REPOSITORY) private readonly repository:              │
+│                                              IAppointmentRepository,           │
 │      private readonly tracing: TracingService,  ← esta SÍ es @Injectable(),    │
 │    ) {}                                          no necesita @Inject()         │
 │                                                                                │
@@ -801,8 +823,8 @@ la infraestructura provee lo que se enchufa ahí. Verificado contra el código r
 
 | Alternativa | Problema que evita `Symbol()` |
 |---|---|
-| String (`'INCIDENT_REPOSITORY'`) | Dos módulos podrían definir el mismo string por accidente y colisionar en el contenedor DI |
-| Inyección por clase concreta (`TypeOrmIncidentRepository`) | El caso de uso quedaría acoplado a TypeORM — imposible cambiar de adapter (ej. mock en tests, otro ORM) sin tocar el dominio |
+| String (`'APPOINTMENT_REPOSITORY'`) | Dos módulos podrían definir el mismo string por accidente y colisionar en el contenedor DI |
+| Inyección por clase concreta (`TypeOrmAppointmentRepository`) | El caso de uso quedaría acoplado a TypeORM — imposible cambiar de adapter (ej. mock en tests, otro ORM) sin tocar el dominio |
 | Interfaz TypeScript como token | Las interfaces no existen en runtime (se borran al compilar) — Nest necesita un valor real para el contenedor DI, por eso el Symbol viaja *junto* a la interfaz, no en su lugar |
 
 ### Dónde mirar si algo no resuelve (`Nest can't resolve dependencies`)

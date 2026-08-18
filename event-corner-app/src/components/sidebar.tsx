@@ -1,14 +1,12 @@
 import { useState, useEffect } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
   AlertCircle,
-  ClipboardList,
   MapPin,
   Calendar,
   Tag,
   Users,
-  LogOut,
   ChevronLeft,
   ChevronRight,
   Building2,
@@ -26,34 +24,35 @@ import { Button } from '@/components/ui/button'
  *
  * Lógica de visibilidad por rol:
  *  - Dashboard              → todos
- *  - Incidencias / Requests → solo técnicos/admins/managers (staffOnly)
+ *  - Citas                  → solo técnicos/admins/managers (staffOnly)
  *  - Disponibilidad         → solo técnicos/admins/managers (staffOnly)
  *  - Corners                → admin y manager (schedule:create) — el CRUD de Corner
  *                             en sí queda gateado adentro de CornersPage (admin-only)
  *  - Usuarios               → admin (user:list) y manager (technician:list) — UsersPage
  *                             decide internamente qué tabs mostrar (Usuarios/Técnicos)
- *  - Tipos de Incidencia    → solo admin (issue-type:create)
+ *  - Tipos de Incidencia    → admin y manager (issue-type:create)
+ *  - Compañías              → admin, manager y readonly (company:read) — employee/technician
+ *                             tienen company:list (lookup interno del treeId en el wizard de
+ *                             citas) pero no company:read, así que no ven este ítem
  */
 const NAV_ITEMS: { to: string; icon: React.ElementType; label: string; permission?: string | string[]; staffOnly?: boolean }[] = [
   { to: '/dashboard',    icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/incidents',    icon: AlertCircle,     label: 'Incidencias',         permission: 'incident:list',         staffOnly: true },
-  { to: '/incidents/batch', icon: PackagePlus, label: 'Lote Incidencias',    permission: 'incident:list',         staffOnly: true },
-  { to: '/requests',     icon: ClipboardList,   label: 'Requests',            permission: 'request:list',          staffOnly: true },
+  { to: '/appointments', icon: AlertCircle,     label: 'Citas',               permission: 'appointment:list',      staffOnly: true },
+  { to: '/appointments/batch', icon: PackagePlus, label: 'Lote de Citas',    permission: 'appointment:list',      staffOnly: true },
   { to: '/corners',      icon: MapPin,          label: 'Corners',             permission: 'schedule:create' },
   { to: '/users',        icon: Users,           label: 'Usuarios',            permission: ['user:list', 'technician:list'] },
   { to: '/availability', icon: Calendar,        label: 'Disponibilidad',      permission: 'availability:read',     staffOnly: true },
   { to: '/issue-types',  icon: Tag,             label: 'Tipos de Citas',      permission: 'issue-type:create' },
-  { to: '/companies',    icon: Building2,       label: 'Compañías',           permission: 'company:list' },
+  { to: '/companies',    icon: Building2,       label: 'Compañías',           permission: 'company:read' },
   { to: '/devices',      icon: Cpu,             label: 'Dispositivos',         permission: 'user:list' },
 ]
 
 export function Sidebar() {
-  const { user, logout, can } = useAuth()
+  const { user, can } = useAuth()
   // Employees manage incidents from the Dashboard — they don't need staff-only pages.
-  // incident:list-all (no lo tiene employee) distingue staff (admin/manager/technician)
+  // appointment:list-all (no lo tiene employee) distingue staff (admin/manager/technician)
   // de un empleado común — corner:manage-schedules no sirve porque manager tampoco lo tiene.
-  const isEmployee = !user?.technicianId && can('incident:create') && !can('incident:list-all')
-  const navigate = useNavigate()
+  const isEmployee = !user?.technicianId && can('appointment:create') && !can('appointment:list-all')
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('ec_sidebar') === 'collapsed'
   })
@@ -61,11 +60,6 @@ export function Sidebar() {
   useEffect(() => {
     localStorage.setItem('ec_sidebar', collapsed ? 'collapsed' : 'expanded')
   }, [collapsed])
-
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
 
   return (
     <aside
@@ -133,15 +127,6 @@ export function Sidebar() {
             ) : (
               <ChevronLeft className="h-4 w-4" />
             )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleLogout}
-            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-            title="Cerrar sesión"
-          >
-            <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </div>

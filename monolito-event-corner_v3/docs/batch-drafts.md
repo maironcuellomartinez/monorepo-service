@@ -1,6 +1,8 @@
-# Batch Drafts — Creación masiva de incidencias
+# Batch Drafts — Creación masiva de citas
 
-Permite que un técnico prepare un lote de incidencias antes de confirmarlas, con slots "retenidos" (HELD) durante 15 minutos para evitar conflictos de disponibilidad.
+> Nota (remodelado 2026-07): `Incident`/`Request` se unificaron en `Appointment`. Las tablas y algunos nombres de campo de este feature conservan el prefijo histórico `incident_*`/`incidentId` por compatibilidad — hoy retienen slots para citas de **cualquier** `kind` (ISSUE o REQUEST), no solo incidencias de hardware.
+
+Permite que un técnico prepare un lote de citas antes de confirmarlas, con slots "retenidos" (HELD) durante 15 minutos para evitar conflictos de disponibilidad.
 
 ---
 
@@ -8,11 +10,11 @@ Permite que un técnico prepare un lote de incidencias antes de confirmarlas, co
 
 ```
 1. Técnico abre la página de creación masiva
-2. Por cada incidencia: elige corner → horario → datos del cliente
+2. Por cada cita: elige corner → horario → datos del cliente
    └─► POST /api/batch-drafts/items  →  slots pasan a HELD (15 min)
 3. Puede editar o eliminar items mientras prepara el lote
 4. POST /api/batch-drafts/submit  →  para cada item:
-   │   ├─ createIncident({ heldByUserId })  →  HELD→BOOKED (atómico)
+   │   ├─ appointmentService.createAppointment({ heldByUserId })  →  HELD→BOOKED (atómico)
    │   └─ item exitoso: borrado del draft; item fallido: status='error'
 5. Draft vacío → se elimina automáticamente
 ```
@@ -21,7 +23,7 @@ Permite que un técnico prepare un lote de incidencias antes de confirmarlas, co
 
 ## API Endpoints
 
-Todos requieren `Authorization: Bearer <jwt>` con permiso `incident:create`.
+Todos requieren `Authorization: Bearer <jwt>` con permiso `appointment:create`.
 
 ### GET `/api/batch-drafts`
 Devuelve el draft activo del técnico autenticado, o `null` si no tiene ninguno.
@@ -62,7 +64,7 @@ Devuelve el draft activo del técnico autenticado, o `null` si no tiene ninguno.
 ---
 
 ### POST `/api/batch-drafts/items`
-Agrega una incidencia al lote y retiene los slots por 15 minutos.
+Agrega una cita al lote y retiene los slots por 15 minutos.
 
 **Request body:**
 ```json
@@ -118,7 +120,7 @@ Elimina un item del lote y libera sus holds. Si el draft queda vacío, se elimin
 
 ### POST `/api/batch-drafts/submit`
 Envía el lote completo. Procesa cada item en orden:
-- Convierte HELD→BOOKED creando la incidencia en el monolito
+- Convierte HELD→BOOKED creando la cita en el monolito
 - Items exitosos se eliminan del draft
 - Items fallidos permanecen con `status: 'error'` y `lastError`
 - Si todos los items son exitosos, el draft se elimina
@@ -126,10 +128,11 @@ Envía el lote completo. Procesa cada item en orden:
 **Response 200:**
 ```json
 [
-  { "localId": "uuid-1", "status": "success", "incidentId": "inc-uuid" },
+  { "localId": "uuid-1", "status": "success", "incidentId": "appt-uuid" },
   { "localId": "uuid-2", "status": "error", "error": "El horario ya pasó" }
 ]
 ```
+> El campo se sigue llamando `incidentId` en la respuesta (nombre histórico, `batch-draft.types.ts:69`) pero hoy contiene el `id` del `Appointment` creado, sea `kind=ISSUE` o `kind=REQUEST`.
 
 ---
 
@@ -162,14 +165,14 @@ El frontend llama esto cada 5 minutos automáticamente.
 |---|---|
 | `AVAILABLE` | Libre para reservar |
 | `HELD` | Retenido temporalmente por un usuario (TTL = 15 min) |
-| `BOOKED` | Reservado por una incidencia confirmada |
+| `BOOKED` | Reservado por una cita confirmada |
 | `EXPIRED` | Pasado de fecha/hora |
 
 ### Reglas de retención
 
 - Un slot HELD puede ser retenido por el mismo usuario que ya lo tiene (renovación idempotente).
 - Un slot HELD expirado (`held_until < NOW()`) se trata como AVAILABLE para otros usuarios.
-- La transición HELD→BOOKED ocurre atómicamente en `createIncident` cuando se pasa `heldByUserId`.
+- La transición HELD→BOOKED ocurre atómicamente en `appointmentService.createAppointment()` cuando se pasa `heldByUserId`.
 - `holdManyAtomic` usa un UPDATE condicional atómico — protege contra race conditions.
 
 ### Columnas en `corner_slots`

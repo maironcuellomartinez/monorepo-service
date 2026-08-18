@@ -12,7 +12,7 @@ export interface UserProps {
     email: Email | null;
     companyId: CompanyId | null;
     domain: string | null;
-    principalName: string | null;
+    upn: string | null;
     deviceTokens: string[];
     isActive: boolean;
     createdAt: Date;
@@ -31,7 +31,7 @@ export class User {
     get email(): Email | null { return this.props.email; }
     get companyId(): CompanyId | null { return this.props.companyId; }
     get domain(): string | null { return this.props.domain; }
-    get principalName(): string | null { return this.props.principalName; }
+    get upn(): string | null { return this.props.upn; }
     get deviceTokens(): string[] { return [...this.props.deviceTokens]; }
     get isActive(): boolean { return this.props.isActive; }
 
@@ -67,7 +67,7 @@ export class User {
         this.props.lastName = data.last_name ?? this.props.lastName;
         this.props.fullName = data.full_name ?? this.props.fullName;
         this.props.domain = data.domain ?? this.props.domain;
-        this.props.principalName = data.principal_name ?? this.props.principalName;
+        this.props.upn = data.upn ?? this.props.upn;
         this.props.updatedAt = new Date();
     }
 
@@ -93,7 +93,7 @@ export class User {
         email: Email | null,
         companyId: CompanyId | null,
         domain: string | null,
-        principalName: string | null,
+        upn: string | null,
         deviceTokens: string[],
         isActive: boolean,
         createdAt: Date,
@@ -108,7 +108,7 @@ export class User {
             email,
             companyId,
             domain,
-            principalName,
+            upn,
             deviceTokens,
             isActive,
             createdAt,
@@ -128,7 +128,7 @@ export class User {
         email: Email | null,
         companyId: CompanyId | null,
         domain: string | null,
-        principalName: string | null,
+        upn: string | null,
     ): Result<User> {
         if (!externalId || externalId.trim().length === 0) {
             return Result.err(new Error('external ID is required'));
@@ -144,7 +144,7 @@ export class User {
             email,
             companyId,
             domain,
-            principalName,
+            upn,
             deviceTokens: [],
             isActive: true,
             createdAt: now,

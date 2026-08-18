@@ -1,5 +1,10 @@
 # Arquitectura General
 
+> Actualizado 2026-07-31 — terminología de dominio corregida (`Incident`/`Request` →
+> `Appointment`, `principalName` → `upn`). El header `x-internal-token` que aparece en el
+> diagrama fue reemplazado por JWT M2M Ed25519/EdDSA (Fase 5, 2026-07-16) — se mantiene en el
+> dibujo por simplicidad pero ya no es el mecanismo real.
+
 ## Principio fundamental
 
 Cada servicio tiene un único rol. El monolito es el único que toma decisiones de negocio.
@@ -26,7 +31,7 @@ Los servicios proxy/infraestructura no conocen el dominio.
 ┌──────────▼───────────────────────────────────────────────────┐
 │                    MONOLITH :3001                            │
 │  - Dominio de negocio (DDD, hexagonal)                       │
-│  - Corners, Incidentes, Usuarios, Dispositivos               │
+│  - Corners, Citas (Appointments), Usuarios, Dispositivos      │
 │  - Resuelve: assignment_group, category, caller_id           │
 │  - Llama al API Gateway para outbound SN                     │
 └──────────┬───────────────────────────────────────────────────┘
@@ -61,7 +66,7 @@ Nagios/Thruk → POST /monitoring/alerts → api-snowq-service → ServiceNow
 ### Monolith (dominio)
 - Resuelve qué `assignment_group` usar (ver sección [Resolución de assignment_group](#resolución-de-assignment_group))
 - Resuelve qué `category` usar: `IssueType.servicenow_category`
-- Identifica al usuario: `user.principalName` (UPN) como `caller_id`
+- Identifica al usuario: `user.upn` (UPN) como `caller_id`
 - Identifica el dispositivo: `device.serialNumber` como `correlation_id`
 - NO llama directamente a ServiceNow — siempre pasa por el gateway
 
@@ -86,7 +91,7 @@ Nagios/Thruk → POST /monitoring/alerts → api-snowq-service → ServiceNow
 
 ```
 1. CompanyIssueConfig(company.id, issueTypeId)      ← más específico
-2. CompanyIssueConfig(SN_DEFAULT_COMPANY_ID, issueTypeId)  ← fallback por tipo de incidencia
+2. CompanyIssueConfig(SN_DEFAULT_COMPANY_ID, issueTypeId)  ← fallback por tipo de cita
 3. Corner.snow_assignment_group                       ← fallback por corner
 4. 'SOPORTE_GENERAL' + warn en log                   ← sin configuración disponible
 ```

@@ -1,4 +1,3 @@
-// infrastructure/persistence/typeorm/entities/corner-slot.entity.ts
 import {
   Entity,
   Column,
@@ -10,7 +9,7 @@ import {
 } from 'typeorm';
 import { CornerEntity } from './corner.entity';
 import { CornerScheduleEntity } from './corner-schedule.entity';
-import { IncidentSlotEntity } from './incident-slot.entity';
+import { AppointmentSlotEntity } from './appointment-slot.entity';
 
 // F2.8 — índice compuesto para queries de disponibilidad con filtros de hold
 // idx_corner_id dedicado para que MySQL use ese como soporte de FK y pueda modificar libremente el compuesto
@@ -72,6 +71,6 @@ export class CornerSlotEntity {
   @JoinColumn({ name: 'schedule_id' })
   schedule: CornerScheduleEntity;
 
-  @OneToMany(() => IncidentSlotEntity, (incidentSlot) => incidentSlot.slot)
-  incidentSlots: IncidentSlotEntity[];
+  @OneToMany(() => AppointmentSlotEntity, (appointmentSlot) => appointmentSlot.slot)
+  appointmentSlots: AppointmentSlotEntity[];
 }

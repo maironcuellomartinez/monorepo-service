@@ -23,7 +23,7 @@ export class AdminUsersController {
 
     @Get('search')
     @Permission('user', 'list')
-    @ApiOperation({ summary: 'Buscar usuarios (activos e inactivos) por nombre, email o principal_name' })
+    @ApiOperation({ summary: 'Buscar usuarios (activos e inactivos) por nombre, email o upn' })
     @ApiQuery({ name: 'q', required: true, description: 'Término de búsqueda (mínimo 2 caracteres)' })
     search(@Query('q') q: string) {
         return this.monolith.get('/users/search', { q, activeOnly: 'false' });

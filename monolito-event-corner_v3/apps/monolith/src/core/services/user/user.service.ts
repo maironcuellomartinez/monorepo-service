@@ -52,7 +52,7 @@ export class UserService implements IUserService {
             emailValue,
             null,           // companyId: se asigna manualmente por admin
             providerData.domain,
-            providerData.principal_name,
+            providerData.upn,
         );
         if (userResult.isFailure) return userResult;
 

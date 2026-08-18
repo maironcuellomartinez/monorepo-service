@@ -6,15 +6,20 @@ import { ICornerRepository } from '../../ports/outgoing/repositories/corner-repo
 import { IServiceNowProfileRepository } from '../../ports/outgoing/repositories/servicenow-profile-repository.port';
 import { ICompanyIssueConfigRepository } from '../../ports/outgoing/repositories/corner-issue-config-repository.port';
 import { IServiceNowClient } from '../../ports/outgoing/servicenow/servicenow-client.port';
-import { Incident } from '../../domain/entities/incident.entity';
-import { Request } from '../../domain/entities/request.entity';
+import { Appointment } from '../../domain/entities/appointment.entity';
+import { ServiceNowTicketLink } from '../../domain/entities/servicenow-ticket-link.entity';
+import { ServiceNowTicketType } from '../../domain/value-objects/servicenow-ticket-type.value';
 import { Company } from '../../domain/entities/company.entity';
 import { Corner } from '../../domain/entities/corner.entity';
-import { IssueTypeNotFoundError } from '../../domain/errors/incident.errors';
+import { IssueTypeNotFoundError } from '../../domain/errors/servicenow.errors';
 import { ServiceNowId } from '../../domain/value-objects/servicenow-id.value';
 import { ServiceNowNumber } from '../../domain/value-objects/servicenow-number.value';
+import { parseCatalogItemSysId } from '../../domain/value-objects/servicenow-category.value';
 import { CompanyId, IssueTypeId } from '@app/shared/types/branded-ids';
 import { Result } from '@app/result';
+
+/** Tipos de ticket que este servicio sabe crear directamente. `sc_task` no se crea acá — solo se enlaza (ver §Fase4 del plan). */
+type CreatableTicketType = Extract<ServiceNowTicketType, 'incident' | 'sc_req_item'>;
 
 @Injectable()
 export class ServiceNowIntegrationService {
@@ -33,15 +38,8 @@ export class ServiceNowIntegrationService {
    * Referencia externa estable enviada a snowq (campo `externalId`, usado para
    * el fingerprint de deduplicación — ver computeFingerprint en api-snowq-service —
    * y para poblar u_external_system_id en ServiceNow).
-   * Formato `{issueId}_{corner.code}`, replicando el patrón legacy exacto
-   * (ej. '1526_local_abelias'): un correlativo incremental corto (no el UUID
-   * interno) + el código estable del corner (ver Corner.updateCode()).
-   *
-   * `issueId` es DB-generado (AUTO_INCREMENT) y solo es null si este método
-   * se invoca antes de recargar el agregado desde persistencia — no debería
-   * ocurrir en el flujo normal (los handlers de INCIDENT_CREATED/REQUEST_CREATED
-   * recargan desde el repositorio antes de llamar a create*Ticket). Si ocurre,
-   * se cae al UUID para no bloquear la creación del ticket.
+   * Formato `{issueId}_{corner.code}` — issueId ahora viene del contador
+   * 'appointment' de issue_sequences (ver TypeOrmAppointmentRepository).
    */
   private buildExternalId(
     issueId: number | null,
@@ -84,196 +82,197 @@ export class ServiceNowIntegrationService {
     return sysId;
   }
 
-  /** Construye el payload, crea el ticket de Incident en ServiceNow y actualiza la entidad. */
-  async createIncidentTicket(
-    incident: Incident,
-    company: Company,
-    callerPrincipalName?: string,
-    creatorTechnicianEmail?: string,
-  ): Promise<Result<void>> {
-    return this.tracing.run(
-      'monolith.sn.createIncidentTicket',
-      {
-        kind: 'server',
-        attributes: {
-          'sn.incidentId': String(incident.id),
-          'sn.companyId': String(company.id),
-        },
-      },
-      () => this._createIncidentTicket(incident, company, callerPrincipalName, creatorTechnicianEmail),
+  /**
+   * Resuelve el assignment_group para un ticket en ServiceNow.
+   *
+   * Orden de prioridad:
+   *  1. CompanyIssueConfig de la compañía específica + issueType
+   *  2. CompanyIssueConfig de la compañía default (SN_DEFAULT_COMPANY_ID) + issueType
+   *  3. Grupo del corner (snow_assignment_group)
+   */
+  private async resolveAssignmentGroup(
+    companyId: CompanyId,
+    issueTypeId: IssueTypeId,
+    cornerGroup: string | null,
+  ): Promise<string> {
+    const specificResult = await this.companyIssueConfigRepo.getServiceNowGroup(
+      companyId,
+      issueTypeId,
     );
-  }
-
-  private async _createIncidentTicket(
-    incident: Incident,
-    company: Company,
-    callerPrincipalName?: string,
-    creatorTechnicianEmail?: string,
-  ): Promise<Result<void>> {
-    const issueTypeResult = await this.issueTypeRepo.findById(
-      incident.issueTypeId,
-    );
-    if (issueTypeResult.isFailure)
-      return Result.err(issueTypeResult.unwrapError());
-    const issueType = issueTypeResult.unwrap();
-    if (!issueType)
-      return Result.err(new IssueTypeNotFoundError(incident.issueTypeId));
-
-    const cornerResult = await this.cornerRepo.findById(incident.cornerId);
-    if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
-    const corner = cornerResult.unwrap();
-    if (!corner)
-      return Result.err(new Error(`Corner ${incident.cornerId} not found`));
-
-    const assignmentGroup = await this.resolveAssignmentGroup(
-      company.id,
-      incident.issueTypeId,
-      corner.snowAssignmentGroup ?? null,
-    );
-    const snowCompanySysId = await this.resolveSnowCompanySysId(company);
-
-    this.logger.log(
-      `[incident:${incident.id}] → SN | category=${issueType.servicenowCategory?.value ?? '-'} | group=${assignmentGroup} | company=${snowCompanySysId ?? 'null'} | caller=${incident.customerId} | corner=${corner.name}`,
-    );
-
-    const snResult = await this.snClient.createIncident({
-      company: snowCompanySysId,
-      category: issueType.servicenowCategory?.value ?? '',
-      assignment_group: assignmentGroup,
-      location: corner.servicenowLocation ?? '',
-      short_description: `Incidente: ${issueType.name}`,
-      description: `Incidencia creada en corner ${corner.name}`,
-      caller_id: callerPrincipalName ?? String(incident.customerId),
-      urgency: issueType.snUrgency.value,
-      impact: issueType.snImpact.value,
-      severity: issueType.snSeverity.value,
-      expected_start: incident.scheduledRange.start,
-      externalId: this.buildExternalId(incident.issueId, String(incident.id), corner),
-      // Si un técnico crea la incidencia, va como assigned_to; si no (employee/manager), el default.
-      assigned_to: creatorTechnicianEmail ?? process.env.SN_DEFAULT_TECHNICIAN ?? undefined,
-    });
-
-    if (snResult.isFailure) {
-      this.logger.error(
-        `[incident:${incident.id}] SN createIncident falló: ${snResult.unwrapError().message}`,
-      );
-      return Result.err(snResult.unwrapError());
+    if (specificResult.isSuccess && specificResult.unwrap()) {
+      return specificResult.unwrap()!;
     }
 
-    const { sysId, number, deferred, correlationId } = snResult.unwrap();
-
-    if (deferred && correlationId) {
-      incident.setSnowqCorrelationId(correlationId);
-      this.logger.log(
-        `[incident:${incident.id}] modo ASYNC — correlationId: ${correlationId}`,
+    const defaultCompanyId = process.env.SN_DEFAULT_COMPANY_ID;
+    if (defaultCompanyId && defaultCompanyId !== companyId.toString()) {
+      this.logger.debug(
+        `[company:${companyId}] sin CompanyIssueConfig para issueType:${issueTypeId} — consultando compañía default (${defaultCompanyId})`,
       );
-    } else {
-      const sysIdResult = ServiceNowId.create(sysId);
-      const numResult = ServiceNowNumber.create(number);
-
-      if (sysIdResult.isFailure || numResult.isFailure) {
-        this.logger.error(
-          `[incident:${incident.id}] SN devolvió ID/Number inválidos — sysId=${sysId} number=${number}`,
+      const defaultResult =
+        await this.companyIssueConfigRepo.getServiceNowGroup(
+          defaultCompanyId as CompanyId,
+          issueTypeId,
         );
-        return Result.err(
-          new Error(
-            `ServiceNow returned invalid sys_id or number: sysId=${sysId} number=${number}`,
-          ),
+      if (defaultResult.isSuccess && defaultResult.unwrap()) {
+        this.logger.debug(
+          `[company:${companyId}] assignment_group resuelto desde compañía default → ${defaultResult.unwrap()}`,
         );
+        return defaultResult.unwrap()!;
       }
-
-      incident.updateServiceNowInfo(sysIdResult.unwrap(), numResult.unwrap());
-      this.logger.log(
-        `[incident:${incident.id}] modo INMEDIATO — number: ${number} | sysId: ${sysId}`,
-      );
     }
 
-    return Result.ok(undefined);
+    if (cornerGroup) {
+      this.logger.debug(
+        `[company:${companyId}] usando grupo del corner → ${cornerGroup}`,
+      );
+      return cornerGroup;
+    }
+
+    this.logger.warn(
+      `[company:${companyId}] sin assignment_group para issueType:${issueTypeId} — ni config específica, ni default, ni corner`,
+    );
+    return 'SOPORTE_GENERAL';
   }
 
-  /** Construye el payload, crea el ticket de Request en ServiceNow y actualiza la entidad. */
-  async createRequestTicket(
-    request: Request,
+  /**
+   * Construye el payload, crea el ticket en ServiceNow (incident o sc_req_item)
+   * y devuelve un `ServiceNowTicketLink` (pendiente/resuelto/diferido) listo
+   * para persistir. Reemplaza createIncidentTicket/createRequestTicket —
+   * la única diferencia entre ambos era la forma del payload, ahora aislada
+   * en un solo branch en vez de dos métodos casi-duplicados.
+   */
+  async createTicket(
+    appointment: Appointment,
+    ticketType: CreatableTicketType,
     company: Company,
     callerPrincipalName?: string,
-    requestedForPrincipalName?: string,
-  ): Promise<Result<void>> {
+    requestedForOrCreatorEmail?: string,
+  ): Promise<Result<ServiceNowTicketLink>> {
     return this.tracing.run(
-      'monolith.sn.createRequestTicket',
+      'monolith.sn.createTicket',
       {
         kind: 'server',
         attributes: {
-          'sn.requestId': String(request.id),
+          'sn.appointmentId': String(appointment.id),
+          'sn.ticketType': ticketType,
           'sn.companyId': String(company.id),
         },
       },
       () =>
-        this._createRequestTicket(
-          request,
+        this._createTicket(
+          appointment,
+          ticketType,
           company,
           callerPrincipalName,
-          requestedForPrincipalName,
+          requestedForOrCreatorEmail,
         ),
     );
   }
 
-  private async _createRequestTicket(
-    request: Request,
+  private async _createTicket(
+    appointment: Appointment,
+    ticketType: CreatableTicketType,
     company: Company,
     callerPrincipalName?: string,
-    requestedForPrincipalName?: string,
-  ): Promise<Result<void>> {
+    requestedForOrCreatorEmail?: string,
+  ): Promise<Result<ServiceNowTicketLink>> {
     const issueTypeResult = await this.issueTypeRepo.findById(
-      request.issueTypeId,
+      appointment.issueTypeId,
     );
     if (issueTypeResult.isFailure)
       return Result.err(issueTypeResult.unwrapError());
     const issueType = issueTypeResult.unwrap();
     if (!issueType)
-      return Result.err(new IssueTypeNotFoundError(request.issueTypeId));
+      return Result.err(new IssueTypeNotFoundError(appointment.issueTypeId));
 
-    const cornerResult = await this.cornerRepo.findById(request.cornerId);
+    const cornerResult = await this.cornerRepo.findById(appointment.cornerId);
     if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
     const corner = cornerResult.unwrap();
     if (!corner)
-      return Result.err(new Error(`Corner ${request.cornerId} not found`));
+      return Result.err(new Error(`Corner ${appointment.cornerId} not found`));
 
     const assignmentGroup = await this.resolveAssignmentGroup(
       company.id,
-      request.issueTypeId,
+      appointment.issueTypeId,
       corner.snowAssignmentGroup ?? null,
     );
     const snowCompanySysId = await this.resolveSnowCompanySysId(company);
-
-    this.logger.log(
-      `[request:${request.id}] → SN | category=${issueType.servicenowCategory?.value ?? '-'} | group=${assignmentGroup} | company=${snowCompanySysId ?? 'null'} | caller=${request.technicianId} | for=${request.customerId}`,
+    const externalId = this.buildExternalId(
+      appointment.issueId,
+      String(appointment.id),
+      corner,
     );
 
-    const snResult = await this.snClient.createRequest({
-      company: snowCompanySysId,
-      category: issueType.servicenowCategory?.value ?? '',
-      assignment_group: assignmentGroup,
-      location: corner.servicenowLocation ?? '',
-      short_description: `Solicitud: ${issueType.name}`,
-      description: request.notes ?? 'Solicitud creada por técnico',
-      caller_id: callerPrincipalName ?? String(request.technicianId),
-      requested_for: requestedForPrincipalName ?? String(request.customerId),
-      externalId: this.buildExternalId(request.issueId, String(request.id), corner),
-    });
+    this.logger.log(
+      `[appointment:${appointment.id}] → SN | type=${ticketType} | category=${issueType.servicenowCategory?.value ?? '-'} | group=${assignmentGroup} | company=${snowCompanySysId ?? 'null'} | corner=${corner.name}`,
+    );
+
+    const snResult =
+      ticketType === 'incident'
+        ? await this.snClient.createIncident({
+            company: snowCompanySysId,
+            category: issueType.servicenowCategory?.value ?? '',
+            assignment_group: assignmentGroup,
+            location: corner.servicenowLocation ?? '',
+            short_description: `Incidente: ${issueType.name}`,
+            description: `Incidencia creada en corner ${corner.name}`,
+            caller_id: callerPrincipalName ?? String(appointment.customerId),
+            urgency: issueType.snUrgency.value,
+            impact: issueType.snImpact.value,
+            severity: issueType.snSeverity.value,
+            expected_start: appointment.scheduledRange.start,
+            externalId,
+            // Si un técnico crea la cita, va como assigned_to; si no, el default.
+            assigned_to:
+              requestedForOrCreatorEmail ??
+              process.env.SN_DEFAULT_TECHNICIAN ??
+              undefined,
+          })
+        : await (() => {
+            const catItem = parseCatalogItemSysId(issueType.servicenowCategory?.value);
+            this.logger.debug(
+              `[appointment:${appointment.id}] cat_item ${catItem ? `resuelto: ${catItem}` : `no encontrado en servicenowCategory="${issueType.servicenowCategory?.value ?? ''}"`}`,
+            );
+            return this.snClient.createRequest({
+              company: snowCompanySysId,
+              category: issueType.servicenowCategory?.value ?? '',
+              assignment_group: assignmentGroup,
+              location: corner.servicenowLocation ?? '',
+              short_description: `Solicitud: ${issueType.name}`,
+              description:
+                appointment.metadata?.notes ?? 'Solicitud creada por técnico',
+              caller_id:
+                callerPrincipalName ??
+                String(appointment.createdByTechnicianId ?? appointment.customerId),
+              requested_for:
+                requestedForOrCreatorEmail ?? String(appointment.customerId),
+              externalId,
+              cat_item: catItem ?? undefined,
+            });
+          })();
 
     if (snResult.isFailure) {
       this.logger.error(
-        `[request:${request.id}] SN createRequest falló: ${snResult.unwrapError().message}`,
+        `[appointment:${appointment.id}] SN ${ticketType === 'incident' ? 'createIncident' : 'createRequest'} falló: ${snResult.unwrapError().message}`,
       );
       return Result.err(snResult.unwrapError());
     }
 
+    const linkResult = ServiceNowTicketLink.createPending(
+      crypto.randomUUID(),
+      appointment.id,
+      ticketType,
+      'primary',
+    );
+    if (linkResult.isFailure) return Result.err(linkResult.unwrapError());
+    const link = linkResult.unwrap();
+
     const { sysId, number, deferred, correlationId } = snResult.unwrap();
 
     if (deferred && correlationId) {
-      request.setSnowqCorrelationId(correlationId);
+      link.markDeferred(correlationId);
       this.logger.log(
-        `[request:${request.id}] modo ASYNC — correlationId: ${correlationId}`,
+        `[appointment:${appointment.id}] modo ASYNC — correlationId: ${correlationId}`,
       );
     } else {
       const sysIdResult = ServiceNowId.create(sysId);
@@ -281,7 +280,7 @@ export class ServiceNowIntegrationService {
 
       if (sysIdResult.isFailure || numResult.isFailure) {
         this.logger.error(
-          `[request:${request.id}] SN devolvió ID/Number inválidos — sysId=${sysId} number=${number}`,
+          `[appointment:${appointment.id}] SN devolvió ID/Number inválidos — sysId=${sysId} number=${number}`,
         );
         return Result.err(
           new Error(
@@ -290,211 +289,181 @@ export class ServiceNowIntegrationService {
         );
       }
 
-      request.updateServiceNowInfo(sysIdResult.unwrap(), numResult.unwrap());
+      link.resolveImmediate(sysIdResult.unwrap(), numResult.unwrap());
       this.logger.log(
-        `[request:${request.id}] modo INMEDIATO — number: ${number} | sysId: ${sysId}`,
+        `[appointment:${appointment.id}] modo INMEDIATO — number: ${number} | sysId: ${sysId}`,
       );
     }
 
-    return Result.ok(undefined);
+    return Result.ok(link);
   }
 
   /**
-   * Re-encola un incident huérfano en snowq (async only, sin intento inmediato).
-   * Usar en lugar de createIncidentTicket para recuperación: el ReconcilerJob
-   * obtendrá sysId + number cuando snowq lo procese sin forzar un nuevo ticket.
+   * Re-encola un ticket huérfano en snowq (async only, sin intento inmediato).
+   * El ReconcilerJob obtendrá sysId + number cuando snowq lo procese, sin
+   * forzar un nuevo ticket. Reemplaza reQueueIncidentTicket/reQueueRequestTicket.
    */
-  async reQueueIncidentTicket(
-    incident: Incident,
+  async reQueueTicket(
+    appointment: Appointment,
+    ticketLink: ServiceNowTicketLink,
     company: Company,
   ): Promise<Result<void>> {
     return this.tracing.run(
-      'monolith.sn.reQueueIncidentTicket',
+      'monolith.sn.reQueueTicket',
       {
         kind: 'server',
         attributes: {
-          'sn.incidentId': String(incident.id),
-          'sn.companyId': String(company.id),
+          'sn.appointmentId': String(appointment.id),
+          'sn.ticketType': ticketLink.type,
         },
       },
-      () => this._reQueueIncidentTicket(incident, company),
+      () => this._reQueueTicket(appointment, ticketLink, company),
     );
   }
 
-  private async _reQueueIncidentTicket(
-    incident: Incident,
+  private async _reQueueTicket(
+    appointment: Appointment,
+    ticketLink: ServiceNowTicketLink,
     company: Company,
   ): Promise<Result<void>> {
-    const issueTypeResult = await this.issueTypeRepo.findById(
-      incident.issueTypeId,
-    );
-    if (issueTypeResult.isFailure)
-      return Result.err(issueTypeResult.unwrapError());
-    const issueType = issueTypeResult.unwrap();
-    if (!issueType)
-      return Result.err(new IssueTypeNotFoundError(incident.issueTypeId));
+    if (ticketLink.type === 'sc_task') {
+      return Result.err(new Error('sc_task tickets are not re-queueable — no creation endpoint exists for them yet'));
+    }
 
-    const cornerResult = await this.cornerRepo.findById(incident.cornerId);
+    const issueTypeResult = await this.issueTypeRepo.findById(appointment.issueTypeId);
+    if (issueTypeResult.isFailure) return Result.err(issueTypeResult.unwrapError());
+    const issueType = issueTypeResult.unwrap();
+    if (!issueType) return Result.err(new IssueTypeNotFoundError(appointment.issueTypeId));
+
+    const cornerResult = await this.cornerRepo.findById(appointment.cornerId);
     if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
     const corner = cornerResult.unwrap();
-    if (!corner)
-      return Result.err(new Error(`Corner ${incident.cornerId} not found`));
+    if (!corner) return Result.err(new Error(`Corner ${appointment.cornerId} not found`));
 
     const assignmentGroup = await this.resolveAssignmentGroup(
       company.id,
-      incident.issueTypeId,
+      appointment.issueTypeId,
       corner.snowAssignmentGroup ?? null,
     );
     const snowCompanySysId = await this.resolveSnowCompanySysId(company);
+    const externalId = this.buildExternalId(appointment.issueId, String(appointment.id), corner);
 
     this.logger.log(
-      `[incident:${incident.id}] re-enqueue → SN async | group=${assignmentGroup} | company=${snowCompanySysId ?? 'null'}`,
+      `[appointment:${appointment.id}] re-enqueue → SN async | type=${ticketLink.type} | group=${assignmentGroup} | company=${snowCompanySysId ?? 'null'}`,
     );
 
-    const enqueueResult = await this.snClient.enqueueIncident({
-      company: snowCompanySysId,
-      category: issueType.servicenowCategory?.value ?? '',
-      assignment_group: assignmentGroup,
-      location: corner.servicenowLocation ?? '',
-      short_description: `Incidente: ${issueType.name}`,
-      description: `Incidencia creada en corner ${corner.name}`,
-      caller_id: String(incident.customerId),
-      urgency: issueType.snUrgency.value,
-      impact: issueType.snImpact.value,
-      severity: issueType.snSeverity.value,
-      expected_start: incident.scheduledRange.start,
-      externalId: this.buildExternalId(incident.issueId, String(incident.id), corner),
-      assigned_to: process.env.SN_DEFAULT_TECHNICIAN ?? undefined,
-    });
+    const enqueueResult =
+      ticketLink.type === 'incident'
+        ? await this.snClient.enqueueIncident({
+            company: snowCompanySysId,
+            category: issueType.servicenowCategory?.value ?? '',
+            assignment_group: assignmentGroup,
+            location: corner.servicenowLocation ?? '',
+            short_description: `Incidente: ${issueType.name}`,
+            description: `Incidencia creada en corner ${corner.name}`,
+            caller_id: String(appointment.customerId),
+            urgency: issueType.snUrgency.value,
+            impact: issueType.snImpact.value,
+            severity: issueType.snSeverity.value,
+            expected_start: appointment.scheduledRange.start,
+            externalId,
+            assigned_to: process.env.SN_DEFAULT_TECHNICIAN ?? undefined,
+          })
+        : await (() => {
+            const catItem = parseCatalogItemSysId(issueType.servicenowCategory?.value);
+            this.logger.debug(
+              `[appointment:${appointment.id}] re-enqueue cat_item ${catItem ? `resuelto: ${catItem}` : `no encontrado en servicenowCategory="${issueType.servicenowCategory?.value ?? ''}"`}`,
+            );
+            return this.snClient.enqueueRequest({
+              company: snowCompanySysId,
+              category: issueType.servicenowCategory?.value ?? '',
+              assignment_group: assignmentGroup,
+              location: corner.servicenowLocation ?? '',
+              short_description: `Solicitud: ${issueType.name}`,
+              description: appointment.metadata?.notes ?? 'Solicitud creada por técnico',
+              caller_id: String(appointment.createdByTechnicianId ?? appointment.customerId),
+              requested_for: String(appointment.customerId),
+              externalId,
+              cat_item: catItem ?? undefined,
+            });
+          })();
 
     if (enqueueResult.isFailure) {
       this.logger.error(
-        `[incident:${incident.id}] re-enqueue falló: ${enqueueResult.unwrapError().message}`,
+        `[appointment:${appointment.id}] re-enqueue falló: ${enqueueResult.unwrapError().message}`,
       );
       return Result.err(enqueueResult.unwrapError());
     }
 
     const { correlationId } = enqueueResult.unwrap();
-    incident.setSnowqCorrelationId(correlationId);
+    ticketLink.markDeferred(correlationId);
     this.logger.log(
-      `[incident:${incident.id}] re-enqueued → correlationId: ${correlationId}`,
+      `[appointment:${appointment.id}] re-enqueued → correlationId: ${correlationId}`,
     );
     return Result.ok(undefined);
   }
 
-  /**
-   * Re-encola una request huérfana en snowq (async only, sin intento inmediato).
-   */
-  async reQueueRequestTicket(
-    request: Request,
-    company: Company,
+  /** Cierra cualquier tipo de ticket en ServiceNow. Reemplaza closeIncidentTicket (incident-only). */
+  async closeTicket(
+    ticketLink: ServiceNowTicketLink,
+    closeCategory: string,
+    closeNotes?: string,
   ): Promise<Result<void>> {
     return this.tracing.run(
-      'monolith.sn.reQueueRequestTicket',
+      'monolith.sn.closeTicket',
       {
         kind: 'server',
-        attributes: {
-          'sn.requestId': String(request.id),
-          'sn.companyId': String(company.id),
-        },
+        attributes: { 'sn.type': ticketLink.type, 'sn.closeCategory': closeCategory },
       },
-      () => this._reQueueRequestTicket(request, company),
+      () => this._closeTicket(ticketLink, closeCategory, closeNotes),
     );
   }
 
-  private async _reQueueRequestTicket(
-    request: Request,
-    company: Company,
+  private async _closeTicket(
+    ticketLink: ServiceNowTicketLink,
+    closeCategory: string,
+    closeNotes?: string,
   ): Promise<Result<void>> {
-    const issueTypeResult = await this.issueTypeRepo.findById(
-      request.issueTypeId,
-    );
-    if (issueTypeResult.isFailure)
-      return Result.err(issueTypeResult.unwrapError());
-    const issueType = issueTypeResult.unwrap();
-    if (!issueType)
-      return Result.err(new IssueTypeNotFoundError(request.issueTypeId));
-
-    const cornerResult = await this.cornerRepo.findById(request.cornerId);
-    if (cornerResult.isFailure) return Result.err(cornerResult.unwrapError());
-    const corner = cornerResult.unwrap();
-    if (!corner)
-      return Result.err(new Error(`Corner ${request.cornerId} not found`));
-
-    const assignmentGroup = await this.resolveAssignmentGroup(
-      company.id,
-      request.issueTypeId,
-      corner.snowAssignmentGroup ?? null,
-    );
-    const snowCompanySysId = await this.resolveSnowCompanySysId(company);
-
+    if (!ticketLink.sysId) {
+      return Result.err(new Error(`ServiceNowTicketLink ${ticketLink.id} has no sysId yet`));
+    }
     this.logger.log(
-      `[request:${request.id}] re-enqueue → SN async | group=${assignmentGroup} | company=${snowCompanySysId ?? 'null'}`,
+      `[close] type=${ticketLink.type} | sysId=${ticketLink.sysId.value} | closeCategory=${closeCategory}`,
     );
 
-    const enqueueResult = await this.snClient.enqueueRequest({
-      company: snowCompanySysId,
-      category: issueType.servicenowCategory?.value ?? '',
-      assignment_group: assignmentGroup,
-      location: corner.servicenowLocation ?? '',
-      short_description: `Solicitud: ${issueType.name}`,
-      description: request.notes ?? 'Solicitud creada por técnico',
-      caller_id: String(request.technicianId),
-      requested_for: String(request.customerId),
-      externalId: this.buildExternalId(request.issueId, String(request.id), corner),
-    });
-
-    if (enqueueResult.isFailure) {
-      this.logger.error(
-        `[request:${request.id}] re-enqueue falló: ${enqueueResult.unwrapError().message}`,
-      );
-      return Result.err(enqueueResult.unwrapError());
+    if (ticketLink.type === 'sc_task') {
+      // Igual que en creación (ver CreatableTicketType más arriba): sc_task
+      // no tiene endpoint dedicado en api-snowq-service todavía.
+      return Result.err(new Error('sc_task tickets cannot be closed — no close endpoint exists for them yet'));
     }
 
-    const { correlationId } = enqueueResult.unwrap();
-    request.setSnowqCorrelationId(correlationId);
-    this.logger.log(
-      `[request:${request.id}] re-enqueued → correlationId: ${correlationId}`,
-    );
-    return Result.ok(undefined);
-  }
+    // Solo 'incident' tiene endpoint de cierre dedicado en api-snowq-service
+    // (POST .../close, con close_code + state hardcodeado por SN). 'sc_req_item'
+    // (RITM) no tiene ese endpoint, pero sí soporta el PATCH genérico de
+    // actualización — con eso alcanza para setear state+close_code/close_notes.
+    const result =
+      ticketLink.type === 'incident'
+        ? await this.snClient.closeTicket(
+            ticketLink.type,
+            ticketLink.sysId.value,
+            closeCategory,
+            closeNotes,
+          )
+        : await this.snClient.updateTicket(ticketLink.type, ticketLink.sysId.value, {
+            state: 'closed',
+            close_code: closeCategory,
+            close_notes: closeNotes ?? '',
+          });
 
-  /** Cierra un ticket de Incident en ServiceNow. */
-  async closeIncidentTicket(
-    sysId: string,
-    closeCategory: string,
-    closeNotes?: string,
-  ): Promise<Result<void>> {
-    return this.tracing.run(
-      'monolith.sn.closeIncidentTicket',
-      {
-        kind: 'server',
-        attributes: { 'sn.sysId': sysId, 'sn.closeCategory': closeCategory },
-      },
-      () => this._closeIncidentTicket(sysId, closeCategory, closeNotes),
-    );
-  }
-
-  private async _closeIncidentTicket(
-    sysId: string,
-    closeCategory: string,
-    closeNotes?: string,
-  ): Promise<Result<void>> {
-    this.logger.log(`[close] sysId=${sysId} | closeCategory=${closeCategory}`);
-    const result = await this.snClient.closeIncident(
-      sysId,
-      closeCategory,
-      closeNotes,
-    );
     if (result.isFailure) {
       this.logger.error(
-        `[close] falló para sysId=${sysId}: ${result.unwrapError().message}`,
+        `[close] falló para ${ticketLink.type}/${ticketLink.sysId.value}: ${result.unwrapError().message}`,
       );
     }
     return result;
   }
 
-  /** Actualiza campos arbitrarios de un ticket existente. */
+  /** Actualiza campos arbitrarios de un ticket existente (ya era genérico por tabla). */
   async updateTicket(
     table: string,
     sysId: string,
@@ -522,60 +491,5 @@ export class ServiceNowIntegrationService {
       );
     }
     return result;
-  }
-
-  /**
-   * Resuelve el assignment_group para un ticket en ServiceNow.
-   *
-   * Orden de prioridad:
-   *  1. CompanyIssueConfig de la compañía específica + issueType
-   *  2. CompanyIssueConfig de la compañía default (SN_DEFAULT_COMPANY_ID) + issueType
-   *  3. Grupo del corner (snow_assignment_group)
-   */
-  private async resolveAssignmentGroup(
-    companyId: CompanyId,
-    issueTypeId: IssueTypeId,
-    cornerGroup: string | null,
-  ): Promise<string> {
-    // 1. Config específica de la compañía
-    const specificResult = await this.companyIssueConfigRepo.getServiceNowGroup(
-      companyId,
-      issueTypeId,
-    );
-    if (specificResult.isSuccess && specificResult.unwrap()) {
-      return specificResult.unwrap()!;
-    }
-
-    // 2. Config de la compañía default
-    const defaultCompanyId = process.env.SN_DEFAULT_COMPANY_ID;
-    if (defaultCompanyId && defaultCompanyId !== companyId.toString()) {
-      this.logger.debug(
-        `[company:${companyId}] sin CompanyIssueConfig para issueType:${issueTypeId} — consultando compañía default (${defaultCompanyId})`,
-      );
-      const defaultResult =
-        await this.companyIssueConfigRepo.getServiceNowGroup(
-          defaultCompanyId as CompanyId,
-          issueTypeId,
-        );
-      if (defaultResult.isSuccess && defaultResult.unwrap()) {
-        this.logger.debug(
-          `[company:${companyId}] assignment_group resuelto desde compañía default → ${defaultResult.unwrap()}`,
-        );
-        return defaultResult.unwrap()!;
-      }
-    }
-
-    // 3. Grupo del corner
-    if (cornerGroup) {
-      this.logger.debug(
-        `[company:${companyId}] usando grupo del corner → ${cornerGroup}`,
-      );
-      return cornerGroup;
-    }
-
-    this.logger.warn(
-      `[company:${companyId}] sin assignment_group para issueType:${issueTypeId} — ni config específica, ni default, ni corner`,
-    );
-    return 'SOPORTE_GENERAL';
   }
 }

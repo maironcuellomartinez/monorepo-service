@@ -1,6 +1,6 @@
 // core/domain/value-objects/ids.ts (re-export desde shared)
 export {
-    IncidentId, TechnicianId, CornerId, SlotId, ScheduleId,
+    IncidentId, AppointmentId, TechnicianId, CornerId, SlotId, ScheduleId,
     CustomerId, UserId, IssueTypeId, CompanyId, LockerId,
     DeviceId, AssignmentId, RequestId, ServiceNowProfileId,
     ServiceNowId, ServiceNowNumber, ServiceNowGroup, ServiceNowCategory,

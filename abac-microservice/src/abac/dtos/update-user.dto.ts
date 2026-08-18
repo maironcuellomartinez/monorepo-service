@@ -3,10 +3,20 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
 export class UpdateUserDto {
-    @ApiPropertyOptional({ example: 'Alice Smith' })
+    @ApiPropertyOptional({ example: 'Alice' })
     @IsString()
     @IsOptional()
-    name?: string;
+    firstName?: string;
+
+    @ApiPropertyOptional({ example: 'Smith' })
+    @IsString()
+    @IsOptional()
+    lastName?: string;
+
+    @ApiPropertyOptional({ example: 'alice.smith' })
+    @IsString()
+    @IsOptional()
+    username?: string;
 
     @ApiPropertyOptional({ example: '+1234567890' })
     @IsString()
