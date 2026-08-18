@@ -1,8 +1,9 @@
 # Changelog — Remodelado Incident/Request → Appointment
 
-> Comparación completa: `workspace-prueba-arquitectura` (base) ↔ `feature/appointment-domain-remodel` (rama actual).
-> 11 commits · **151 archivos** · +7906 / −9892 líneas.
-> Generado 2026-07-30. La rama **no** tiene PR/merge planeado a corto plazo (política explícita — ver decisión del proyecto).
+> Comparación original: `workspace-prueba-arquitectura` (base) ↔ `feature/appointment-domain-remodel` (rama de esa época).
+> 11 commits · **151 archivos** · +7906 / −9892 líneas. Generado 2026-07-30.
+>
+> **Actualización 2026-08-18:** la rama sumó 6 commits más (17 en total) y se mergeó a `workspace-prueba-arquitectura` vía PR #5 (squash merge) — la política de "sin PR/merge a corto plazo" quedó superada, la rama `feature/appointment-domain-remodel` ya no existe. El detalle de archivos de abajo sigue reflejando los 11 commits originales; los 6 commits agregados después incluyen, entre otros, el cambio descrito en la §6 más abajo (cancelación desde cualquier estado + fix de cierre `sc_req_item`).
 
 ## Resumen ejecutivo
 
@@ -163,4 +164,24 @@ El cambio central es la unificación de las entidades `Incident` y `Request` (an
 
 ## 5. Deuda de documentación pendiente
 
-`docs/er-diagram.md` quedó parcialmente actualizado en este mismo commit: el diagrama ER, el mapa de relaciones y el mapa de tokens DI ya reflejan `Appointment`/`ServiceNowTicketLink`. **Pendiente** (marcado con un aviso explícito en el archivo): las secciones "Modelo UML del Dominio", "Diagrama de flujo de implementación" y "Checklist por entidad nueva" todavía describen las clases `Incident`/`Request` separadas y mencionan `SnowSyncJob` (removido). Requieren una pasada dedicada por el volumen de diagramas mermaid involucrados.
+`docs/er-diagram.md` quedó parcialmente actualizado en este mismo commit: el diagrama ER, el mapa de relaciones y el mapa de tokens DI ya reflejan `Appointment`/`ServiceNowTicketLink`.
+
+**Resuelto 2026-08-18:** el resto del archivo (sección "Modelo UML del Dominio" — classDiagram + explicación con `Operaciones: Incident`/`Operaciones: Request` — y el bloque de diagramas de resolución de grupo SN que todavía mencionaban `SnowSyncJob`, `closeIncidentTicket()` e `INCIDENT_CREATED`) se actualizó al modelo `Appointment`/`ServiceNowTicketLink`. De paso se eliminó el bloque de borradores duplicados y el fragmento de transcripción de chat que había quedado pegado ahí por error, y se dejó una nota apuntando a `CLAUDE.md` como fuente autoritativa de la cadena `resolveAssignmentGroup()` para no volver a duplicar esa lógica en dos lugares. Las secciones "Diagrama de flujo de implementación" y "Checklist por entidad nueva" no necesitaban cambios — son genéricas, no mencionan entidades específicas.
+
+---
+
+## 6. Cancelación desde cualquier estado + fix de cierre `sc_req_item`/`sc_task` (2026-08-18)
+
+Cambio posterior a la comparación original de arriba (commit `9080c06`, incluido en el squash de PR #5).
+
+**Motivo:** el negocio pidió poder cancelar una cita aunque el técnico ya hubiera empezado a trabajarla — antes `CANCELED` solo era alcanzable desde `CREATED`/`REOPENED`.
+
+| Archivo | Cambio |
+|---|---|
+| `apps/monolith/src/core/domain/constants/appointment.constants.ts` | `VALID_STATUS_TRANSITIONS`: `CANCELED` agregado como destino válido desde `DELIVERED`, `IN_PROGRESS` y los 5 `PENDING_*` (antes solo `CREATED`/`REOPENED`) |
+| `apps/monolith/src/core/services/appointment/appointment.service.ts` | `_cancelAppointment()`: guard hardcodeado `CREATED \|\| REOPENED` reemplazado por `ACTIVE_STATUSES.includes(status)` |
+| `apps/monolith/src/infrastructure/event-handlers/appointment-status-changed.handler.ts` | Nueva rama para `CANCELED`: si el `ServiceNowTicketLink` ya tiene `sysId` (ticket activo en SN), cierra el ticket real; si no, lo marca `ABANDONED` para que `SnowOrphanRecoveryJob` no lo reencole sobre una cita ya cancelada |
+| `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts` | `closeTicket()`: fix independiente encontrado en el camino — el cierre solo estaba cableado end-to-end para `incident` (endpoint dedicado `.../close` en api-snowq-service). `sc_req_item` ahora cierra vía el PATCH genérico (`{state:'closed', close_code, close_notes}`), que ya estaba 100% cableado para otras transiciones. `sc_task` devuelve error explícito — no es creable todavía (`CreatableTicketType` lo excluye), así que no hay nada real que cerrar |
+| `apps/monolith/src/core/domain/enums/appointment-status.enum.ts` (+ su spec, eliminado) | Baja de `canTransitionTo()` — dead code, duplicaba `VALID_STATUS_TRANSITIONS` sin estar referenciado desde ningún caller de producción |
+
+No requirió cambios en `api-gateway`, `api-snowq-service` ni `servicenow-clone-backend` — el fix de `sc_req_item` reutiliza infraestructura ya cableada de punta a punta.

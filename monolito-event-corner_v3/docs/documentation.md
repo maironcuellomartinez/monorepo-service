@@ -124,19 +124,22 @@ VALIDATED                    → Validada por cliente (post-cierre) — terminal
 CANCELED                     → Cancelada por cliente — terminal
 ```
 
-`ACTIVE_STATUSES` = todo lo anterior salvo `CLOSED`/`VALIDATED`/`CANCELED`. Se usa como filtro por defecto en `/citas` (event-corner-app) para no traer el historial completo de un corner con mucho volumen — un checkbox "Todas las citas" lo desactiva.
+`ACTIVE_STATUSES` = todo lo anterior salvo `CLOSED`/`VALIDATED`/`CANCELED`. Se usa como filtro por defecto en `/citas` (event-corner-app) para no traer el historial completo de un corner con mucho volumen — un checkbox "Todas las citas" lo desactiva. También es el conjunto de estados desde los que se puede cancelar (ver abajo).
 
-**Transiciones válidas:**
+**Transiciones válidas** (`VALID_STATUS_TRANSITIONS`, `appointment.constants.ts`):
 ```
-CREATED   → DELIVERED, CANCELED
-DELIVERED → IN_PROGRESS, PENDING_THIRD_PARTY, PENDING_USER, PENDING_SPARE_PART
-IN_PROGRESS → PENDING_THIRD_PARTY, PENDING_USER, PENDING_SPARE_PART,
-              PENDING_PICKUP, PENDING_REPLACEMENT_DELIVERY
-PENDING_THIRD_PARTY / PENDING_USER / PENDING_SPARE_PART → IN_PROGRESS
-PENDING_PICKUP / PENDING_REPLACEMENT_DELIVERY → CLOSED
-CLOSED → REOPENED (via reopen()), VALIDATED (via validate())
-REOPENED → IN_PROGRESS
+CREATED                       → DELIVERED, CANCELED
+DELIVERED                     → IN_PROGRESS, CLOSED, CANCELED
+IN_PROGRESS                   → PENDING_THIRD_PARTY, PENDING_USER, PENDING_SPARE_PART,
+                                 PENDING_PICKUP, PENDING_REPLACEMENT_DELIVERY, CLOSED, CANCELED
+PENDING_THIRD_PARTY / PENDING_USER / PENDING_SPARE_PART
+  / PENDING_PICKUP / PENDING_REPLACEMENT_DELIVERY → IN_PROGRESS, CLOSED, CANCELED
+CLOSED     → REOPENED (via reopen()), VALIDATED (via validate()) — no cancelable
+REOPENED   → DELIVERED, CLOSED, CANCELED
+VALIDATED / CANCELED → terminal, sin salida
 ```
+
+`CANCELED` es alcanzable desde **cualquier estado activo** (`ACTIVE_STATUSES`), no solo `CREATED`/`REOPENED` — el cliente puede cancelar aunque el técnico ya haya empezado a trabajar. `CLOSED`/`VALIDATED` siguen siendo terminales respecto a `CANCELED` (una cita ya cerrada se reabre con `reopen()`, no se cancela). Si al cancelar ya existía un `ServiceNowTicketLink` con `sysId` (ticket activo en SN), `AppointmentStatusChangedHandler` cierra el ticket real (`ServiceNowIntegrationService.closeTicket(link, 'canceled', ...)`) y marca el link `CLOSED`; si todavía no tenía `sysId` (creación diferida en curso), se marca `ABANDONED` para que `SnowOrphanRecoveryJob` no lo reencole.
 
 #### `ServiceNowTicketLink` (Vínculo con ticket ServiceNow)
 Vínculo polimórfico 1:N entre un `Appointment` y uno o más tickets de ServiceNow. Reemplaza los campos `servicenowId`/`servicenowNumber` inline que tenía `Incident`. Una cita `REQUEST` puede tener un link `sc_req_item` (la RITM, `role='primary'`) y uno o más `sc_task` de cumplimiento (`role='fulfillment'`, enlazados de vuelta vía `parentRequestSysId`).
@@ -598,7 +601,7 @@ Superficie unificada — reemplaza los antiguos `/api/incidents` y `/api/request
 | `PATCH` | `/api/appointments/:id/reschedule` | `appointment:change-status` | Reprograma horario/slots |
 | `PATCH` | `/api/appointments/:id/estimated-close` | `appointment:change-status` | Corrige la fecha estimada de cierre |
 | `PATCH` | `/api/appointments/:id/status` | `appointment:change-status` | Cambia de estado (incluye cierre → dispara cierre de ticket SN) |
-| `PATCH` | `/api/appointments/:id/cancel` | `appointment:change-status` | Cliente cancela (solo CREATED→CANCELED) |
+| `PATCH` | `/api/appointments/:id/cancel` | `appointment:change-status` | Cliente cancela desde cualquier estado activo (`ACTIVE_STATUSES`) → `CANCELED` |
 | `PATCH` | `/api/appointments/:id/validate` | `appointment:validate` | Cliente valida la resolución (CLOSED→VALIDATED) |
 | `PATCH` | `/api/appointments/:id/reopen` | `appointment:reopen` | Cliente rechaza la resolución (CLOSED→REOPENED) |
 

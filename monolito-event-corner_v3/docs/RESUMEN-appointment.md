@@ -60,14 +60,16 @@ En `api-gateway`, `ServiceNowOutboundController` reenvía con su propio M2M a `a
 | Crear (fase 1, síncrona) | `POST /snow-requests/immediate/{incidents\|service-catalog}` |
 | Crear (fase 2, fallback async) | `POST /snow-requests/{incidents\|service-catalog}` — si falla la fase 1 |
 | Actualizar | `PATCH /snow-requests/immediate/{table}/:sysId` |
-| Cerrar | `PATCH /snow-requests/immediate/incidents/:sysId/close` |
+| Cerrar (`incident`) | `PATCH /snow-requests/immediate/incidents/:sysId/close` — endpoint dedicado |
+| Cerrar (`sc_req_item`) | `PATCH /snow-requests/immediate/sc_req_item/:sysId` con `{state:'closed', close_code, close_notes}` — reusa el PATCH genérico, no hay endpoint `/close` dedicado para RITM |
+| Cerrar (`sc_task`) | No soportado — `sc_task` todavía no es creable (`CreatableTicketType` lo excluye), `closeTicket()` devuelve error explícito si se invoca |
 | Reconciliar (deferred) | `GET /snow-requests/:correlationId` |
 
 Resultado según la fase:
 - **Éxito inmediato:** `link.resolveImmediate(sysId, number)` — el `ServiceNowTicketLink` queda `ACTIVE` con el ticket real.
 - **Deferred (SN caído momentáneamente):** `link.markDeferred(correlationId)` — `MonolithReconcilerJob` (cada 30s) pregunta a `api-snowq-service` hasta que resuelve.
 - **Huérfana (nunca llegó a tener correlationId):** `SnowOrphanRecoveryJob` (cada 10 min) crea un link nuevo y reintenta.
-- **Cierre:** siempre lo dispara el monolito (`AppointmentStatusChangedHandler`) cuando la cita pasa a `CLOSED`. No hay polling de estado desde ServiceNow hacia el monolito en ningún punto del flujo.
+- **Cierre:** el monolito dispara el cierre real en dos casos — cuando la cita pasa a `CLOSED`, y ahora también cuando pasa a `CANCELED` (cancelable desde cualquier estado activo, no solo `CREATED`/`REOPENED`). Si al cancelar el link todavía no tenía `sysId` (creación diferida en curso), se marca `ABANDONED` en vez de intentar cerrarlo. No hay polling de estado desde ServiceNow hacia el monolito en ningún punto del flujo.
 
 `integration-service` **no participa** en ninguna parte de este camino — el único egress hacia ServiceNow es `api-gateway → api-snowq-service`.
 

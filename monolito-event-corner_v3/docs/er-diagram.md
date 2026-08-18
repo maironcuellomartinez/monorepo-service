@@ -1,7 +1,7 @@
 # Modelo Entidad-Relación — Event Corner v3
 
 > Generado a partir de las entidades TypeORM del monolito y ABAC. Para el mapa de **infraestructura y servicios** (no solo el modelo de datos) ver [`infrastructure-diagram.md`](./infrastructure-diagram.md).
-> Última actualización: 2026-07-30 — remodelado `Incident`+`Request` → `Appointment` unificado (ver `1785500000000-BackfillAppointmentsFromIncidentsAndRequests` / `1785600000000-DropIncidentsAndRequestsLegacyTables`).
+> Última actualización: 2026-08-18 — completado el modelo UML de dominio y el diagrama de resolución SN al `Appointment` unificado (2026-07-30: `Incident`+`Request` → `Appointment`, ver `1785500000000-BackfillAppointmentsFromIncidentsAndRequests` / `1785600000000-DropIncidentsAndRequestsLegacyTables`). Incluye la cancelación desde cualquier estado activo y el fix de cierre de tickets `sc_req_item`.
 ```mermaid
 erDiagram
 
@@ -294,7 +294,7 @@ erDiagram
     %% ── Outbox de eventos de dominio ─────────────────────────────────────────
     outbox_events {
         varchar event_id PK "UUID del evento (idempotency key)"
-        varchar event_type "Tipo del evento: INCIDENT_CREATED, etc."
+        varchar event_type "Tipo del evento: APPOINTMENT_CREATED, etc."
         varchar aggregate_id "ID del agregado que originó el evento"
         json    payload "Evento completo serializado (DomainEvent)"
         timestamp published_at "nullable — null = pendiente; fecha = ya despachado"
@@ -807,51 +807,64 @@ classDiagram
     }
 
     %% ══════════════════════════════════════════════════════
-    %% OPERACIONES
+    %% OPERACIONES (unifica Incident + Request — remodelado 2026-07)
     %% ══════════════════════════════════════════════════════
-    class Incident {
+    class Appointment {
         <<aggregate root>>
-        +IncidentId id
+        +AppointmentId id
+        +int? issueId
         +IssueTypeId issueTypeId
+        +AppointmentKind kind
         +CustomerId customerId
+        +CompanyId companyId
         +CornerId cornerId
-        +TechnicianId? currentTechnicianId
-        +string? deviceId
-        +LockerId? lockerId
-        +IncidentStatus status
+        +SlotId[] slotIds
         +DateRange scheduledRange
         +int durationMinutes
+        +AppointmentStatus status
+        +AppointmentOrigin origin
         +int priority
-        +IncidentOrigin origin
-        +ServiceNowId? servicenowId
-        +ServiceNowNumber? servicenowNumber
-        +Date? closedAt
-        +take(techId) void
-        +complete(techId) void
-        +cancel(techId) void
-        +assignLocker(id) void
-        +releaseLocker() void
-        +updateServiceNowInfo(id, num) void
-    }
-    class Request {
-        <<aggregate root>>
-        +RequestId id
-        +IssueTypeId issueTypeId
-        +TechnicianId technicianId
-        +CustomerId customerId
-        +CornerId cornerId
-        +CompanyId companyId
+        +TechnicianId? currentTechnicianId
+        +TechnicianId? createdByTechnicianId
         +string? deviceId
-        +RequestStatus status
-        +Date scheduledAt
-        +string? notes
-        +ServiceNowId? servicenowId
-        +ServiceNowNumber? servicenowNumber
+        +LockerId? lockerId
+        +Date? estimatedCloseAt
         +Date? closedAt
-        +start() void
-        +complete() void
-        +cancel() void
-        +updateServiceNowInfo(id, num) void
+        +string? comment
+        +isAvailableForTaking() bool
+        +deliver(techId, comment?) Result~void~
+        +take(techId) Result~void~
+        +release(techId, reason?) Result~void~
+        +changeStatus(newStatus, techId, comment?, closeCategory?) Result~void~
+        +validate() Result~void~
+        +reopen(reason?) Result~void~
+        +reschedule(techId, slotIds, range) Result~void~
+        +setEstimatedClose(techId, date) Result~void~
+        +assignLocker(id) Result~void~
+        +releaseLocker() Result~void~
+        +addComment(techId, comment) Result~void~
+        +create() Result~Appointment~
+        +reconstitute() Appointment
+    }
+    class ServiceNowTicketLink {
+        <<entity>>
+        +string id
+        +AppointmentId appointmentId
+        +ServiceNowTicketType type
+        +ServiceNowTicketLinkRole role
+        +ServiceNowId? sysId
+        +ServiceNowNumber? number
+        +string? parentRequestSysId
+        +string? snowqCorrelationId
+        +ServiceNowTicketLinkStatus status
+        +Date? closedAt
+        +resolveImmediate(sysId, num) void
+        +markDeferred(correlationId) void
+        +reconcileDelivered(sysId, num) void
+        +close(closedAt?) void
+        +abandon() void
+        +createPending(id, apptId, type, role, parentSysId?) Result~ServiceNowTicketLink~
+        +reconstitute() ServiceNowTicketLink
     }
 
     %% ══════════════════════════════════════════════════════
@@ -871,28 +884,23 @@ classDiagram
 
     CornerSchedule "1" ..> "0..*" CornerSlot : genera
 
-    IssueType "1" <-- "0..*" Incident : clasifica
-    User "1" <-- "0..*" Incident : crea
-    Corner "1" <-- "0..*" Incident : recibe
-    Technician "0..1" <-- "0..*" Incident : atiende
-    Locker "0..1" <-- "0..1" Incident : asignado
-    CornerSlot "1..*" <-- "1" Incident : ocupa
-
-    Device "0..1" <-- "0..*" Incident : involucra
-    Device "0..1" <-- "0..*" Request : involucra
+    IssueType "1" <-- "0..*" Appointment : clasifica (deriva kind)
+    User "1" <-- "0..*" Appointment : crea (customerId)
+    Company "1" <-- "0..*" Appointment : asociada
+    Corner "1" <-- "0..*" Appointment : recibe
+    Technician "0..1" <-- "0..*" Appointment : atiende (current)
+    Technician "0..1" <-- "0..*" Appointment : creó (createdBy, walk-in)
+    Locker "0..1" <-- "0..1" Appointment : asignado
+    CornerSlot "1..*" <-- "1" Appointment : ocupa
+    Device "0..1" <-- "0..*" Appointment : involucra
     Device "0..1" ..> "0..1" User : asignado a (soft ref)
 
-    IssueType "1" <-- "0..*" Request : clasifica
-    Technician "1" <-- "0..*" Request : gestiona
-    User "1" <-- "0..*" Request : solicita
-    Corner "1" <-- "0..*" Request : recibe
-    Company "1" <-- "0..*" Request : asociada
+    Appointment "1" *-- "1..*" ServiceNowTicketLink : genera (primary + fulfillment)
 
     User --> Email : tiene
-    Incident --> DateRange : scheduledRange
-    Incident --> ServiceNowId : servicenowId
-    Incident --> ServiceNowNumber : servicenowNumber
-    Request --> ServiceNowId : servicenowId
+    Appointment --> DateRange : scheduledRange
+    ServiceNowTicketLink --> ServiceNowId : sysId
+    ServiceNowTicketLink --> ServiceNowNumber : number
     ServiceNowProfile --> ServiceNowId : snowCompanySysId
 ```
 
@@ -911,7 +919,7 @@ classDiagram
 | Notación | Tipo | Significa |
 |---|---|---|
 | `A "1" *-- "0..*" B` | Composición | B no existe sin A. Si A se elimina, B también. Ej: `Corner *-- Locker` |
-| `A "1" <-- "0..*" B` | Asociación | B conoce a A por su ID, pero son ciclos de vida independientes. Ej: `IssueType <-- Incident` |
+| `A "1" <-- "0..*" B` | Asociación | B conoce a A por su ID, pero son ciclos de vida independientes. Ej: `IssueType <-- Appointment` |
 | `A "1" ..> "0..*" B` | Dependencia | A genera o usa instancias de B, pero B no vive dentro de A. Ej: `CornerSchedule ..> CornerSlot` |
 | `A ..> B (soft ref)` | Referencia blanda | A guarda el ID de B como string, **sin FK en DB**. Ej: `Device ..> User` |
 
@@ -965,9 +973,9 @@ Corner                             ← punto de servicio físico
         └── CornerSlot[]           → slots individuales generados (dependencia)
 ```
 
-- `Locker.status`: `AVAILABLE → OCCUPIED` (al asignar a incident) `→ AVAILABLE` (al liberar) `→ OUT_OF_SERVICE`
-- `CornerSlot.status`: `AVAILABLE → BOOKED` (permanente al crear incident) `→ EXPIRED` (al cancelar/expirar)
-- `Device` **no es parte de Corner** — tiene ciclo de vida propio. Se relaciona con incidencias de forma referencial.
+- `Locker.status`: `AVAILABLE → OCCUPIED` (al asignar a una cita) `→ AVAILABLE` (al liberar) `→ OUT_OF_SERVICE`
+- `CornerSlot.status`: `AVAILABLE → BOOKED` (permanente al crear la cita) `→ EXPIRED` (al cancelar/expirar)
+- `Device` **no es parte de Corner** — tiene ciclo de vida propio. Se relaciona con citas de forma referencial.
 
 ##### Disponibilidad (`CornerSchedule` → `CornerSlot`)
 
@@ -986,46 +994,62 @@ CornerSchedule (plantilla semanal)
 - Un `CornerSchedule` define la plantilla. Los slots se **materializan** en DB previamente (no se generan on-demand).
 - `schedule_assignments` (no modelado como clase porque es una tabla pivot simple) vincula qué técnicos cubren qué horario.
 
-##### Operaciones: Incident
+##### Operaciones: Appointment (unifica Incident + Request — remodelado 2026-07)
 
 ```
-Incident (aggregate root)
-  ├── issueTypeId  → tipo (categoría INCIDENT)
-  ├── customerId   → usuario que generó la incidencia
-  ├── cornerId     → corner donde se atiende
-  ├── slotIds[]    → slots ocupados (uno o varios contiguos)
-  ├── lockerId?    → locker asignado durante la atención (opcional)
-  ├── deviceId?    → dispositivo involucrado (opcional)
-  └── status:  PENDING → IN_PROGRESS → COMPLETED
-                               └──────────→ CANCELLED
+Appointment (aggregate root)
+  ├── issueTypeId        → tipo de cita (catálogo)
+  ├── kind: ISSUE | REQUEST  → derivado de issueType.category vía appointmentKindFromIssueCategory()
+  │        ISSUE   → genera ticket SN 'incident'
+  │        REQUEST → genera ticket SN 'sc_req_item' (+ 'sc_task' de cumplimiento, futuro)
+  ├── customerId          → usuario que la cita atiende/afecta
+  ├── companyId           → empresa asociada (para ticket SN)
+  ├── cornerId            → corner donde se atiende
+  ├── slotIds[]           → slots ocupados (uno o varios contiguos)
+  ├── currentTechnicianId?   → técnico que la atiende actualmente (null = disponible)
+  ├── createdByTechnicianId? → técnico que la creó (walk-in / paridad legacy de Request)
+  ├── lockerId?           → locker asignado durante la atención (opcional)
+  ├── deviceId?           → dispositivo involucrado (opcional)
+  ├── estimatedCloseAt?   → fecha estimada de cierre, editable libremente por el técnico asignado
+  └── status:  CREATED → DELIVERED → IN_PROGRESS → PENDING_* → CLOSED → VALIDATED
+                    └──────────────────────────────────────────→ CANCELED
+                                                        CLOSED → REOPENED (vuelve a DELIVERED/CLOSED/CANCELED)
 ```
 
-**Ciclo de vida del técnico:**
+**Máquina de estados** (`VALID_STATUS_TRANSITIONS`, `appointment.constants.ts` — ver también `docs/documentation.md`):
 
 | Acción | Método | Transición |
 |---|---|---|
-| Técnico toma la incidencia | `take(techId)` | `PENDING → IN_PROGRESS` |
-| Técnico completa | `complete(techId)` | `IN_PROGRESS → COMPLETED` |
-| Se cancela | `cancel(techId)` | `PENDING\|IN_PROGRESS → CANCELLED` |
-| Asignar locker | `assignLocker(id)` | — (Locker pasa a OCCUPIED) |
-| Liberar locker | `releaseLocker()` | — (Locker vuelve a AVAILABLE) |
+| Cliente entrega el dispositivo | `deliver(techId)` | `CREATED → DELIVERED` |
+| Técnico toma la cita (no cambia estado) | `take(techId)` | — (cualquier estado de `TAKEABLE_STATUSES`) |
+| Técnico libera la cita | `release(techId, reason?)` | — (`currentTechnicianId` → null) |
+| Técnico cambia de estado | `changeStatus(newStatus, techId)` | Ver `VALID_STATUS_TRANSITIONS` — incluye cierre directo desde cualquier estado activo, y `CANCELED` desde cualquier estado activo (`ACTIVE_STATUSES`) |
+| Cliente valida la resolución | `validate()` | `CLOSED → VALIDATED` (terminal) |
+| Cliente rechaza / técnico reabre | `reopen(reason?)` | `CLOSED → REOPENED` |
+| Reprogramar horario | `reschedule(techId, slotIds, range)` | — (cualquier estado no terminal, requiere ser el técnico asignado) |
+| Asignar / liberar locker | `assignLocker(id)` / `releaseLocker()` | — (Locker pasa a `OCCUPIED`/`AVAILABLE`) |
 
-##### Operaciones: Request
+- A diferencia del viejo `Request`, `createdByTechnicianId` es **opcional** — solo se completa en citas walk-in creadas por un técnico; no es requisito para citas `kind=REQUEST`.
+- `CANCELED` y `VALIDATED` son los dos únicos estados verdaderamente terminales (`TERMINAL_STATUSES`) — no tienen salida.
+
+##### ServiceNowTicketLink
+
+Vínculo polimórfico 1:N entre `Appointment` y sus tickets ServiceNow — reemplaza los campos `servicenowId`/`servicenowNumber` inline que tenían `Incident`/`Request` por separado.
 
 ```
-Request (aggregate root)
-  ├── issueTypeId  → tipo (categoría REQUEST)
-  ├── technicianId → técnico que gestiona la solicitud
-  ├── customerId   → usuario beneficiario
-  ├── companyId    → empresa asociada (para ticket SN)
-  ├── cornerId     → corner donde se procesa
-  ├── deviceId?    → dispositivo involucrado (opcional)
-  └── status:  PENDING → IN_PROGRESS → COMPLETED
-                               └──────────→ CANCELLED
+ServiceNowTicketLink (entity, vive dentro del agregado Appointment)
+  ├── type: 'incident' | 'sc_req_item' | 'sc_task'
+  ├── role: 'primary' | 'fulfillment'
+  ├── sysId? / number?        → se completan al resolverse (sync o reconciler)
+  ├── snowqCorrelationId?     → mientras está en modo diferido (api-snowq-service)
+  ├── parentRequestSysId?     → solo type='sc_task': sys_id de la RITM padre
+  └── status: PENDING → ACTIVE → CLOSED
+                            └──→ ABANDONED (recuperación de huérfanos / cancelación en modo diferido)
 ```
 
-- `Request` siempre tiene un técnico asignado desde la creación (a diferencia de `Incident` que empieza sin técnico).
-- `scheduledAt` es un timestamp único — no ocupa slots de disponibilidad.
+- Una cita `ISSUE` tiene un único link `primary` de tipo `incident`.
+- Una cita `REQUEST` puede tener un link `primary` de tipo `sc_req_item` (la RITM) y, en el futuro, uno o más `sc_task` de cumplimiento (`role='fulfillment'`) — hoy `sc_task` **no es creable** (`CreatableTicketType` lo excluye), es un placeholder de dominio para una fase posterior.
+- `close()` lo marca `CLOSED` cuando el ticket real se cierra en SN (por `Appointment` → `CLOSED` o → `CANCELED`); `abandon()` lo marca `ABANDONED` sin sobreescribirlo, como registro de auditoría, cuando un link diferido queda obsoleto (huérfano recuperado, o cita cancelada antes de que el ticket llegara a tener `sysId`).
 
 ##### Device
 
@@ -1047,12 +1071,13 @@ Device (aggregate root — ciclo de vida independiente)
 
 | Regla | Dónde se aplica |
 |---|---|
-| `issueType.treeId === company.treeId` al crear incident/request | `IncidentService.create()` |
+| `issueType.treeId === company.treeId` al crear una cita | `AppointmentService.createAppointment()` |
 | Un slot `BOOKED` no puede volver a `AVAILABLE` directamente | `CornerSlot.book()` lanza error si ya está BOOKED |
-| Un técnico solo puede `take()` si el incident está en `PENDING` o `IN_PROGRESS` | `Incident.take()` valida `TAKEABLE_STATUSES` |
-| `create()` genera `IncidentId` con `crypto.randomUUID()` | `IncidentService` — nunca en el controller |
+| Un técnico solo puede `take()` si la cita está en `TAKEABLE_STATUSES` | `Appointment.isAvailableForTaking()` |
+| `CANCELED` solo alcanzable desde `ACTIVE_STATUSES`; `CLOSED`/`VALIDATED`/`CANCELED` son terminales sin salida por `changeStatus()` | `VALID_STATUS_TRANSITIONS`, `appointment.constants.ts` |
+| `create()` genera `AppointmentId` con `crypto.randomUUID()` | `AppointmentService` — nunca en el controller |
 | `reconstitute()` nunca emite eventos de dominio | Todos los aggregate roots |
-| Todos los métodos de servicio retornan `Result<T>` — nunca lanzan | `IncidentService`, `RequestService`, etc. |
+| Todos los métodos de servicio retornan `Result<T>` — nunca lanzan | `AppointmentService`, etc. |
 
 ---
 
@@ -1125,6 +1150,8 @@ flowchart TD
 ```
 
 
+> Diagrama de la resolución de `assignment_group` y del ciclo de vida del ticket SN, actualizado al modelo `Appointment` (reemplaza los diagramas de la época `Incident`-only, con `SnowSyncJob` incluido, ya eliminado del código). La cadena de resolución (`resolveAssignmentGroup()`) y las variables de entorno relevantes están documentadas de forma autoritativa en `CLAUDE.md` §"ServiceNow group resolution" — este diagrama es solo la vista visual.
+
 ```mermaid
 graph TB
       subgraph ADMIN["Admin (via API Gateway)"]
@@ -1132,9 +1159,9 @@ graph TB
           ADM2["GET/POST/PUT/DELETE\n/internal/servicenow-groups\n(catálogo de grupos conocidos)"]
       end
 
-      subgraph MONOLITH["Monolith :3001"]
-          subgraph CRUD_CIC["CornerIssueConfigService"]
-              CIC_SVC["create / update / delete\ngetByCorner / getByCornerAndIssueType"]
+      subgraph MONOLITH["Monolith :3001/:3002"]
+          subgraph CRUD_CIC["CompanyIssueConfigService"]
+              CIC_SVC["create / update / delete\ngetByCompany / getByCompanyAndIssueType"]
           end
 
           subgraph CRUD_SNG["ServiceNowGroupService"]
@@ -1143,44 +1170,37 @@ graph TB
 
           subgraph SN_INT["ServiceNowIntegrationService"]
               RESOLVE["resolveAssignmentGroup()\n─────────────────────────\n1. CompanyIssueConfig(company.id, issueTypeId)\n2. CompanyIssueConfig(SN_DEFAULT_COMPANY_ID, issueTypeId)\n3. fallback → corner.snowAssignmentGroup\n4. fallback → 'SOPORTE_GENERAL' + warn log"]
-              CREATE_INC["createIncidentTicket()"]
-              CREATE_REQ["createRequestTicket()"]
-              CLOSE_INC["closeIncidentTicket()"]
+              CREATE_TICKET["createTicket()\n(incident | sc_req_item,\nsegún Appointment.kind)"]
+              CLOSE_TICKET["closeTicket()\n(incident: endpoint dedicado\nsc_req_item: PATCH genérico\nsc_task: no soportado — no creable aún)"]
           end
 
           subgraph HANDLERS["Event Handlers"]
-              H_CREATED["IncidentServiceNowHandler\n─────────────────────────\nEscucha: INCIDENT_CREATED\n→ createIncidentTicket()"]
-              H_STATUS["IncidentStatusChangedHandler\n─────────────────────────\nEscucha: INCIDENT_STATUS_CHANGED\n  si newStatus =
-  CLOSED\n  → closeIncidentTicket()\n\nEscucha: INCIDENT_REOPENED\n  → updateTicket(state='2')"]
+              H_CREATED["AppointmentServiceNowHandler\n─────────────────────────\nEscucha: APPOINTMENT_CREATED\n→ createTicket()"]
+              H_STATUS["AppointmentStatusChangedHandler\n─────────────────────────\nEscucha: APPOINTMENT_STATUS_CHANGED\n  si newStatus = CLOSED\n  → closeTicket() + link.close()\n  si newStatus = CANCELED\n  → closeTicket() + link.close() (si sysId)\n  → link.abandon() (si aún diferido)"]
           end
 
           subgraph JOBS["Scheduled Jobs"]
-              RECONCILER["MonolithReconcilerJob\n(cada 30s)\n─────────────────────────\nsnowq correlationId pendiente\n→ actualiza
-  servicenow_id/number"]
-              SNOW_SYNC["SnowSyncJob\n(cada 5 min)\n─────────────────────────\nBusca incidentes activos\ncon servicenow_id\n→
-  queryIncidentState(sysId)\n  si SN state = 6 o 7\n  → changeStatus(CLOSED)"]
+              RECONCILER["MonolithReconcilerJob\n(cada 30s)\n─────────────────────────\nlinks con snowqCorrelationId pendiente\n→ GET /snow-requests/:correlationId\n→ resuelve sysId/number"]
+              ORPHAN["SnowOrphanRecoveryJob\n(cada 10 min)\n─────────────────────────\ncitas activas sin link ACTIVE\n→ crea link nuevo + re-encola (async)"]
           end
 
           subgraph DB["MySQL event_corner"]
-
-  DB_CIC[("company_issue_configs\n─────────────\nconfig_id\ncompany_id\nissue_type_id\nservicenow_group\nwork_minutes_override")]
+              DB_CIC[("company_issue_configs\n─────────────\nconfig_id\ncompany_id\nissue_type_id\nservicenow_group\nwork_minutes_override")]
               DB_SNG[("servicenow_groups\n─────────────\ngroup_id\ngroup_name\ndescription\nis_active")]
-              DB_INC[("incidents\n─────────────\nincident_id\nstatus\nservicenow_id\nservicenow_number\nsnowq_correlation_id")]
+              DB_APT[("appointments +\nservicenow_ticket_links\n─────────────\nappointment_id, status\ntype, role, sys_id, number\nsnowq_correlation_id, link_status")]
           end
       end
 
-      subgraph GATEWAY["API Gateway :3000"]
-          GW_SN_CTRL["ServiceNowOutboundController\n─────────────────────────\nPOST /outbound/servicenow/incidents\nPOST
-  /outbound/servicenow/requests\nPOST /outbound/servicenow/incidents/:id/close\nPATCH /outbound/servicenow/:table/:id\nGET
-  /outbound/servicenow/incidents/:id/state ← NEW"]
+      subgraph GATEWAY["API Gateway :3000/:4000"]
+          GW_SN_CTRL["ServiceNowOutboundController\n─────────────────────────\nPOST /outbound/servicenow/immediate/{incidents|service-catalog}\nPOST /outbound/servicenow/{incidents|service-catalog}\nPATCH /outbound/servicenow/:table/:sysId\nPOST /outbound/servicenow/:table/:sysId/close ← solo 'incident' end-to-end"]
       end
 
       subgraph SNOWQ["api-snowq-service :3090"]
           SNOWQ_QUEUE["Cola PQueue (concurrency=5)\nCircuit breaker + retry\nDLQ on failure"]
       end
 
-      subgraph SN["ServiceNow (externo)"]
-          SN_API["REST API\n─────────────\nIncidents / Requests\nstate: 1=New 2=InProgress\n       6=Resolved 7=Closed"]
+      subgraph SN["ServiceNow (externo / servicenow-clone-backend en dev)"]
+          SN_API["REST API\n─────────────\nincident / sc_req_item / sc_task\nestados numéricos por tabla"]
       end
 
       %% Admin flows
@@ -1190,238 +1210,69 @@ graph TB
       SNG_SVC --> DB_SNG
 
       %% Group resolution
-      CREATE_INC --> RESOLVE
-      CREATE_REQ --> RESOLVE
+      CREATE_TICKET --> RESOLVE
       RESOLVE -->|"1. lookup"| DB_CIC
-      RESOLVE -->|"2/3. fallback"| DB_INC
+      RESOLVE -->|"2/3. fallback"| DB_APT
 
       %% Event handler flows
-      H_CREATED --> CREATE_INC
-      H_STATUS -->|"CLOSED"| CLOSE_INC
-      CREATE_INC --> GW_SN_CTRL
-      CREATE_REQ --> GW_SN_CTRL
-      CLOSE_INC --> GW_SN_CTRL
+      H_CREATED --> CREATE_TICKET
+      H_STATUS -->|"CLOSED / CANCELED"| CLOSE_TICKET
+      CREATE_TICKET --> GW_SN_CTRL
+      CLOSE_TICKET --> GW_SN_CTRL
 
       %% Reconciler (async queue)
       RECONCILER -->|"GET /snow-requests/:correlationId"| SNOWQ_QUEUE
-      RECONCILER -->|"update servicenow_id"| DB_INC
+      RECONCILER -->|"resolveImmediate(sysId, number)"| DB_APT
 
-      %% SnowSyncJob (SN → monolith)
-      SNOW_SYNC -->|"findActiveWithServiceNowId()"| DB_INC
-      SNOW_SYNC -->|"queryIncidentState(sysId)\nGET /outbound/servicenow/incidents/:id/state"| GW_SN_CTRL
-      SNOW_SYNC -->|"changeStatus(CLOSED)"| DB_INC
+      %% Orphan recovery
+      ORPHAN -->|"citas sin link ACTIVE"| DB_APT
+      ORPHAN -->|"re-encola (async)"| GW_SN_CTRL
 
       %% Gateway → external
       GW_SN_CTRL -->|"crear/cerrar/update\n(via snowq queue)"| SNOWQ_QUEUE
-      GW_SN_CTRL -->|"GET state (directo)"| SN_API
-      SNOWQ_QUEUE -->|"OAuth2 + retry"| SN_API
-``` 
-
-  El diagrama cubre los 4 flujos nuevos:
-
-  ┌─────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────┐
-  │          Flujo          │                                            Qué muestra                                             │
-  ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ Resolución de grupo     │ CompanyIssueConfig(company) → CompanyIssueConfig(default) → corner.snow_assignment_group →         │
-  │                         │ fallback 'SOPORTE_GENERAL'                                                                          │
-  ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ Catálogo                │ CRUD admin, referencia local de todos los grupos SN conocidos                                      │
-  │ servicenow_groups       │                                                                                                    │
-  ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ Cierre en SN            │ INCIDENT_STATUS_CHANGED(CLOSED) → handler → closeIncidentTicket() → gateway → snowq                │
-  ├─────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ SnowSyncJob             │ Cada 5 min, consulta estado SN vía queryIncidentState() (GET directo, sin queue), si está cerrado  │
-  │                         │ en SN lo cierra en monolith                                                                        │
-  └─────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────┘
-
-  ```mermaid
-  flowchart TD
-      START(["Crear ticket en ServiceNow\n(Incident o Request)"])
-
-      Q1{"¿Existe CompanyIssueConfig\npara company.id + issueType?"}
-      USE_CIC["Usar servicenow_group\nde CompanyIssueConfig(company)\n(configuración específica)"]
-
-      Q2{"¿Existe CompanyIssueConfig\npara SN_DEFAULT_COMPANY_ID + issueType?"}
-      USE_DEFAULT_CIC["Usar servicenow_group\nde CompanyIssueConfig(default)\n(configuración por defecto)"]
-
-      Q3{"¿Tiene el corner\nsnow_assignment_group?"}
-      USE_CORNER["Usar snow_assignment_group\ndel corner\n(configuración general)"]
-
-      USE_DEFAULT["Usar 'SOPORTE_GENERAL'\n(fallback final, + warn log)"]
-
-      CALL_SN["Llamar a ServiceNow\ncon assignment_group resuelto"]
-
-      START --> Q1
-      Q1 -->|"Sí"| USE_CIC
-      Q1 -->|"No"| Q2
-      Q2 -->|"Sí"| USE_DEFAULT_CIC
-      Q2 -->|"No"| Q3
-      Q3 -->|"Sí"| USE_CORNER
-      Q3 -->|"No"| USE_DEFAULT
-      USE_CIC --> CALL_SN
-      USE_DEFAULT_CIC --> CALL_SN
-      USE_CORNER --> CALL_SN
-      USE_DEFAULT --> CALL_SN
-
-      style USE_CIC fill:#d4edda,stroke:#28a745
-      style USE_DEFAULT_CIC fill:#d4edda,stroke:#28a745
-      style USE_CORNER fill:#fff3cd,stroke:#ffc107
-      style USE_DEFAULT fill:#f8d7da,stroke:#dc3545
-
-  ```
-   La lógica es simple: prioridad de lo más específico a lo más genérico (4 niveles, ver `resolveAssignmentGroup()` en `servicenow-integration.service.ts`).
-
-  ┌───────────────┬────────────────────────────────────────┬───────────────────────────────────────────────────────────┐
-  │     Nivel     │                 Fuente                  │                       Cuándo aplica                       │
-  ├───────────────┼────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
-  │ 🟢 Específico │ company_issue_configs (company.id)      │ Hay config para esa empresa + tipo de incidencia puntual  │
-  ├───────────────┼────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
-  │ 🟢 Default    │ company_issue_configs (SN_DEFAULT_      │ No hay config para la empresa, pero sí para la empresa     │
-  │               │ COMPANY_ID)                              │ default configurada en el monolith                        │
-  ├───────────────┼────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
-  │ 🟡 General    │ corners.snow_assignment_group           │ El corner tiene un grupo por defecto pero sin config fina  │
-  ├───────────────┼────────────────────────────────────────┼───────────────────────────────────────────────────────────┤
-  │ 🔴 Fallback   │ 'SOPORTE_GENERAL'                       │ No hay ninguna configuración definida — se loguea warning │
-  └───────────────┴────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
-
-
-  ```mermaid
-   flowchart TD
-      USER(["Usuario quiere crear una incidencia"])
-
-      USER --> COMPANY["La empresa del usuario\ndetermina el árbol de tipos"]
-
-      COMPANY --> TREE["IssueTypeTree\n(ej: 'Santander — Árbol Principal')"]
-
-      TREE --> TYPES["Tipos de incidencia disponibles\n────────────────────────────\nHardware — General\nHardware — Teclado /
-  Mouse\nSoftware — Sistema Operativo\nSoftware — Aplicación Corporativa\nRed — Sin Conectividad\nAcceso — Contraseña / Bloqueo"]
-
-      USER --> CORNER["El usuario elige un corner\n(independiente del tipo)"]
-
-      TYPES --> SELECT["Usuario selecciona\nun tipo de incidencia"]
-      CORNER --> SELECT
-
-      SELECT --> VALIDATE{"¿El issueType.treeId\n== company.treeId?"}
-      VALIDATE -->|"Sí"| OK["✅ Incidencia creada"]
-      VALIDATE -->|"No"| ERR["❌ IssueTypeNotAllowedForCompanyError"]
-
-      style OK fill:#d4edda,stroke:#28a745
-      style ERR fill:#f8d7da,stroke:#dc3545
-      style TREE fill:#d1ecf1,stroke:#17a2b8
-  ```
-
-```mermaid
-  
-%%   Flujo 1 — El usuario elige el tipo (antes de crear)
-  flowchart LR
-      U(["Usuario"]) --> C["Empresa del usuario"]
-      C --> T["IssueTypeTree"]
-      T --> IT["Tipos disponibles\n(filtrados por árbol)"]
-      IT --> SEL["Selecciona tipo + corner\n(independientes entre sí)"]
-      SEL --> INC(["Incidencia creada\nen el monolith"])
+      SNOWQ_QUEUE -->|"Basic Auth"| SN_API
 ```
 
-%%   Flujo 2 — Backend resuelve el grupo SN (después de crear, al enviar)
-```mermaid
-  flowchart TD
-      INC(["Incidencia creada\nevent: INCIDENT_CREATED"])
-      INC --> CIC{"¿Existe CornerIssueConfig\npara corner + issueType?"}
-      CIC -->|"Sí"| G1["grupo de CornerIssueConfig"]
-      CIC -->|"No"| CG{"¿corner tiene\nsnow_assignment_group?"}
-      CG -->|"Sí"| G2["grupo del corner"]
-      CG -->|"No"| G3["'SOPORTE_GENERAL'"]
-      G1 --> SN(["POST ServiceNow\ncon assignment_group resuelto"])
-      G2 --> SN
-      G3 --> SN
+| Flujo | Qué muestra |
+|---|---|
+| Resolución de grupo | `CompanyIssueConfig(company)` → `CompanyIssueConfig(default)` → `corner.snowAssignmentGroup` → fallback `'SOPORTE_GENERAL'` (+ warn log) |
+| Catálogo `servicenow_groups` | CRUD admin, referencia local de todos los grupos SN conocidos |
+| Creación | `APPOINTMENT_CREATED` → `AppointmentServiceNowHandler` → `createTicket()` — dos fases (síncrona + fallback async vía `snowqCorrelationId`) |
+| Cierre en SN | `APPOINTMENT_STATUS_CHANGED(CLOSED \| CANCELED)` → `AppointmentStatusChangedHandler` → `closeTicket()` → gateway → snowq. Único disparador de cierre — nunca hay polling de estado desde SN hacia el monolito (`SnowSyncJob`, que hacía eso, fue eliminado). |
+| Cancelación | Alcanzable desde cualquier estado activo (no solo `CREATED`/`REOPENED`); si el link ya tenía `sysId` se cierra el ticket real, si no se marca `ABANDONED` |
 
-  ```
+La lógica de `resolveAssignmentGroup()` es prioridad de lo más específico a lo más genérico (4 niveles):
 
-  ```mermaid
-  
-  flowchart LR
-      INC(["INCIDENT_CREATED"]) --> IT["IssueType.servicenow_group"]
-      IT -->|"tiene valor"| SN(["POST ServiceNow\nassignment_group = issueType.group"])
-      IT -->|"null"| FB["'SOPORTE_GENERAL'"]
-      FB --> SN
-  ```
-
-   ```mermaid
-   flowchart LR
-      INC(["INCIDENT_CREATED"]) --> LOOKUP["CompanyIssueConfig\ncompany_id + issue_type_id"]
-      LOOKUP -->|"tiene config"| G1["grupo de la compañía"]
-      LOOKUP -->|"no tiene config"| G2["'SOPORTE_GENERAL'"]
-      G1 --> SN(["POST ServiceNow"])
-      G2 --> SN
-  ```
-
-```txt  
-● Exactamente — el diseño que tenemos ya modela eso:
-
-  - IssueType define la categoría de incidencia (el "tipo de problema")
-  - servicenow_groups es el catálogo de grupos SN que existen en miCorner
-  - CompanyIssueConfig es el puente: company + issueType → grupo SN específico
-
-  Cada empresa configura qué grupo SN resuelve cada tipo de incidencia para ella. Si dos empresas comparten el mismo grupo para un
-  issue type, tienen la misma fila en CompanyIssueConfig apuntando al mismo servicenow_group. Si difieren, tienen filas distintas.
-
-  El modelo está completo. ¿Seguimos con los pendientes del status.md?
-
-  - Eliminar apps/api-gateway/src/observability/ (carpeta huérfana)
-  - Eliminar apps/api-gateway/src/outbound/servicenow/auth/servicenow-token.service.ts
-  - Documentar variables de entorno
-```
+| Nivel | Fuente | Cuándo aplica |
+|---|---|---|
+| 🟢 Específico | `company_issue_configs` (`company.id`) | Hay config para esa empresa + tipo de cita puntual |
+| 🟢 Default | `company_issue_configs` (`SN_DEFAULT_COMPANY_ID`) | No hay config para la empresa, pero sí para la empresa default configurada en el monolito |
+| 🟡 General | `corners.snow_assignment_group` | El corner tiene un grupo por defecto pero sin config fina |
+| 🔴 Fallback | `'SOPORTE_GENERAL'` | No hay ninguna configuración definida — se loguea warning |
 
 ```mermaid
-classDiagram
-      class Company {
-          +CompanyId id
-          +string name
-          +string snowAssignmentGroup
-      }
+flowchart TD
+    USER(["Usuario quiere crear una cita"])
 
-      class IssueType {
-          +IssueTypeId id
-          +string name
-          +string category
-      }
+    USER --> COMPANY["La empresa del usuario\ndetermina el árbol de tipos"]
+    COMPANY --> TREE["IssueTypeTree\n(ej: 'Santander — Árbol Principal')"]
+    TREE --> TYPES["Tipos de cita disponibles\n(ISSUE y REQUEST mezclados,\nfiltrados por árbol)"]
 
-      class ServiceNowGroup {
-          +string groupId
-          +string groupName
-          +string description
-          +boolean isActive
-      }
+    USER --> CORNER["El usuario elige un corner\n(independiente del tipo)"]
 
-      class CompanyIssueConfig {
-          +CompanyIssueConfigId id
-          +CompanyId companyId
-          +IssueTypeId issueTypeId
-          +ServiceNowGroup servicenowGroup
-          +number workMinutesOverride
-      }
+    TYPES --> SELECT["Usuario selecciona\nun tipo de cita"]
+    CORNER --> SELECT
 
-      class Incident {
-          +IncidentId id
-          +CompanyId companyId
-          +IssueTypeId issueTypeId
-          +string servicenowId
-      }
+    SELECT --> VALIDATE{"¿issueType.treeId\n== company.treeId?"}
+    VALIDATE -->|"Sí"| KIND["kind = appointmentKindFromIssueCategory(issueType.category)\nISSUE → ticket 'incident'\nREQUEST → ticket 'sc_req_item'"]
+    VALIDATE -->|"No"| ERR["❌ IssueTypeNotAllowedForCompanyError"]
 
-      Company "1" --> "0..*" CompanyIssueConfig : configura
-      IssueType "1" --> "0..*" CompanyIssueConfig : aplica a
-      ServiceNowGroup "1" --> "0..*" CompanyIssueConfig : resuelve en
-      Incident "many" --> "1" Company : pertenece a
-      Incident "many" --> "1" IssueType : categorizado por
+    KIND --> OK["✅ Appointment creado\n(201, sin esperar al ticket SN)"]
 
-      note for CompanyIssueConfig "PK: (company_id, issue_type_id)\nPuente entre empresa, tipo de incidencia\ny el grupo SN que la
-  resuelve"
+    style OK fill:#d4edda,stroke:#28a745
+    style ERR fill:#f8d7da,stroke:#dc3545
+    style TREE fill:#d1ecf1,stroke:#17a2b8
 ```
-
- Lectura del modelo:
-  - Una Company puede tener configurados N grupos SN (uno por IssueType que maneje)
-  - Un IssueType puede estar asignado a distintos grupos dependiendo de la Company
-  - ServiceNowGroup es el catálogo de grupos válidos — CompanyIssueConfig solo puede referenciar grupos registrados ahí
-  - Cuando llega un Incident, se navega company_id + issue_type_id → CompanyIssueConfig → servicenow_group
 
 ---
 
