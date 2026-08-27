@@ -28,8 +28,7 @@ MySQL + Redis → servicenow-clone-backend → api-snowq-service
 | observability-dashboard | — | Front (Vite) para visualizar telemetría del observability-service |
 | servicenow-clone-backend | 3010 | Local ServiceNow mock (dev only) |
 | event-corner-app | — | Front (Vite) del cliente Event Corner |
-| MySQL (main) | 3306 | Databases: `event_corner`, `incidences_dbase`, `servicenow_clone` |
-| MySQL (abac) | 3308 | Database: `abac_db` |
+| MySQL | 3306 | Una sola instancia, 4 databases: `event_corner`, `incidences_dbase`, `servicenow_clone`, `abac_db`. Todos los `.env.development` apuntan a `localhost:3306` (root/root) — la nota histórica de un MySQL separado para abac en :3308 no refleja el setup real, no hay `docker-compose.yml` para eso en el repo |
 | Redis | 6379 | Sessions and cache |
 
 ## Development Commands
@@ -72,6 +71,8 @@ npm run seed                  # Step 1: creates super admin, generates initial-c
 npm run seed:m2m              # Registers M2M service accounts, signs Ed25519 M2M tokens
 npm run seed:full             # seed + seed:m2m in sequence
 ```
+
+> **`abac_db` completamente vacía (sin tablas):** `database.config.ts` tiene `synchronize: true`, pero en la práctica no crea el schema — hay que correr las migraciones a mano antes del primer `npm run seed`: `npx typeorm-ts-node-commonjs migration:run -d src/config/data-source.config.ts -t each`. Usar `-t each` (no el default `-t all`) — los dos últimos archivos en `src/migrations/` (nombrados mal, `$npm_config_name...`, restos de un `migration:generate` sin `npm_config_name` seteado) fallan contra el schema actual y con `-t all` hacen rollback de *toda* la corrida, incluida la migración base que sí funciona.
 
 ### api-snowq-service
 ```bash
@@ -236,6 +237,7 @@ TODOS los servicios  →  observability-service :3099  (/ingest/logs · /ingest/
 |---|---|---|
 | `MonolithReconcilerJob` | 30 s | Polls `GET {SNOWQ_URL}/snow-requests/{correlationId}` for appointments whose `ServiceNowTicketLink` has a `snowq_correlation_id` (deferred/async creation). On DELIVERED: stores `sys_id`+`number` on the link, clears correlationId. On FAILED: logs + clears. |
 | `SnowOrphanRecoveryJob` | 10 min | Finds non-terminal appointments with no active `ServiceNowTicketLink` (none, or all ABANDONED/CLOSED) created more than `SNOW_ORPHAN_MIN_AGE_MINUTES` ago; creates a new link and re-queues it in `api-snowq-service` (async only). Disabled by default in dev (`SNOW_ORPHAN_RECOVERY_ENABLED`). |
+| `SnCompanySyncJob` | daily, `SNOW_COMPANY_SYNC_CRON` (default 2 AM) | For each company in the ServiceNow catalog: ensures the `ServiceNowProfile` exists (create or reuse by `snowCompanySysId`) and ensures a linked `Company` exists (create with `treeId = null` if missing — covers both newly-synced profiles and pre-existing profiles without a company). Disabled by default (`SNOW_COMPANY_SYNC_ENABLED`). Also runs on demand via `POST /internal/companies/sync-from-sn` (dashboard "Sincronizar desde SN" button, proxied by the gateway) — same code path, registered as a global provider in `JobsModule` so the controller can inject it. |
 
 > **`SnowSyncJob` was removed** (it used to poll SN state every 5 min to auto-close incidents). The monolith now only ever closes a ticket **outbound** — when an appointment reaches `CLOSED`, `AppointmentStatusChangedHandler` calls `ServiceNowIntegrationService.closeTicket()` directly. There is no inbound polling of SN state.
 
@@ -315,7 +317,7 @@ PROMETHEUS_PUSHGATEWAY_URL=              # opcional: reenvío de métricas
 IssueTypeTree
     └─1:N── IssueType (catalog: name, servicenow_category, work_minutes, device_type)
 
-Company ──FK──► IssueTypeTree
+Company ──FK──► IssueTypeTree (nullable — ver nota abajo)
 Company ──FK──► ServiceNowProfile (snow_company_sys_id)
 Company ──1:N──► User
 Company ──1:N──► Appointment
@@ -363,6 +365,8 @@ Device  (leaf — synced from Minerva or created as virtual)
 ServiceNowGroup  (catalog table, no routing logic)
     └─ group_id (sys_id), group_name, is_active
 ```
+
+> **Company — solo se crea vía sync desde ServiceNow (2026-08).** No hay alta ni edición manual de `Company`/`ServiceNowProfile` en ninguna API — la única vía de entrada es `SnCompanySyncJob` (cron, desactivado por default con `SNOW_COMPANY_SYNC_ENABLED`) o `POST /internal/companies/sync-from-sn` (proxyado por el gateway, disparado desde el botón "Sincronizar desde SN" del dashboard `/companies`). Por cada empresa del catálogo de SN: asegura el `ServiceNowProfile` (crea o reutiliza por `snowCompanySysId`) y luego la `Company` local vinculada 1:1, con `treeId = null` — el admin se lo asigna después desde el dashboard, único campo editable junto con `isActive`. Sin árbol asignado, `AppointmentService.createAppointment()` rechaza con `CompanyMissingTreeError` (400) en vez de comparar contra un `treeId` null.
 
 ## Domain Model (abac-microservice)
 
@@ -444,7 +448,7 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
 | SN field | Source |
 |---|---|
 | `assignment_group` | `resolveAssignmentGroup()`: CompanyIssueConfig → default company config → Corner.snow_assignment_group |
-| `company` | `resolveSnowCompanySysId()`: Company.profile.snow_company_sys_id → `SN_DEFAULT_COMPANY_SYS_ID` |
+| `company` | `resolveSnowCompanySysId()`: Company.profile.snow_company_sys_id → `SN_DEFAULT_COMPANY_SYS_ID` (fallback defensivo — en la práctica ya no ocurre, `profileId` es obligatorio desde que Company solo se crea vía sync) |
 | `category` | `IssueType.servicenow_category` |
 | `caller_id` | `User.upn` (UPN) |
 | `location` | `Corner.servicenow_location` |
@@ -467,6 +471,8 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
 | `libs/observability/transports/winston-http.transport.ts` | Transporte de logs vía HTTP al observability-service (circuit breaker) |
 | `apps/monolith/src/infrastructure/jobs/monolith-reconciler.job.ts` | Async ticket correlation reconciliation |
 | `apps/monolith/src/infrastructure/jobs/snow-orphan-recovery.job.ts` | Recupera citas huérfanas sin `ServiceNowTicketLink` activo (`snow-sync.job.ts`, que polleaba estado desde SN, fue eliminado) |
+| `apps/monolith/src/infrastructure/jobs/sn-company-sync.job.ts` | Sincroniza `ServiceNowProfile` + `Company` desde el catálogo de SN — única vía de alta de compañías (2026-08) |
+| `apps/monolith/src/internal-api/companies/internal-companies.controller.ts` | `GET/PUT /internal/companies`, `POST /internal/companies/sync-from-sn` — sin alta manual, `PUT` acotado a `treeId`/`isActive` |
 | `apps/monolith/src/infrastructure/event-handlers/appointment-status-changed.handler.ts` | Cierra el ticket SN cuando la cita pasa a `CLOSED` (único disparador de cierre — nunca al revés) |
 | `apps/monolith/src/core/services/appointment/appointment.service.ts` | Caso de uso principal — reemplaza `IncidentService`/`RequestService` |
 | `apps/monolith/src/scripts/seed-test-data.ts` | Full seed (companies, corners, users, issue types, CICs, groups) |
@@ -531,10 +537,11 @@ CREATE DATABASE IF NOT EXISTS abac_db          CHARACTER SET utf8mb4 COLLATE utf
 # Redis
 docker run -d --name redis -p 6379:6379 redis:7-alpine
 
-# MySQL for abac (port 3308)
-cd monolito-event-corner_v3
-docker-compose -f ../abac-microservice/docker-compose.yml up -d
-
-# MySQL for api-snowq-service
-cd api-snowq-service && docker-compose up -d
+# MySQL — una sola instancia en :3306 sirve las 4 databases de arriba (root/root).
+# No hay docker-compose.yml en el repo para esto (ni para abac ni para
+# api-snowq-service pese a lo que sugerían versiones viejas de esta nota) —
+# levantar un contenedor mysql:8 a mano alcanza:
+docker run -d --name mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root mysql:8
 ```
+
+> Si ya existe una instalación nativa de MySQL en la máquina escuchando en `localhost:3306`, los servicios se conectan a **esa** — no hace falta (ni conviene) levantar un contenedor aparte, porque ambos compitiendo por el puerto 3306 genera conexiones ambiguas difíciles de diagnosticar. Verificar con `SHOW DATABASES` cuál instancia ya tiene el ecosistema seedeado antes de crear una nueva.

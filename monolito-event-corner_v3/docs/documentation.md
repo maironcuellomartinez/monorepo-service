@@ -240,14 +240,15 @@ Empleado que crea citas. Se autentica con Entra ID (Azure AD).
 | `cornerId` | `CornerId` | Corner habitual |
 
 #### `Company` (Empresa)
-Cliente del sistema.
+Cliente del sistema. **Desde 2026-08 se crea únicamente vía sincronización desde ServiceNow** (`SnCompanySyncJob` — cron + `POST /internal/companies/sync-from-sn` bajo demanda). No hay alta ni edición manual de `name`/`profileId` en la API; el dashboard `/companies` solo permite asignar `treeId` y `isActive`.
 
 | Propiedad | Tipo | Descripción |
 |-----------|------|-------------|
 | `id` | `CompanyId` | Identificador único |
-| `name` | `string` | Nombre |
-| `ldapName` | `string` | Nombre en LDAP |
-| `servicenowProfileId` | `ServiceNowProfileId` | Perfil SN asociado |
+| `name` | `string` | Nombre — proviene de ServiceNow, no editable |
+| `treeId` | `IssueTypeTreeId \| null` | Árbol de tipos de cita. **Nullable** — una compañía recién sincronizada entra sin árbol; sin él no se pueden crear citas (`CompanyMissingTreeError`) hasta que el admin se lo asigna desde el dashboard |
+| `profileId` | `ServiceNowProfileId` | Perfil SN asociado — obligatorio en la práctica, se fija al crear vía sync |
+| `isActive` | `boolean` | Activa/inactiva (soft delete) |
 
 #### `ServiceNowProfile` (Perfil SN)
 Perfil de integración con ServiceNow.

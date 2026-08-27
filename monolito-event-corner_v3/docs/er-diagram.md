@@ -448,9 +448,10 @@ erDiagram
 ### Decisiones clave
 
 - **`users` no tiene `corner_id`** — un usuario puede ser atendido en cualquier corner, la FK era restrictiva e incorrecta respecto al legacy.
-- **`company.tree_id`** vincula la empresa al árbol de tipos. Al crear una cita se valida que `issueType.treeId === company.treeId`.
+- **`company.tree_id`** vincula la empresa al árbol de tipos. Nullable desde 2026-08 (migración `MakeCompaniesTreeIdNullable`): una compañía sincronizada desde SN entra sin árbol hasta que el admin se lo asigna. Al crear una cita se valida primero que no sea null (`CompanyMissingTreeError`) y luego que `issueType.treeId === company.treeId`.
 - **`corners.snow_assignment_group`** — reemplaza el `servicenow_group` del legacy (JSON global hardcodeado) con un campo DB por corner.
-- **`company.profile_id FK → servicenow_profiles`** — el perfil centraliza el `snow_company_sys_id` y el nombre SN. `null` = usar `SN_DEFAULT_COMPANY_SYS_ID` del `.env`. Varias empresas pueden compartir el mismo perfil SN.
+- **`company.profile_id FK → servicenow_profiles`** — el perfil centraliza el `snow_company_sys_id` y el nombre SN. Desde 2026-08 es obligatorio en la práctica: las compañías solo se crean vía sync, siempre con perfil. `SN_DEFAULT_COMPANY_SYS_ID` (`.env`) queda como fallback defensivo si igualmente fuera null.
+- **`companies` solo se crea/actualiza vía `SnCompanySyncJob`** — no hay alta ni edición manual de `name`/`profile_id` en la API; el dashboard solo permite asignar `tree_id` y `is_active`.
 - **`devices.assigned_user_id`** — referencia soft (no FK) para evitar acoplamiento con el ciclo de vida del usuario.
 - **`appointment_slots`** — tabla pivot que relaciona qué slots ocupa una cita (una cita puede ocupar múltiples slots contiguos).
 - **`servicenow_ticket_links` es 1:N respecto a `appointment`** (no 1:1 como el viejo campo inline) — necesario porque una cita `REQUEST` puede generar una RITM + una o más `sc_task` de cumplimiento.
@@ -699,13 +700,11 @@ classDiagram
         <<aggregate root>>
         +CompanyId id
         +string name
-        +IssueTypeTreeId treeId
+        +IssueTypeTreeId? treeId
         +ServiceNowProfileId? profileId
         +bool isActive
         +hasServiceNowProfile() bool
-        +assignServiceNowProfile(id) void
         +assignTree(treeId) void
-        +update(name) void
     }
     class User {
         <<aggregate root>>
@@ -938,18 +937,20 @@ IssueTypeTree
         └── servicenowCategory → categoría SN al abrir ticket
 ```
 
-- `IssueTypeTree` agrupa los tipos de una empresa. Una empresa apunta a un árbol con `company.treeId`.
-- Al crear una incidencia se valida: `issueType.treeId === company.treeId`. Si no coinciden → error.
+- `IssueTypeTree` agrupa los tipos de una empresa. Una empresa apunta a un árbol con `company.treeId` (nullable — ver abajo).
+- Al crear una incidencia se valida primero que `company.treeId` no sea null (`CompanyMissingTreeError` si falta) y luego que `issueType.treeId === company.treeId`. Si no coinciden → `IssueTypeNotAllowedForCompanyError`.
 - `category: INCIDENT | REQUEST` determina si el tipo aplica a incidencias, solicitudes o ambas.
 - `notUserVisible = true` → el tipo existe en sistema pero no aparece en la app del usuario (usos internos).
 
 ##### Organización (`ServiceNowProfile` → `Company` → `User`)
 
+**2026-08: las compañías dejaron de darse de alta a mano.** La única vía de entrada es la sincronización desde ServiceNow (`SnCompanySyncJob`, cron + `POST /internal/companies/sync-from-sn` bajo demanda desde el dashboard): por cada empresa del catálogo de SN, se asegura primero el `ServiceNowProfile` (crea o reutiliza por `snowCompanySysId`) y luego la `Company` local vinculada 1:1 a ese perfil (`profileId` obligatorio en la creación). `treeId` queda **null** al crear — el admin lo asigna después desde el dashboard; sin árbol, la compañía no puede usarse para crear citas. No hay CRUD manual de `Company` ni de `ServiceNowProfile` en la API — el dashboard `/companies` solo permite sincronizar y editar `treeId`/`isActive`.
+
 ```
-ServiceNowProfile          ← catálogo de configuraciones SN (name, snowCompanySysId)
-  └── Company              ← empresa interna, identificada por name (único). La asignación usuario→empresa la hace un admin
-        ├── treeId         → árbol de tipos asignado
-        ├── profileId?     → perfil SN (null = usar SN_DEFAULT_COMPANY_SYS_ID del .env)
+ServiceNowProfile          ← espejo del catálogo de SN (name, snowCompanySysId), poblado solo por el sync
+  └── Company              ← creada 1:1 por el sync junto con el perfil (o backfill si el perfil ya existía sin compañía)
+        ├── treeId?        → null al crear; el admin lo asigna después desde el dashboard
+        ├── profileId      → perfil SN (obligatorio — ya no hay compañías sin vínculo a SN)
         └── User           ← empleado de la empresa
               ├── externalId → identificador único en el proveedor de identidad
               ├── companyId? → null si el usuario no tiene empresa mapeada aún
@@ -959,6 +960,7 @@ ServiceNowProfile          ← catálogo de configuraciones SN (name, snowCompan
 - `User` **no tiene `cornerId`** — puede ser atendido en cualquier corner.
 - La vinculación `company → user` es informativa: se usa para validar acceso y para el ticket SN.
 - `ServiceNowProfile` agrupa el `snowCompanySysId` (sys_id en SN). Varias empresas pueden compartir el mismo perfil (mismo tenant SN).
+- El fallback `SN_DEFAULT_COMPANY_SYS_ID` (env) sigue existiendo en `resolveSnowCompanySysId()` como defensivo por si `company.profileId` fuera null, pero en el flujo normal ya no ocurre.
 
 ##### Infraestructura física (`Corner` y sus partes)
 
@@ -1071,7 +1073,7 @@ Device (aggregate root — ciclo de vida independiente)
 
 | Regla | Dónde se aplica |
 |---|---|
-| `issueType.treeId === company.treeId` al crear una cita | `AppointmentService.createAppointment()` |
+| `company.treeId` no puede ser null al crear una cita (`CompanyMissingTreeError`), y luego `issueType.treeId === company.treeId` | `AppointmentService.createAppointment()` |
 | Un slot `BOOKED` no puede volver a `AVAILABLE` directamente | `CornerSlot.book()` lanza error si ya está BOOKED |
 | Un técnico solo puede `take()` si la cita está en `TAKEABLE_STATUSES` | `Appointment.isAvailableForTaking()` |
 | `CANCELED` solo alcanzable desde `ACTIVE_STATUSES`; `CLOSED`/`VALIDATED`/`CANCELED` son terminales sin salida por `changeStatus()` | `VALID_STATUS_TRANSITIONS`, `appointment.constants.ts` |
@@ -1263,7 +1265,9 @@ flowchart TD
     TYPES --> SELECT["Usuario selecciona\nun tipo de cita"]
     CORNER --> SELECT
 
-    SELECT --> VALIDATE{"¿issueType.treeId\n== company.treeId?"}
+    SELECT --> HASTREE{"¿company.treeId\nno es null?"}
+    HASTREE -->|"No"| ERRTREE["❌ CompanyMissingTreeError\n(compañía sincronizada de SN\nsin árbol asignado todavía)"]
+    HASTREE -->|"Sí"| VALIDATE{"¿issueType.treeId\n== company.treeId?"}
     VALIDATE -->|"Sí"| KIND["kind = appointmentKindFromIssueCategory(issueType.category)\nISSUE → ticket 'incident'\nREQUEST → ticket 'sc_req_item'"]
     VALIDATE -->|"No"| ERR["❌ IssueTypeNotAllowedForCompanyError"]
 
