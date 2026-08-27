@@ -59,6 +59,7 @@ import { CreateAppointmentTimelineTable1785400000000 } from './infrastructure/pe
 import { BackfillAppointmentsFromIncidentsAndRequests1785500000000 } from './infrastructure/persistence/typeorm/migrations/1785500000000-BackfillAppointmentsFromIncidentsAndRequests';
 import { DropIncidentsAndRequestsLegacyTables1785600000000 } from './infrastructure/persistence/typeorm/migrations/1785600000000-DropIncidentsAndRequestsLegacyTables';
 import { MakeCompaniesTreeIdNullable1785800000000 } from './infrastructure/persistence/typeorm/migrations/1785800000000-MakeCompaniesTreeIdNullable';
+import { FixDevicesLastSyncAtColumnType1785900000000 } from './infrastructure/persistence/typeorm/migrations/1785900000000-FixDevicesLastSyncAtColumnType';
 
 @Module({
   imports: [
@@ -114,6 +115,7 @@ import { MakeCompaniesTreeIdNullable1785800000000 } from './infrastructure/persi
         BackfillAppointmentsFromIncidentsAndRequests1785500000000,
         DropIncidentsAndRequestsLegacyTables1785600000000,
         MakeCompaniesTreeIdNullable1785800000000,
+        FixDevicesLastSyncAtColumnType1785900000000,
       ],
       migrationsRun: true,
     }),

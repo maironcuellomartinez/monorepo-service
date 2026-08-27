@@ -30,8 +30,11 @@ export class DeviceEntity {
     @Column({ type: 'boolean', default: false })
     is_virtual: boolean;
 
+    // datetime (no timestamp): el sentinel de "nunca sincronizado" es el epoch
+    // exacto (ver Device.create() en el dominio), y timestamp no puede
+    // representarlo — su rango válido arranca en 1970-01-01 00:00:01 UTC.
     @Index()
-    @Column({ type: 'timestamp', default: () => "'1970-01-01 00:00:00'" })
+    @Column({ type: 'datetime', default: () => "'1970-01-01 00:00:00'" })
     last_sync_at: Date;
 
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
