@@ -26,19 +26,22 @@ export class CompanyService implements ICompanyService {
     }
 
     private async _createCompany(command: CreateCompanyCommand): Promise<Result<Company>> {
-        // Validar que el árbol existe
-        const treeResult = await this.treeRepo.findById(command.treeId);
-        if (treeResult.isFailure) return Result.err(treeResult.unwrapError());
-        if (!treeResult.unwrap()) {
-            return Result.err(new IssueTypeTreeNotFoundError(command.treeId));
+        // Validar el árbol solo si se proveyó — una compañía recién sincronizada
+        // desde SN puede quedar sin árbol hasta que el admin se lo asigne.
+        if (command.treeId) {
+            const treeResult = await this.treeRepo.findById(command.treeId);
+            if (treeResult.isFailure) return Result.err(treeResult.unwrapError());
+            if (!treeResult.unwrap()) {
+                return Result.err(new IssueTypeTreeNotFoundError(command.treeId));
+            }
         }
 
         const companyId = crypto.randomUUID() as unknown as CompanyId;
         const companyResult = Company.create(
             companyId,
             command.name,
-            IssueTypeTreeId(command.treeId as any),
-            command.profileId ? ServiceNowProfileId(command.profileId as any) : null,
+            ServiceNowProfileId(command.profileId as any),
+            command.treeId ? IssueTypeTreeId(command.treeId as any) : null,
         );
         if (companyResult.isFailure) return companyResult;
 
@@ -63,19 +66,15 @@ export class CompanyService implements ICompanyService {
         const company = companyResult.unwrap();
         if (!company) return Result.err(new Error(`Company ${id} not found`));
 
-        if (command.name) {
-            company.update(command.name);
-        }
         if (command.treeId !== undefined) {
-            const treeResult = await this.treeRepo.findById(command.treeId);
-            if (treeResult.isFailure) return Result.err(treeResult.unwrapError());
-            if (!treeResult.unwrap()) return Result.err(new IssueTypeTreeNotFoundError(command.treeId));
-            company.assignTree(IssueTypeTreeId(command.treeId as any));
-        }
-        if ('profileId' in command) {
-            company.assignServiceNowProfile(
-                command.profileId ? ServiceNowProfileId(command.profileId as any) : null,
-            );
+            if (command.treeId === null) {
+                company.assignTree(null);
+            } else {
+                const treeResult = await this.treeRepo.findById(command.treeId);
+                if (treeResult.isFailure) return Result.err(treeResult.unwrapError());
+                if (!treeResult.unwrap()) return Result.err(new IssueTypeTreeNotFoundError(command.treeId));
+                company.assignTree(IssueTypeTreeId(command.treeId as any));
+            }
         }
         if (command.isActive !== undefined) {
             if (command.isActive) company.activate(); else company.deactivate();
@@ -85,30 +84,6 @@ export class CompanyService implements ICompanyService {
         if (updateResult.isFailure) return Result.err(updateResult.unwrapError());
 
         return Result.ok(company);
-    }
-
-    async assignServiceNowProfile(companyId: string, profileId: string | null): Promise<Result<void>> {
-        return this.tracing.run(
-            'monolith.assignServiceNowProfile',
-            { kind: 'server', attributes: { 'company.id': companyId } },
-            () => this._assignServiceNowProfile(companyId, profileId),
-        );
-    }
-
-    private async _assignServiceNowProfile(companyId: string, profileId: string | null): Promise<Result<void>> {
-        const companyResult = await this.companyRepo.findById(companyId);
-        if (companyResult.isFailure) return Result.err(companyResult.unwrapError());
-        const company = companyResult.unwrap();
-        if (!company) return Result.err(new Error(`Company ${companyId} not found`));
-
-        company.assignServiceNowProfile(
-            profileId ? ServiceNowProfileId(profileId as any) : null,
-        );
-
-        const updateResult = await this.companyRepo.update(company);
-        if (updateResult.isFailure) return Result.err(updateResult.unwrapError());
-
-        return Result.ok(undefined);
     }
 
     async assignTree(companyId: string, treeId: string): Promise<Result<void>> {

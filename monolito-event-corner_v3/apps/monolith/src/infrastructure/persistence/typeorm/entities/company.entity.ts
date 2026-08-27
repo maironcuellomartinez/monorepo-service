@@ -13,8 +13,8 @@ export class CompanyEntity {
     @Column({ length: 100, unique: true })
     name: string;
 
-    @Column({ length: 50 })
-    tree_id: string;
+    @Column({ type: 'varchar', length: 50, nullable: true })
+    tree_id: string | null;
 
     /** FK al perfil ServiceNow. Null = sin mapeo → usar SN_DEFAULT_COMPANY_SYS_ID del env. */
     @Column({ type: 'varchar', length: 50, nullable: true })
@@ -29,9 +29,9 @@ export class CompanyEntity {
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
     updated_at: Date;
 
-    @ManyToOne(() => IssueTypeTreeEntity, tree => tree.companies, { nullable: false })
+    @ManyToOne(() => IssueTypeTreeEntity, tree => tree.companies, { nullable: true })
     @JoinColumn({ name: 'tree_id' })
-    issueTypeTree: IssueTypeTreeEntity;
+    issueTypeTree: IssueTypeTreeEntity | null;
 
     @ManyToOne(() => ServiceNowProfileEntity, { nullable: true, eager: false })
     @JoinColumn({ name: 'profile_id' })

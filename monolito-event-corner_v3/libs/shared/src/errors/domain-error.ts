@@ -86,6 +86,16 @@ export class IssueTypeNotAllowedForCompanyError extends DomainError {
     }
 }
 
+export class CompanyMissingTreeError extends DomainError {
+    readonly code = 'COMPANY_MISSING_TREE';
+    readonly message: string;
+
+    constructor(companyId: string) {
+        super(`Company ${companyId} has no issue type tree assigned yet`);
+        this.message = `Company ${companyId} has no issue type tree assigned yet`;
+    }
+}
+
 export class IssueTypeTreeInUseError extends DomainError {
     readonly code = 'ISSUE_TYPE_TREE_ALREADY_IN_USE';
     readonly message: string;

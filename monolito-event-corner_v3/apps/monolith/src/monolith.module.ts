@@ -19,7 +19,7 @@ import { DeviceSyncJob } from './infrastructure/jobs/device-sync.job';
 import { MonolithReconcilerJob } from './infrastructure/jobs/monolith-reconciler.job';
 import { SnowOrphanRecoveryJob } from './infrastructure/jobs/snow-orphan-recovery.job';
 import { SlotHoldCleanupJob } from './infrastructure/jobs/slot-hold-cleanup.job';
-import { SnCompanySyncJob } from './infrastructure/jobs/sn-company-sync.job';
+import { JobsModule } from './infrastructure/jobs/jobs.module';
 import { ServiceNowProfileEntity } from './infrastructure/persistence/typeorm/entities/servicenow-profile.entity';
 import { CompanyEntity } from './infrastructure/persistence/typeorm/entities/company.entity';
 import { IssueTypeEntity } from './infrastructure/persistence/typeorm/entities/issue-type.entity';
@@ -58,6 +58,7 @@ import { CreateServicenowTicketLinksTable1785300000000 } from './infrastructure/
 import { CreateAppointmentTimelineTable1785400000000 } from './infrastructure/persistence/typeorm/migrations/1785400000000-CreateAppointmentTimelineTable';
 import { BackfillAppointmentsFromIncidentsAndRequests1785500000000 } from './infrastructure/persistence/typeorm/migrations/1785500000000-BackfillAppointmentsFromIncidentsAndRequests';
 import { DropIncidentsAndRequestsLegacyTables1785600000000 } from './infrastructure/persistence/typeorm/migrations/1785600000000-DropIncidentsAndRequestsLegacyTables';
+import { MakeCompaniesTreeIdNullable1785800000000 } from './infrastructure/persistence/typeorm/migrations/1785800000000-MakeCompaniesTreeIdNullable';
 
 @Module({
   imports: [
@@ -112,6 +113,7 @@ import { DropIncidentsAndRequestsLegacyTables1785600000000 } from './infrastruct
         CreateAppointmentTimelineTable1785400000000,
         BackfillAppointmentsFromIncidentsAndRequests1785500000000,
         DropIncidentsAndRequestsLegacyTables1785600000000,
+        MakeCompaniesTreeIdNullable1785800000000,
       ],
       migrationsRun: true,
     }),
@@ -137,13 +139,13 @@ import { DropIncidentsAndRequestsLegacyTables1785600000000 } from './infrastruct
     EventHandlersModule,
     InternalApiModule,
     HealthModule,
+    JobsModule,
   ],
   providers: [
     DeviceSyncJob,
     MonolithReconcilerJob,
     SnowOrphanRecoveryJob,
     SlotHoldCleanupJob,
-    SnCompanySyncJob,
   ],
 })
 export class MonolithModule implements NestModule {

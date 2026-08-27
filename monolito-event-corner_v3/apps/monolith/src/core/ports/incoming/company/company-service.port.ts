@@ -3,21 +3,19 @@ import { Company } from '../../../domain/entities/company.entity';
 
 export interface CreateCompanyCommand {
     name: string;
-    treeId: string;
-    profileId?: string | null;
+    /** Obligatorio — las compañías solo se crean vía sync desde un perfil de ServiceNow. */
+    profileId: string;
+    treeId?: string | null;
 }
 
 export interface UpdateCompanyCommand {
-    name?: string;
-    treeId?: string;
-    profileId?: string | null;
+    treeId?: string | null;
     isActive?: boolean;
 }
 
 export interface ICompanyService {
     createCompany(command: CreateCompanyCommand): Promise<Result<Company>>;
     updateCompany(id: string, command: UpdateCompanyCommand): Promise<Result<Company>>;
-    assignServiceNowProfile(companyId: string, profileId: string | null): Promise<Result<void>>;
     assignTree(companyId: string, treeId: string): Promise<Result<void>>;
     getCompany(id: string): Promise<Result<Company | null>>;
     getCompanyByName(name: string): Promise<Result<Company | null>>;

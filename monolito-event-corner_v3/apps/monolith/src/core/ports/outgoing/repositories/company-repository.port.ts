@@ -13,7 +13,7 @@ export interface ICompanyRepository {
 
     // Métodos específicos
     findByTreeId(treeId: string): Promise<Result<Company[]>>;
-    findDefault(): Promise<Result<Company | null>>;
+    findByProfileId(profileId: string): Promise<Result<Company | null>>;
     getProfileId(companyId: string): Promise<Result<string | null>>;
 }
 

@@ -41,7 +41,7 @@ import { DateRange } from '../../domain/value-objects/date-range.value';
 import { AppointmentOrigin } from '../../domain/enums/appointment-origin.enum';
 import { AppointmentStatus, ACTIVE_STATUSES } from '../../domain/enums/appointment-status.enum';
 import { appointmentKindFromIssueCategory } from '../../domain/enums/appointment-kind.enum';
-import { IssueTypeNotAllowedForCompanyError } from '@app/shared/errors/domain-error';
+import { IssueTypeNotAllowedForCompanyError, CompanyMissingTreeError } from '@app/shared/errors/domain-error';
 import { DeviceHasActiveAppointmentError, AppointmentNotFoundError } from '../../domain/errors/appointment.errors';
 
 const CTX = 'AppointmentService';
@@ -205,6 +205,14 @@ export class AppointmentService implements IAppointmentService {
     const company = companyResult.unwrap();
     if (!company)
       return Result.err(new Error(`Company ${companyId} not found`));
+
+    if (!company.treeId) {
+      this.logger.warn(
+        `createAppointment — company ${companyId} has no issue type tree assigned`,
+        CTX,
+      );
+      return Result.err(new CompanyMissingTreeError(companyId.toString()));
+    }
 
     if (issueType.treeId.toString() !== company.treeId.toString()) {
       this.logger.warn(

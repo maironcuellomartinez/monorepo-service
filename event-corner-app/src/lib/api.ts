@@ -425,9 +425,10 @@ export const issueTypesApi = {
 export interface Company {
   id: string
   name: string
-  treeId?: string
+  treeId: string | null
   profileId?: string | null
-  isDefault?: boolean
+  snowCompanySysId?: string | null
+  snowCompanyName?: string | null
   isActive?: boolean
   createdAt?: string
   updatedAt?: string
@@ -436,14 +437,6 @@ export interface Company {
 export interface IssueTypeTree {
   id: string
   name: string
-}
-
-export interface SnProfile {
-  id: string
-  name: string
-  snowCompanySysId: string
-  snowCompanyName: string
-  isActive?: boolean
 }
 
 export const treesApi = {
@@ -464,37 +457,15 @@ export const companiesApi = {
     apiClient.get<Company>(`/api/admin/companies/${id}`).then((r) => r.data),
   listTrees: () =>
     apiClient.get<IssueTypeTree[]>('/api/admin/companies/trees').then((r) => r.data),
-  listSnProfiles: () =>
-    apiClient.get<SnProfile[]>('/api/admin/companies/sn-profiles').then((r) => r.data),
-  create: (dto: { name: string; treeId: string; profileId?: string | null }) =>
-    apiClient.post<Company>('/api/admin/companies', dto).then((r) => r.data),
-  update: (id: string, dto: Partial<Company>) =>
+  update: (id: string, dto: { treeId?: string | null; isActive?: boolean }) =>
     apiClient.put<Company>(`/api/admin/companies/${id}`, dto).then((r) => r.data),
   remove: (id: string) =>
     apiClient.delete(`/api/admin/companies/${id}`).then((r) => r.data),
-  bulkImportCompanies: (companies: Array<{ name: string; treeId: string; profileId?: string | null }>) =>
-    apiClient
-      .post<{ created: number; companies: Company[]; errors: Array<{ row: number; message: string }> }>(
-        '/api/admin/companies/bulk',
-        { companies },
-      )
-      .then((r) => r.data),
-  createSnProfile: (dto: { name: string; snowCompanySysId: string; snowCompanyName: string }) =>
-    apiClient.post<SnProfile>('/api/admin/companies/sn-profiles', dto).then((r) => r.data),
-  updateSnProfile: (id: string, dto: { name?: string; snowCompanySysId?: string; snowCompanyName?: string; isActive?: boolean }) =>
-    apiClient.put<SnProfile>(`/api/admin/companies/sn-profiles/${id}`, dto).then((r) => r.data),
-  deleteSnProfile: (id: string) =>
-    apiClient.delete(`/api/admin/companies/sn-profiles/${id}`).then((r) => r.data),
-  bulkImportSnProfiles: (profiles: Array<{ name: string; snowCompanySysId: string; snowCompanyName: string }>) =>
-    apiClient
-      .post<{ created: number; profiles: SnProfile[]; errors: Array<{ row: number; message: string }> }>(
-        '/api/admin/companies/sn-profiles/bulk',
-        { profiles },
-      )
-      .then((r) => r.data),
   syncFromSn: () =>
     apiClient
-      .post<{ synced: number; skipped: number; errors: number }>('/api/admin/companies/sync-from-sn')
+      .post<{ synced: number; skipped: number; errors: number; companiesCreated: number }>(
+        '/api/admin/companies/sync-from-sn',
+      )
       .then((r) => r.data),
 }
 

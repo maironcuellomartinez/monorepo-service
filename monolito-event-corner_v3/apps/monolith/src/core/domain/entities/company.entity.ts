@@ -6,7 +6,8 @@ import { ServiceNowProfileId } from '@app/shared/types/branded-ids';
 export interface CompanyProps {
     id: CompanyId;
     name: string;
-    treeId: IssueTypeTreeId;
+    /** Null = sincronizada desde SN, todavía sin árbol de tipos de cita asignado por el admin. */
+    treeId: IssueTypeTreeId | null;
     /** FK al perfil de ServiceNow. Null = sin mapeo → usar SN_DEFAULT_COMPANY_SYS_ID. */
     profileId: ServiceNowProfileId | null;
     isActive: boolean;
@@ -19,7 +20,7 @@ export class Company {
 
     get id(): CompanyId { return this.props.id; }
     get name(): string { return this.props.name; }
-    get treeId(): IssueTypeTreeId { return this.props.treeId; }
+    get treeId(): IssueTypeTreeId | null { return this.props.treeId; }
     get profileId(): ServiceNowProfileId | null { return this.props.profileId; }
     get isActive(): boolean { return this.props.isActive; }
     get createdAt(): Date { return this.props.createdAt; }
@@ -31,17 +32,7 @@ export class Company {
         return this.props.profileId !== null;
     }
 
-    update(name: string): void {
-        this.props.name = name;
-        this.props.updatedAt = new Date();
-    }
-
-    assignServiceNowProfile(profileId: ServiceNowProfileId | null): void {
-        this.props.profileId = profileId;
-        this.props.updatedAt = new Date();
-    }
-
-    assignTree(treeId: IssueTypeTreeId): void {
+    assignTree(treeId: IssueTypeTreeId | null): void {
         this.props.treeId = treeId;
         this.props.updatedAt = new Date();
     }
@@ -59,7 +50,7 @@ export class Company {
     static reconstitute(
         id: CompanyId,
         name: string,
-        treeId: IssueTypeTreeId,
+        treeId: IssueTypeTreeId | null,
         profileId: ServiceNowProfileId | null,
         isActive: boolean,
         createdAt: Date,
@@ -71,13 +62,14 @@ export class Company {
     static create(
         id: CompanyId,
         name: string,
-        treeId: IssueTypeTreeId,
-        profileId?: ServiceNowProfileId | null,
+        profileId: ServiceNowProfileId,
+        treeId?: IssueTypeTreeId | null,
     ): Result<Company> {
         const now = new Date();
         return Result.ok(new Company({
-            id, name, treeId,
-            profileId: profileId ?? null,
+            id, name,
+            treeId: treeId ?? null,
+            profileId,
             isActive: true,
             createdAt: now,
             updatedAt: now,

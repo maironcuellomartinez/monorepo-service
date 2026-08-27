@@ -107,11 +107,11 @@ export class TypeOrmCompanyRepository implements ICompanyRepository {
         }
     }
 
-    /** Devuelve la empresa DEFAULT (nombre = 'DEFAULT') usada como fallback en ServiceNow. */
-    async findDefault(): Promise<Result<Company | null>> {
+    /** Busca la compañía vinculada a un perfil SN — evita duplicar Company al re-sincronizar. */
+    async findByProfileId(profileId: string): Promise<Result<Company | null>> {
         try {
             const entity = await this.repo.findOne({
-                where: { name: 'DEFAULT' },
+                where: { profile_id: profileId },
                 relations: ['snowProfile'],
             });
             if (!entity) return Result.ok(null);
@@ -137,7 +137,7 @@ export class TypeOrmCompanyRepository implements ICompanyRepository {
         const entity = new CompanyEntity();
         entity.company_id = domain.id.toString();
         entity.name = domain.name;
-        entity.tree_id = domain.treeId.toString();
+        entity.tree_id = domain.treeId?.toString() ?? null;
         entity.profile_id = domain.profileId?.toString() ?? null;
         entity.is_active = domain.isActive;
         entity.created_at = domain.createdAt;
@@ -149,7 +149,7 @@ export class TypeOrmCompanyRepository implements ICompanyRepository {
         return Company.reconstitute(
             CompanyId(entity.company_id as any),
             entity.name,
-            IssueTypeTreeId(entity.tree_id as any),
+            entity.tree_id ? IssueTypeTreeId(entity.tree_id as any) : null,
             entity.profile_id ? ServiceNowProfileId(entity.profile_id as any) : null,
             entity.is_active,
             entity.created_at,
