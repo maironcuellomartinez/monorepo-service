@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Plus, MapPin, AlertCircle, ChevronDown, ChevronUp, Pencil, Trash2, SquarePen, Search, CheckCircle2, Clock, Globe, Building2, Wrench, RefreshCw } from 'lucide-react'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
@@ -488,9 +488,8 @@ export function CornersPage() {
               </TableHeader>
               <TableBody>
                 {corners.map((corner) => (
-                  <>
+                  <Fragment key={corner.id}>
                     <TableRow
-                      key={corner.id}
                       className={cn(
                         'cursor-pointer transition-colors',
                         expandedId === corner.id && 'bg-muted/20 border-b-0',
@@ -760,7 +759,7 @@ export function CornersPage() {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>
