@@ -29,8 +29,7 @@ export class TimeoutInterceptor implements NestInterceptor {
         const endpointTimeout = this.getEndpointTimeout(url, method);
         const timeoutValue = endpointTimeout || this.defaultTimeout;
 
-        this.logger.debug({
-            message: 'Setting request timeout',
+        this.logger.debug('Setting request timeout', TimeoutInterceptor.name, {
             correlationId,
             url,
             method,
@@ -41,8 +40,7 @@ export class TimeoutInterceptor implements NestInterceptor {
             timeout(timeoutValue),
             catchError((err) => {
                 if (err instanceof TimeoutError) {
-                    this.logger.warn({
-                        message: 'Request timeout exceeded',
+                    this.logger.warn('Request timeout exceeded', TimeoutInterceptor.name, {
                         correlationId,
                         url,
                         method,

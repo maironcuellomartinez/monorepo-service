@@ -31,9 +31,11 @@ export class LoggingInterceptor implements NestInterceptor {
 
     const startTime = Date.now();
 
-    // Log de la request
-    this.logger.log({
-      message: 'Request received',
+    // Log de la request — LoggerService.log(message, context, extra) espera
+    // un string en `message`; pasarle acá el objeto entero (como antes)
+    // llega crudo a winston y el printf de consola lo interpola con
+    // template literal, imprimiendo literalmente "[object Object]".
+    this.logger.log('Request received', LoggingInterceptor.name, {
       correlationId,
       method,
       url,
@@ -42,7 +44,6 @@ export class LoggingInterceptor implements NestInterceptor {
       body: this.sanitizeBody(body),
       ip,
       userAgent,
-      timestamp: new Date().toISOString(),
     });
 
     return next.handle().pipe(
@@ -51,23 +52,20 @@ export class LoggingInterceptor implements NestInterceptor {
           const duration = Date.now() - startTime;
 
           // Log de la response exitosa
-          this.logger.log({
-            message: 'Request completed',
+          this.logger.log('Request completed', LoggingInterceptor.name, {
             correlationId,
             method,
             url,
             statusCode: response.statusCode,
             duration: `${duration}ms`,
             responseSize: this.calculateResponseSize(data),
-            timestamp: new Date().toISOString(),
           });
         },
         error: (error) => {
           const duration = Date.now() - startTime;
 
           // Log de la response con error
-          this.logger.error({
-            message: 'Request failed',
+          this.logger.error('Request failed', LoggingInterceptor.name, {
             correlationId,
             method,
             url,
@@ -75,7 +73,6 @@ export class LoggingInterceptor implements NestInterceptor {
             duration: `${duration}ms`,
             error: describeError(error),
             errorName: error.name,
-            timestamp: new Date().toISOString(),
           });
         },
       }),
