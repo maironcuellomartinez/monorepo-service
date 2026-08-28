@@ -167,7 +167,7 @@ Each app has `.env.development`, `.env.staging`, `.env.production` files. Critic
 **Autenticación entre servicios (Ed25519):**
 - `ED25519_PUBLIC_KEY` en cada servicio debe corresponder a la clave Ed25519 con la que ABAC **firmó** los tokens M2M vigentes (el `kid` del token). Si no coincide, la verificación falla con 401.
 - `JWT_ISSUER` (`abac-service`) y `JWT_AUDIENCE` (`abac-clients`) deben coincidir entre ABAC y los consumidores.
-- En **staging/prod** las claves se inyectan por secretos (k8s); los `.env.*` traen placeholders (`CHANGE_ME` / `REPLACE_WITH_...`). En **dev** las claves reales están en los `.env.development`.
+- En **staging/prod** los `.env.*` versionados traen placeholders (`CHANGE_ME` / `REPLACE_WITH_...`) — el despliegue es vía PM2, no k8s, así que los valores reales se completan directamente en el `.env.*` del servidor (no se commitean). En **dev** las claves reales están en los `.env.development`.
 
 ### ServiceNow group resolution — micorner env vars
 
