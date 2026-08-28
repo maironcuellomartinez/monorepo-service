@@ -8,6 +8,7 @@ dotenv.config({ path: path.resolve(process.cwd(), `.env.${env}`) });
 
 import { NestFactory, Reflector } from '@nestjs/core';
 import {
+  Logger,
   ValidationPipe,
   VersioningType,
   ClassSerializerInterceptor,
@@ -23,6 +24,14 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
 import { TransformResponseInterceptor } from './shared/interceptors/transform-response.interceptor';
 import { TimeoutInterceptor } from './shared/interceptors/timeout.interceptor';
+
+// Sin este handler, una promesa rechazada fuera de un try/catch termina el
+// proceso — Node lo hace por default desde la v15.
+process.on('unhandledRejection', (reason) => {
+  new Logger('UnhandledRejection').error(
+    reason instanceof Error ? reason.stack : String(reason),
+  );
+});
 
 function validateConfig(): void {
   if (env === 'development') return;

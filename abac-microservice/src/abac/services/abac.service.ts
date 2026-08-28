@@ -377,7 +377,12 @@ export class AbacService {
      * Bug 6 fix: implementación real de invalidación de caché.
      */
     async invalidateUserCache(userId: string, appId: string): Promise<void> {
-        await this.cache.deletePattern(`abac_granted:${userId}:${appId}`);
+        // deletePattern anda con '*' como comodín (lo traduce a regex .*) —
+        // sin el sufijo, el patrón exacto nunca matchea ninguna clave real
+        // (que siempre trae resource:action al final), así que la
+        // invalidación no borraba nada y una revocación tardaba hasta 1h
+        // (el TTL) en hacerse efectiva.
+        await this.cache.deletePattern(`abac_granted:${userId}:${appId}:*`);
         this.logger.debug('Cache invalidado para usuario', 'ABAC', { userId, appId });
     }
 

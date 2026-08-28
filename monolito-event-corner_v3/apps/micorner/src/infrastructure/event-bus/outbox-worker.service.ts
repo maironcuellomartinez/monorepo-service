@@ -61,14 +61,24 @@ export class OutboxWorkerService {
 
         // Fetch events that are: unpublished, not permanently failed,
         // and either never retried or past their backoff window.
-        const pending = await this.outboxRepo.find({
-            where: [
-                { published_at: IsNull(), failed_at: IsNull(), retry_after: IsNull() },
-                { published_at: IsNull(), failed_at: IsNull(), retry_after: LessThanOrEqual(now) },
-            ],
-            order: { created_at: 'ASC' },
-            take: BATCH_SIZE,
-        });
+        // Envuelto en try/catch: si la DB está caída, este find() lanza y
+        // (a diferencia de un handler HTTP) nadie más lo captura — un
+        // @Interval sin protección tumba el proceso. Logueamos y reintentamos
+        // en el próximo ciclo en vez de dejar que se propague.
+        let pending: OutboxEventEntity[];
+        try {
+            pending = await this.outboxRepo.find({
+                where: [
+                    { published_at: IsNull(), failed_at: IsNull(), retry_after: IsNull() },
+                    { published_at: IsNull(), failed_at: IsNull(), retry_after: LessThanOrEqual(now) },
+                ],
+                order: { created_at: 'ASC' },
+                take: BATCH_SIZE,
+            });
+        } catch (error) {
+            this.logger.error(`Outbox worker: fallo al consultar eventos pendientes — reintenta el próximo ciclo: ${error}`);
+            return;
+        }
 
         if (pending.length === 0) return;
 
@@ -98,15 +108,26 @@ export class OutboxWorkerService {
                     `failed — attempt ${retryCount}/${outboxEvent.max_retries}: ${error}`,
                 );
 
-                await this.outboxRepo.update(
-                    { event_id: outboxEvent.event_id },
-                    {
-                        retry_count: retryCount,
-                        last_error: String(error).slice(0, 1000),
-                        retry_after: isExhausted ? null : new Date(Date.now() + delayMs),
-                        failed_at: isExhausted ? new Date() : null,
-                    },
-                );
+                // Try/catch propio: si esta escritura también falla (ej. la
+                // misma caída de DB que hizo fallar el publish), no debe
+                // relanzar y abortar el resto del batch — el evento vuelve a
+                // intentarse en el próximo ciclo con su retry_count intacto.
+                try {
+                    await this.outboxRepo.update(
+                        { event_id: outboxEvent.event_id },
+                        {
+                            retry_count: retryCount,
+                            last_error: String(error).slice(0, 1000),
+                            retry_after: isExhausted ? null : new Date(Date.now() + delayMs),
+                            failed_at: isExhausted ? new Date() : null,
+                        },
+                    );
+                } catch (writeError) {
+                    this.logger.error(
+                        `Outbox event ${outboxEvent.event_id}: no se pudo persistir el estado de reintento — se reprocesará este ciclo: ${writeError}`,
+                    );
+                    continue;
+                }
 
                 if (isExhausted) {
                     this.logger.warn(

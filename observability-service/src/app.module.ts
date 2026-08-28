@@ -23,6 +23,12 @@ import { MetricPointEntity } from './persistence/entities/metric-point.entity';
             entities: [LogEntryEntity, TraceSpanEntity, MetricPointEntity],
             synchronize: process.env.DB_SYNCHRONIZE === 'true',
             timezone: 'Z',
+            // Sin esto, mysql2 usa su default y con replicas>1 el total de
+            // conexiones contra la misma instancia MySQL queda sin acotar por
+            // diseño — relevante acá porque este servicio recibe la mayor
+            // tasa de escritura del ecosistema (logs+métricas+trazas de todos
+            // los demás servicios).
+            extra: { connectionLimit: 10 },
         }),
         ScheduleModule.forRoot(),
         AuthModule,

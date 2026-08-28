@@ -95,9 +95,18 @@ import { FixDevicesLastSyncAtColumnType1785900000000 } from './infrastructure/pe
         BatchDraftEntity,
         BatchDraftItemEntity,
       ],
-      synchronize: process.env.NODE_ENV !== 'production',
+      // Antes `NODE_ENV !== 'production'`, así que staging también quedaba
+      // con synchronize=true — CLAUDE.md documenta SYNCHRONIZE_DATABASE=false
+      // para staging Y producción; las migraciones (migrationsRun: true más
+      // abajo) son las que deben gobernar el schema fuera de dev.
+      synchronize: process.env.SYNCHRONIZE_DATABASE === 'true',
       dropSchema: false,
       logging: false,
+      // Sin esto, mysql2 usa su default y con replicas>1 el total de
+      // conexiones contra la misma instancia MySQL queda sin acotar por
+      // diseño. Mismo valor que api-snowq-service — ajustar con datos reales
+      // de tráfico si hace falta.
+      extra: { connectionLimit: 10 },
       migrations: [
         DropCornerSlotsFKForResync1745088000000,
         IncreaseOutboxMaxRetries1783641799581,

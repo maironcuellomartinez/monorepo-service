@@ -89,7 +89,12 @@ export class MicornerReconcilerJob {
               `ReconcilerJob: link ${link.id} (${link.type}) | correlationId ${correlationId} ya no existe en snowq — abandonando para recuperación por huérfanos`,
             );
             link.abandon();
-            await this.ticketLinkRepo.update(link);
+            const abandonResult = await this.ticketLinkRepo.update(link);
+            if (abandonResult.isFailure) {
+              this.logger.error(
+                `ReconcilerJob: failed to persist abandon for link ${link.id}: ${abandonResult.unwrapError().message}`,
+              );
+            }
             return;
           }
           const status = query.status;

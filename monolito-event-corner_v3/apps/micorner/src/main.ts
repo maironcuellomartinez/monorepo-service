@@ -5,10 +5,20 @@ const env = process.env.NODE_ENV ?? 'development';
 dotenv.config({ path: path.resolve(process.cwd(), `.env.${env}`) });
 
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { LoggerService } from '@app/observability';
 import { MicornerModule } from './micorner.module';
+
+// Sin este handler, una promesa rechazada fuera de un try/catch (ej: un
+// @Interval/@Cron con la DB caída) termina el proceso — Node lo hace por
+// default desde la v15. Logueamos y seguimos: la degradación queda a cargo
+// de cada job/servicio, no de que el proceso entero muera.
+process.on('unhandledRejection', (reason) => {
+  new Logger('UnhandledRejection').error(
+    reason instanceof Error ? reason.stack : String(reason),
+  );
+});
 
 async function bootstrap() {
   const app = await NestFactory.create(MicornerModule, { bufferLogs: true });

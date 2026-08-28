@@ -16,6 +16,10 @@ export function unwrapOrThrow<T>(result: Result<T>): T {
         if (code) {
             if (code.includes('NOT_FOUND')) throw new HttpException(message, HttpStatus.NOT_FOUND);
             if (code.includes('UNAUTHORIZED') || code.includes('NOT_AUTHORIZED')) throw new HttpException(message, HttpStatus.FORBIDDEN);
+            // Fallo de un servicio dependiente (ej. integration-service caído),
+            // no un error del cliente — antes caía al default BAD_REQUEST, lo
+            // que hacía ver un problema de infraestructura como un 400 de datos.
+            if (code.includes('UNREACHABLE') || code.includes('UPSTREAM')) throw new HttpException(message, HttpStatus.BAD_GATEWAY);
             if (
                 code.includes('ALREADY') ||
                 code.includes('INVALID') ||

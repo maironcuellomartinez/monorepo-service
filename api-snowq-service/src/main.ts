@@ -12,6 +12,14 @@ import { AppModule } from './app.module';
 import { TracingClient } from './common/tracing.client';
 import { LoggerService } from './common/services/logger-winston.service';
 
+// Sin este handler, una promesa rechazada fuera de un try/catch termina el
+// proceso — Node lo hace por default desde la v15.
+process.on('unhandledRejection', (reason) => {
+  new Logger('UnhandledRejection').error(
+    reason instanceof Error ? reason.stack : String(reason),
+  );
+});
+
 function validateConfig(): void {
   if (env === 'development') return;
 

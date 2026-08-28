@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { HealthService } from './health.service';
 import { M2mJwtGuard } from 'src/common/guards/m2m-jwt.guard';
 
@@ -12,9 +12,16 @@ export class HealthController {
         return { status: 'alive', uptime: process.uptime(), ts: new Date().toISOString() };
     }
 
-    /** Readiness — sin auth */
+    /**
+     * Readiness — sin auth. Consulta la DB: antes devolvía 'ready' fijo, así
+     * que k8s le seguía mandando tráfico a un pod con la base caída.
+     */
     @Get('ready')
-    ready() {
+    async ready() {
+        const db = await this.healthService.checkDatabase();
+        if (db.status !== 'up') {
+            throw new ServiceUnavailableException({ status: 'not_ready', ts: new Date().toISOString() });
+        }
         return { status: 'ready', ts: new Date().toISOString() };
     }
 

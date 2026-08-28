@@ -14,6 +14,14 @@ import { AuditInterceptor } from './abac/interceptors/audit.interceptor';
 import { prometheusRegistry } from './observability/services/metrics/prometheus.metrics';
 import { LoggerService } from './observability/services/logger.service';
 
+// Sin este handler, una promesa rechazada fuera de un try/catch termina el
+// proceso — Node lo hace por default desde la v15.
+process.on('unhandledRejection', (reason) => {
+  new Logger('UnhandledRejection').error(
+    reason instanceof Error ? reason.stack : String(reason),
+  );
+});
+
 function validateConfig(): void {
     if (env === 'development') return;
 

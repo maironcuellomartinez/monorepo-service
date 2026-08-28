@@ -12,6 +12,14 @@ import helmet from 'helmet';
 import { LoggerService } from '@app/observability';
 import { ApiGatewayModule } from './api-gateway.module';
 
+// Sin este handler, una promesa rechazada fuera de un try/catch termina el
+// proceso — Node lo hace por default desde la v15.
+process.on('unhandledRejection', (reason) => {
+  new Logger('UnhandledRejection').error(
+    reason instanceof Error ? reason.stack : String(reason),
+  );
+});
+
 // La validación de env vars la hace Joi vía ConfigModule.forRoot()
 // (apps/api-gateway/src/config/env.validation.ts) — corre en todos los
 // ambientes, no solo staging/prod, y lista todas las variables inválidas

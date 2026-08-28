@@ -13,6 +13,7 @@ import { AuditModule, PolicyModule } from './modules';
 import { AbacModule } from './abac/abac.module';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AuditInterceptor } from './abac/interceptors/audit.interceptor';
+import { HealthModule } from './health/health.module';
 
 /**
  * @description
@@ -33,8 +34,12 @@ import { AuditInterceptor } from './abac/interceptors/audit.interceptor';
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
         ...config.get('database')!,
-        retryAttempts: 3,
-        retryDelay: 2000,
+        // Antes 3 intentos x 2s = 6s de margen para que MySQL acepte
+        // conexiones al arrancar — bien por debajo de los 30s (10x3s) que
+        // TypeORM usa por default. ABAC es el primer servicio de la cadena
+        // de arranque, así que una demora acá se propaga a todo el ecosistema.
+        retryAttempts: 10,
+        retryDelay: 3000,
       }),
       inject: [ConfigService],
     }),
@@ -52,6 +57,7 @@ import { AuditInterceptor } from './abac/interceptors/audit.interceptor';
     PolicyModule,
     AuditModule,
     ObservabilityModule.forRoot({ serviceName: 'abac-microservice' }),
+    HealthModule,
   ],
   providers: [
     {

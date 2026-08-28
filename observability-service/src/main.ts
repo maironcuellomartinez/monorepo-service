@@ -9,6 +9,14 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
+// Sin este handler, una promesa rechazada fuera de un try/catch termina el
+// proceso — Node lo hace por default desde la v15.
+process.on('unhandledRejection', (reason) => {
+    new Logger('UnhandledRejection').error(
+        reason instanceof Error ? reason.stack : String(reason),
+    );
+});
+
 async function bootstrap() {
     const app = await NestFactory.create(AppModule, { bufferLogs: true });
 

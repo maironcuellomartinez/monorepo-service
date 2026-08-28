@@ -313,7 +313,7 @@ describe('AbacService', () => {
         it('should delete cache pattern for user+app', async () => {
             await service.invalidateUserCache('u1', 'a1');
 
-            expect(mockCacheService.deletePattern).toHaveBeenCalledWith('abac_granted:u1:a1');
+            expect(mockCacheService.deletePattern).toHaveBeenCalledWith('abac_granted:u1:a1:*');
         });
     });
 

@@ -10,7 +10,12 @@ export default registerAs('database', (): TypeOrmModuleOptions => {
         password: process.env.DB_PASSWORD || 'root',
         database: process.env.DB_NAME || 'abac_db',
         autoLoadEntities: true,
-        synchronize: true,
+        // Antes fijo en `true` sin condición de entorno — TypeORM reescribía
+        // el schema de abac_db (usuarios, roles, permisos) en cada arranque,
+        // producción incluida. SYNCHRONIZE_DATABASE=true solo en dev (ver
+        // .env.development) — es el mecanismo real de creación de schema acá
+        // (las migraciones legacy en src/migrations/ están rotas, no correrlas).
+        synchronize: process.env.SYNCHRONIZE_DATABASE === 'true',
         logging: false,
         dropSchema: false,
         // En standalone (tsc) el glob resolvería archivos reales y conflictuaría

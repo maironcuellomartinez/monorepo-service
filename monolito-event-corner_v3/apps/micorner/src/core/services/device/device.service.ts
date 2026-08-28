@@ -294,7 +294,13 @@ export class DeviceService implements IDeviceService {
         try {
             inventoryDevices = await this.inventoryService.getDevicesByUser(userId);
         } catch (err: any) {
-            return Result.err(new Error(`Inventory API error for user ${userId}: ${err?.message}`));
+            // .code = UPSTREAM_UNREACHABLE: sin esto, unwrapOrThrow no encuentra
+            // código que mapear y cae al default BAD_REQUEST (400) — un fallo de
+            // integration-service (ECONNREFUSED) se veía como error del cliente
+            // en vez de un 502 de dependencia caída.
+            const wrapped = new Error(`Inventory API error for user ${userId}: ${err?.message}`);
+            (wrapped as any).code = 'UPSTREAM_UNREACHABLE';
+            return Result.err(wrapped);
         }
 
         let synced = 0;

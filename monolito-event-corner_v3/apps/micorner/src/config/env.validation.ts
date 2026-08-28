@@ -24,6 +24,7 @@ export const micornerEnvSchema = Joi.object({
     DB_USERNAME: Joi.string().required(),
     DB_PASSWORD: notPlaceholder(Joi.string()).required(),
     DB_DATABASE: Joi.string().required(),
+    SYNCHRONIZE_DATABASE: Joi.string().valid('true', 'false').optional(),
 
     // Auth — M2M
     ABAC_APP_ID: notPlaceholder(Joi.string()).required(),
