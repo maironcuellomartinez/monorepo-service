@@ -21,49 +21,73 @@ function seedDevice(partial: Omit<Device, 'deviceId' | 'createdAt' | 'updatedAt'
  * al reiniciar el proceso, lo cual es aceptable: minerva-app es un mock del
  * sistema externo real, no necesita persistencia propia.
  *
- * Sembrado con dispositivos ilustrativos para que el mock devuelva datos
- * útiles sin necesitar seedear manualmente vía SOAP/REST primero. Los
- * `usuarioId` acá son placeholders — no corresponden a UUIDs reales del
- * micorner; usar createDevice/assignDevice para vincular a un usuario real.
+ * IMPORTANTE — estos seriales no son ilustrativos: son exactamente los de
+ * `event_corner.devices` del micorner, y deben seguir siéndolo. El job de
+ * sincronización del micorner pide por serial (`getDeviceBySerial`), así que
+ * un serial que no exista acá deja al dispositivo en `SYNC_ERROR` para
+ * siempre — no hay onboarding que lo cree, porque el micorner solo lee de
+ * este inventario, nunca escribe en él.
+ *
+ * Los `usuarioId` también son los UUIDs reales de `event_corner.users`, para
+ * que `getDevicesByUser` devuelva algo y el mapeo a `assigned_user` del
+ * gateway no quede en null.
+ *
+ * Al añadir un dispositivo al micorner, añadirlo también acá. Los valores de
+ * `tipo`, `marca` y `modelo` viajan tal cual hasta `device_type`, `brand` y
+ * `model` en el micorner (minerva → MinervaConnector.mapDevice →
+ * InventoryOutboundController), así que conviene que coincidan para que la
+ * sincronización no reescriba los datos con otros distintos.
  */
 const seedDevices: Device[] = [
   seedDevice({
     nombre: 'Laptop Corporativa',
-    serialNumber: 'SN-LAPTOP-0001',
+    serialNumber: 'SNDL5420001',
     descripcion: 'Dell Latitude asignada a soporte',
-    tipo: 'Laptop',
-    marca: 'Dell',
-    modelo: 'Latitude 5520',
-    usuarioId: 'usuario-demo-1',
-    usuarioNombre: 'Usuario Demo 1',
-  }),
-  seedDevice({
-    nombre: 'Monitor Externo',
-    serialNumber: 'SN-MONITOR-0001',
-    descripcion: 'Monitor 27" para puesto fijo',
-    tipo: 'Monitor',
-    marca: 'LG',
-    modelo: '27UL650',
-    usuarioId: 'usuario-demo-1',
-    usuarioNombre: 'Usuario Demo 1',
+    tipo: 'LAPTOP',
+    marca: 'DELL',
+    modelo: 'Latitude 5420',
+    usuarioId: '1855eb85-2769-4ae9-822a-c7848508c98a',
+    usuarioNombre: 'Roberto Mendez',
   }),
   seedDevice({
     nombre: 'Laptop Corporativa',
-    serialNumber: 'SN-LAPTOP-0002',
-    descripcion: 'HP EliteBook asignada a ventas',
-    tipo: 'Laptop',
+    serialNumber: 'SNHP840002',
+    descripcion: 'HP EliteBook de uso general',
+    tipo: 'LAPTOP',
     marca: 'HP',
     modelo: 'EliteBook 840',
-    usuarioId: 'usuario-demo-2',
-    usuarioNombre: 'Usuario Demo 2',
+    usuarioId: '51d2e0ba-6b28-4bed-b79c-110e3658bade',
+    usuarioNombre: 'Mairon Cuello',
   }),
   seedDevice({
-    nombre: 'Docking Station',
-    serialNumber: 'SN-DOCK-0001',
-    descripcion: 'Sin asignar — disponible en stock',
-    tipo: 'Docking Station',
-    marca: 'Dell',
-    modelo: 'WD19S',
+    nombre: 'Telefono Corporativo',
+    serialNumber: 'SNIP13001',
+    descripcion: 'iPhone 13 de administracion',
+    tipo: 'CELULAR',
+    marca: 'APPLE',
+    modelo: 'iPhone 13',
+    usuarioId: '005f4b20-f13f-4c7f-ac8c-a07fafe5a858',
+    usuarioNombre: 'Admin',
+  }),
+  seedDevice({
+    nombre: 'Telefono Corporativo',
+    serialNumber: 'XLM2015',
+    descripcion: 'Terminal Sangsung XLM-2015',
+    tipo: 'CELULAR',
+    marca: 'SANGSUNG',
+    modelo: 'XLM-2015',
+    usuarioId: '51d2e0ba-6b28-4bed-b79c-110e3658bade',
+    usuarioNombre: 'Mairon Cuello',
+  }),
+  seedDevice({
+    nombre: 'Telefono Corporativo',
+    serialNumber: 'XLM201523',
+    descripcion: 'Terminal Sangsung XLM-UIGFD',
+    tipo: 'CELULAR',
+    marca: 'SANGSUNG',
+    modelo: 'XLM-UIGFD',
+    usuarioId: 'c2d8902d-112c-415f-8f30-7cca720ed265',
+    usuarioNombre: 'Laura González',
   }),
 ];
 

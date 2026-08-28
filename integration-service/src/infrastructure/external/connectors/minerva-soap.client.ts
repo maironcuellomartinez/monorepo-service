@@ -51,22 +51,60 @@ export class MinervaSoapClient implements OnModuleInit {
     return this.client;
   }
 
+  /**
+   * Ejecuta una operación SOAP y, si falla por un problema de transporte,
+   * descarta el cliente cacheado y reintenta una vez con uno nuevo.
+   *
+   * Sin esto, el cliente que se crea en onModuleInit queda cacheado de por
+   * vida: cuando minerva-app se reinicia —y al correr bajo `--watch` eso pasa
+   * en cada guardado— el socket subyacente muere y TODAS las llamadas de
+   * inventario fallan indefinidamente, hasta que se reinicia también este
+   * servicio. El síntoma aguas arriba es un 500 aquí, que el api-gateway
+   * traduce a 502 y deja los dispositivos del micorner en SYNC_ERROR.
+   *
+   * Solo se reintentan los errores de transporte: un fault SOAP legítimo
+   * (dispositivo inexistente) no mejora por recrear el cliente.
+   */
+  private async invoke<T>(operation: (client: soap.Client) => Promise<T>): Promise<T> {
+    try {
+      return await operation(await this.getClient());
+    } catch (err: any) {
+      if (!this.isTransportError(err)) throw err;
+      this.logger.warn(`Minerva SOAP: transporte caído (${err?.code ?? err?.message}) — recreando cliente y reintentando`);
+      this.client = null;
+      return operation(await this.getClient());
+    }
+  }
+
+  private isTransportError(err: any): boolean {
+    const code = err?.code ?? err?.cause?.code;
+    if (['ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'ENOTFOUND', 'EHOSTUNREACH'].includes(code)) {
+      return true;
+    }
+    // node-soap envuelve fallos de red en Error sin `code` cuando el WSDL ya
+    // estaba cargado, así que se mira también el mensaje.
+    return /socket hang up|ECONNREFUSED|ECONNRESET|connect|network/i.test(err?.message ?? '');
+  }
+
   async getDeviceBySerial(serialNumber: string): Promise<SoapDeviceResponse> {
-    const client = await this.getClient();
-    const [result] = await client.getDeviceBySerialAsync({ serialNumber });
-    return result;
+    return this.invoke(async (client) => {
+      const [result] = await client.getDeviceBySerialAsync({ serialNumber });
+      return result;
+    });
   }
 
   async getDevicesByUser(usuarioId: string): Promise<{ devices?: SoapDevice[]; status: string; message: string }> {
-    const client = await this.getClient();
-    const [result] = await client.getDevicesByUserAsync({ usuarioId });
-    return { ...result, devices: this.parseDeviceArray(result?.devices) };
+    return this.invoke(async (client) => {
+      const [result] = await client.getDevicesByUserAsync({ usuarioId });
+      return { ...result, devices: this.parseDeviceArray(result?.devices) };
+    });
   }
 
   async getAllDevices(): Promise<{ devices: SoapDevice[]; status: string; message: string }> {
-    const client = await this.getClient();
-    const [result] = await client.getAllDevicesAsync({});
-    return { ...result, devices: this.parseDeviceArray(result?.devices) };
+    return this.invoke(async (client) => {
+      const [result] = await client.getAllDevicesAsync({});
+      return { ...result, devices: this.parseDeviceArray(result?.devices) };
+    });
   }
 
   /** Normaliza los distintos formatos que node-soap puede devolver para DeviceArrayType */
