@@ -14,8 +14,8 @@ npm run start:abac:dev    # Ctrl+C cuando veas "Application is running on port 3
 # 2. Seed ABAC completo (usuarios + cuentas M2M)
 npm run abac:seed:full
 
-# 3. Seed monolith (datos de negocio)
-npm run monolith:seed
+# 3. Seed micorner (datos de negocio)
+npm run micorner:seed
 
 # 4. Seed ServiceNow simulator (desde workspace root)
 cd ../servicenow-clone-backend && npm run seed
@@ -70,7 +70,7 @@ npm run seed:m2m
 | Servicio | Email | Rol |
 |---|---|---|
 | API Gateway | `svc-api-gateway@eventcorner.internal` | `service-account` |
-| Monolith | `svc-monolith@eventcorner.internal` | `service-account` |
+| Micorner | `svc-micorner@eventcorner.internal` | `service-account` |
 | Integration Service | `svc-integration@eventcorner.internal` | `service-account` |
 | api-snowq-service | `svc-snowq@eventcorner.internal` | `service-account` |
 | api-middleware-service | `svc-api-middleware-service@eventcorner.internal` | `service-account` |
@@ -87,7 +87,7 @@ Copiar las credenciales impresas en consola a cada servicio:
 ABAC_API_KEY=ak_...
 ABAC_API_SECRET=...
 
-# monolith/.env.development
+# micorner/.env.development
 ABAC_API_KEY=ak_...
 ABAC_API_SECRET=...
 
@@ -104,7 +104,7 @@ ABAC_API_SECRET=...
 
 ---
 
-## Seed Monolith (`npm run monolith:seed`)
+## Seed Micorner (`npm run micorner:seed`)
 
 ### ServiceNow Profiles
 
@@ -121,7 +121,7 @@ ABAC_API_SECRET=...
 | Santander España S.A. | `company-santander-es-00000001` |
 | Santander Corporate (Default) | `company-santander-default-001` |
 
-> `SN_DEFAULT_COMPANY_ID=company-santander-default-001` en `apps/monolith/.env.development`
+> `SN_DEFAULT_COMPANY_ID=company-santander-default-001` en `apps/micorner/.env.development`
 
 ### Issue Types (tree_id = `tree-santander-0000000000000001`)
 
@@ -145,8 +145,8 @@ ABAC_API_SECRET=...
 
 | Nombre | `customer_id` | Empresa |
 |---|---|---|
-| Juan Empleado | `user-empleado1-monolith-000001` | Santander Argentina |
-| María Empleado | `user-empleado2-monolith-000001` | Santander España |
+| Juan Empleado | `user-empleado1-micorner-000001` | Santander Argentina |
+| María Empleado | `user-empleado2-micorner-000001` | Santander España |
 
 Estos IDs se usan como `--customer-id` en el gateway simulator.
 
@@ -156,13 +156,13 @@ Estos IDs se usan como `--customer-id` en el gateway simulator.
 > AZURE_TOKEN="eyJ..."   # token Entra ID del usuario de prueba
 > npm run sim:gateway -- incidents \
 >   --token "$AZURE_TOKEN" \
->   --customer-id user-empleado1-monolith-000001
+>   --customer-id user-empleado1-micorner-000001
 > ```
 
 ### Variable de entorno ServiceNow
 
 ```env
-# apps/monolith/.env.development
+# apps/micorner/.env.development
 SN_DEFAULT_COMPANY_SYS_ID=c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8
 ```
 
@@ -175,8 +175,8 @@ SN_DEFAULT_COMPANY_SYS_ID=c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8
 npm run seed:full
 
 # Luego actualizar .env en cada servicio con las nuevas credenciales
-# Luego re-seed monolith si es necesario — desde monolito-event-corner_v3/
-npm run monolith:seed
+# Luego re-seed micorner si es necesario — desde monolito-event-corner_v3/
+npm run micorner:seed
 ```
 
 > Al re-seedear ABAC se generan nuevos `appId`, `apiKey` y credenciales M2M.

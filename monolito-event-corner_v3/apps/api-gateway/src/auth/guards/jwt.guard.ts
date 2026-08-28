@@ -19,7 +19,7 @@ import { JwtEd25519Service } from '@app/ed25519';
  *  - @Public()           → permite directo
  *  - @InternalOnly()     → M2M local (EdDSA/Ed25519, ED25519_PUBLIC_KEY)
  *                          Solo para trafico infraestructura:
- *                          monolith, integration-service, api-snowq,
+ *                          micorner, integration-service, api-snowq,
  *                          api-middleware → api-gateway
  *  - (sin decorator)     → delega 100% a ABAC
  *                          Client apps siempre usan Entra ID (Bearer token)

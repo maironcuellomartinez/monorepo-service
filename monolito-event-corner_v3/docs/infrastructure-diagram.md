@@ -1,6 +1,6 @@
 # Diagrama de Infraestructura — Event Corner (ecosistema completo)
 
-> Vista de todos los servicios del workspace, sus puertos, dependencias de arranque y flujos de comunicación. Complementa el diagrama de dominio en [`er-diagram.md`](./er-diagram.md) (que cubre solo el modelo de datos del monolito) y el detalle textual en `CLAUDE.md` (raíz del workspace).
+> Vista de todos los servicios del workspace, sus puertos, dependencias de arranque y flujos de comunicación. Complementa el diagrama de dominio en [`er-diagram.md`](./er-diagram.md) (que cubre solo el modelo de datos del micorner) y el detalle textual en `CLAUDE.md` (raíz del workspace).
 
 ## Mapa completo
 
@@ -22,7 +22,7 @@ flowchart TB
 
     subgraph CORE["Núcleo de negocio"]
         GW["api-gateway<br/>:3000 prod · :4000 dev<br/>Swagger /docs"]
-        MONO["monolith<br/>:3001 prod · :3002 dev<br/>interno, sin exposición pública"]
+        MONO["micorner<br/>:3001 prod · :3002 dev<br/>interno, sin exposición pública"]
         MYSQL[("MySQL  :3306<br/>event_corner · incidences_dbase · servicenow_clone")]
         REDIS[("Redis  :6379<br/>sesiones y cache")]
     end
@@ -54,7 +54,7 @@ flowchart TB
     ACA -->|Bearer Entra/M2M| ABAC
     ABAC --> MYSQLABAC
 
-    %% ── Cliente → Gateway → Monolith ──────────────────
+    %% ── Cliente → Gateway → Micorner ──────────────────
     ECA -->|Bearer Entra ID JWT| GW
     GW -->|valida token| ABAC
     GW -->|Bearer M2M EdDSA<br/>proxy /internal/*| MONO
@@ -95,7 +95,7 @@ flowchart TB
 
 ```
 MySQL + Redis → servicenow-clone-backend → api-snowq-service
-             → abac-microservice → monolith → api-gateway
+             → abac-microservice → micorner → api-gateway
              → integration-service (independiente, necesita api-gateway)
              → observability-service (independiente, sink de telemetría)
 ```
@@ -110,7 +110,7 @@ MySQL + Redis → servicenow-clone-backend → api-snowq-service
 | auth-configuration-app | — | Vite dev server | Admin de ABAC (usuarios, roles, permisos, políticas) |
 | observability-dashboard | — | Vite dev server | Visualiza la telemetría de `observability-service` |
 | api-gateway | 3000 | 4000 (`API_GATEWAY_PORT`) | Swagger `/docs` |
-| monolith | 3001 | 3002 (`MONOLITH_PORT`) | Interno, sin exposición pública |
+| micorner | 3001 | 3002 (`MICORNER_PORT`) | Interno, sin exposición pública |
 | abac-microservice | 3005 | 3005 | Swagger `/api-docs`, métricas `/metrics` |
 | integration-service | 3008 | 3008 | Swagger `/api/docs` — CQRS + Event Sourcing |
 | servicenow-clone-backend | 3010 | 3010 | Mock local de ServiceNow — **solo dev** |
@@ -125,7 +125,7 @@ MySQL + Redis → servicenow-clone-backend → api-snowq-service
 | Mecanismo | Quién lo usa | Cómo funciona |
 |---|---|---|
 | **Entra ID (Azure AD)** | Usuarios humanos de `event-corner-app` | `event-corner-app` es el cliente Azure real (hace el login vía MSAL); el token se pasa como Bearer y `abac-microservice` lo valida vía JWKS/RS256 (`EntraIdService`) — no es un cliente Azure registrado, solo verificador |
-| **M2M (Ed25519/EdDSA)** | Servicios internos entre sí (gateway↔monolith↔integration-service↔api-snowq-service↔observability-service) | `abac-microservice` firma con `ED25519_PRIVATE_KEY`/`ED25519_KID` vía `POST /auth/m2m-token`; cada servicio verifica **localmente** con `ED25519_PUBLIC_KEY`, sin llamada de red |
+| **M2M (Ed25519/EdDSA)** | Servicios internos entre sí (gateway↔micorner↔integration-service↔api-snowq-service↔observability-service) | `abac-microservice` firma con `ED25519_PRIVATE_KEY`/`ED25519_KID` vía `POST /auth/m2m-token`; cada servicio verifica **localmente** con `ED25519_PUBLIC_KEY`, sin llamada de red |
 | **OAuth 2.0 Client Credentials** | Apps externas de terceros | `POST /auth/oauth/token` en ABAC; scopes = permisos ABAC (`resource:action`) |
 
 Los tres convergen en el motor ABAC (`json-rules-engine`) para la autorización fina por rol/política.
@@ -133,5 +133,5 @@ Los tres convergen en el motor ABAC (`json-rules-engine`) para la autorización 
 ## Notas de esta rama (`feature/appointment-domain-remodel`)
 
 - El único egress hacia ServiceNow sigue siendo `api-gateway → api-snowq-service` — `integration-service` **no** maneja ServiceNow (solo Minerva/DropPoint/Outlook).
-- El monolito ya no polea estado desde ServiceNow (`SnowSyncJob` fue eliminado) — cierra los tickets directamente vía `ServiceNowTicketLink` cuando la cita pasa a `CLOSED`.
+- El micorner ya no polea estado desde ServiceNow (`SnowSyncJob` fue eliminado) — cierra los tickets directamente vía `ServiceNowTicketLink` cuando la cita pasa a `CLOSED`.
 - `auth-configuration-app` ahora permite editar `firstName`/`lastName`/`username`/`phone` de un usuario ABAC directamente (antes solo se completaban en el primer login vía Entra ID).

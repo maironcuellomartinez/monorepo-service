@@ -5,8 +5,8 @@ import { defineHttpClient } from '@backendkit-labs/http-client';
  * (sobre @backendkit-labs/http-client). Se inyectan con @InjectHttpClient(token).
  */
 
-/** Cliente hacia el monolito ({MONOLITH_URL}/internal/*). */
-export const MONOLITH_HTTP = defineHttpClient('monolith');
+/** Cliente hacia el micorner ({MICORNER_URL}/internal/*). */
+export const MICORNER_HTTP = defineHttpClient('micorner');
 
 /** Cliente hacia ABAC con circuit breaker (roles, batch-evaluate, can-access). */
 export const ABAC_HTTP = defineHttpClient('abac');

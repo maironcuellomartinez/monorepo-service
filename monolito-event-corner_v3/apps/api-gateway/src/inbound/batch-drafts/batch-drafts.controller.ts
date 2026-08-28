@@ -4,7 +4,7 @@ import {
     HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { CurrentUser, JwtPayload } from '../../auth/decorators/current-user.decorator';
 import { TracingService } from '@app/observability';
@@ -14,7 +14,7 @@ import { TracingService } from '@app/observability';
 @Controller('api/batch-drafts')
 export class BatchDraftsController {
     constructor(
-        private readonly monolith: MonolithClient,
+        private readonly micorner: MicornerClient,
         private readonly tracing: TracingService,
     ) {}
 
@@ -22,7 +22,7 @@ export class BatchDraftsController {
     @Permission('appointment', 'create')
     @ApiOperation({ summary: 'Obtener draft del lote del técnico autenticado' })
     async getMyDraft(@CurrentUser() user: JwtPayload) {
-        return this.monolith.get('/batch-drafts', { userId: user.sub });
+        return this.micorner.get('/batch-drafts', { userId: user.sub });
     }
 
     @Post('items')
@@ -33,7 +33,7 @@ export class BatchDraftsController {
         return this.tracing.run('gateway.controller.batchDrafts.addItem', { kind: 'server' }, () => this._addItem(user, body));
     }
     private async _addItem(user: JwtPayload, body: Record<string, any>) {
-        return this.monolith.post('/batch-drafts/items', body, { userId: user.sub });
+        return this.micorner.post('/batch-drafts/items', body, { userId: user.sub });
     }
 
     @Patch('items/:id')
@@ -48,7 +48,7 @@ export class BatchDraftsController {
         return this.tracing.run('gateway.controller.batchDrafts.editItem', { kind: 'server', attributes: { 'item.id': id } }, () => this._editItem(user, id, body));
     }
     private async _editItem(user: JwtPayload, id: string, body: Record<string, any>) {
-        return this.monolith.patch(`/batch-drafts/items/${id}`, body, { userId: user.sub });
+        return this.micorner.patch(`/batch-drafts/items/${id}`, body, { userId: user.sub });
     }
 
     @Delete('items/:id')
@@ -60,7 +60,7 @@ export class BatchDraftsController {
         return this.tracing.run('gateway.controller.batchDrafts.removeItem', { kind: 'server', attributes: { 'item.id': id } }, () => this._removeItem(user, id));
     }
     private async _removeItem(user: JwtPayload, id: string) {
-        return this.monolith.delete(`/batch-drafts/items/${id}`, { userId: user.sub });
+        return this.micorner.delete(`/batch-drafts/items/${id}`, { userId: user.sub });
     }
 
     @Post('submit')
@@ -70,7 +70,7 @@ export class BatchDraftsController {
         return this.tracing.run('gateway.controller.batchDrafts.submit', { kind: 'server' }, () => this._submit(user));
     }
     private async _submit(user: JwtPayload) {
-        return this.monolith.post('/batch-drafts/submit', {}, { userId: user.sub });
+        return this.micorner.post('/batch-drafts/submit', {}, { userId: user.sub });
     }
 
     @Delete()
@@ -81,13 +81,13 @@ export class BatchDraftsController {
         return this.tracing.run('gateway.controller.batchDrafts.discard', { kind: 'server' }, () => this._discard(user));
     }
     private async _discard(user: JwtPayload) {
-        return this.monolith.delete('/batch-drafts', { userId: user.sub });
+        return this.micorner.delete('/batch-drafts', { userId: user.sub });
     }
 
     @Post('renew')
     @Permission('appointment', 'create')
     @ApiOperation({ summary: 'Renovar TTL de los holds activos del técnico' })
     async renewHolds(@CurrentUser() user: JwtPayload) {
-        return this.monolith.post('/batch-drafts/renew', {}, { userId: user.sub });
+        return this.micorner.post('/batch-drafts/renew', {}, { userId: user.sub });
     }
 }

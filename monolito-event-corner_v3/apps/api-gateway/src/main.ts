@@ -20,7 +20,7 @@ function validateConfig(): void {
       'Secret para verificar JWT — debe coincidir con abac-microservice',
     ABAC_URL: 'URL del ABAC microservice',
     ABAC_M2M_TOKEN: 'Token M2M para llamadas internas al ABAC',
-    MONOLITH_URL: 'URL interna del monolith',
+    MICORNER_URL: 'URL interna del micorner',
     ED25519_PUBLIC_KEY: 'Clave publica Ed25519 para verificar tokens M2M',
   };
 
@@ -54,7 +54,7 @@ async function bootstrap() {
   // En staging/prod Apache termina TLS y reenvía HTTP a localhost:3000.
   // "trust proxy" permite leer X-Forwarded-Proto / X-Real-IP correctamente.
   // NO se agrega acá el rechazo 426 "solo HTTPS" (patrón de
-  // api-middleware-service): monolith le pega directo a API_GATEWAY_URL
+  // api-middleware-service): micorner le pega directo a API_GATEWAY_URL
   // (ej: http://api-gateway:3000) para /outbound/servicenow/*, sin pasar
   // por el proxy público — mismo error ya cometido y corregido en
   // abac-microservice, no se repite acá.

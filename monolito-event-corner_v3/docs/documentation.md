@@ -1,6 +1,6 @@
 # Documentación del Sistema Event Corner
 
-> Este archivo cubre el monolito (dominio, endpoints, integración SN). Para el **mapa completo del ecosistema** (todos los servicios, puertos, autenticación, orden de arranque) ver [`infrastructure-diagram.md`](./infrastructure-diagram.md). Para el modelo entidad-relación ver [`er-diagram.md`](./er-diagram.md).
+> Este archivo cubre el micorner (dominio, endpoints, integración SN). Para el **mapa completo del ecosistema** (todos los servicios, puertos, autenticación, orden de arranque) ver [`infrastructure-diagram.md`](./infrastructure-diagram.md). Para el modelo entidad-relación ver [`er-diagram.md`](./er-diagram.md).
 
 ## Tabla de Contenidos
 1. [Visión General](#visión-general)
@@ -582,7 +582,7 @@ Un único comando de creación sirve tanto para incidencias de hardware (`kind=I
 
 ### Citas (Appointments)
 
-Superficie unificada — reemplaza los antiguos `/api/incidents` y `/api/requests` (borrados en el remodelado). Controller real: `@Controller('api/appointments')` (`apps/api-gateway/src/inbound/appointments/appointments.controller.ts`), proxy delgado hacia `/internal/appointments` del monolito.
+Superficie unificada — reemplaza los antiguos `/api/incidents` y `/api/requests` (borrados en el remodelado). Controller real: `@Controller('api/appointments')` (`apps/api-gateway/src/inbound/appointments/appointments.controller.ts`), proxy delgado hacia `/internal/appointments` del micorner.
 
 | Método | Endpoint | Permiso ABAC | Descripción |
 |--------|----------|--------------|-------------|
@@ -960,12 +960,12 @@ sequenceDiagram
 
 ### Flujo 3: Técnico Gestiona una Cita (ISSUE) — creación + cierre de ticket
 
-El monolith **nunca llama directo a ServiceNow**. Tanto la creación como el cierre son asíncronos vía patrón Outbox: el cambio se persiste transaccionalmente junto a un `OutboxEvent`, y un worker (`OutboxWorkerService`) lo despacha a un handler que llama al gateway. La creación del ticket la maneja `AppointmentServiceNowHandler`; los cambios de estado y el cierre los maneja `AppointmentStatusChangedHandler`, operando sobre el `ServiceNowTicketLink` (`role='primary'`) de la cita — no sobre un campo inline.
+El micorner **nunca llama directo a ServiceNow**. Tanto la creación como el cierre son asíncronos vía patrón Outbox: el cambio se persiste transaccionalmente junto a un `OutboxEvent`, y un worker (`OutboxWorkerService`) lo despacha a un handler que llama al gateway. La creación del ticket la maneja `AppointmentServiceNowHandler`; los cambios de estado y el cierre los maneja `AppointmentStatusChangedHandler`, operando sobre el `ServiceNowTicketLink` (`role='primary'`) de la cita — no sobre un campo inline.
 
 ```mermaid
 sequenceDiagram
     participant T as Técnico
-    participant S as Monolith
+    participant S as Micorner
     participant DB as Base de Datos
     participant OW as OutboxWorkerService
     participant GW as api-gateway (ServiceNowOutboundController)
@@ -1003,7 +1003,7 @@ La creación también pasa por Outbox: el `Appointment` (kind=REQUEST) se persis
 ```mermaid
 sequenceDiagram
     participant T as Técnico
-    participant S as Monolith
+    participant S as Micorner
     participant DB as Base de Datos
     participant OW as OutboxWorkerService
     participant GW as api-gateway (ServiceNowOutboundController)
@@ -1050,7 +1050,7 @@ Un único mapeo aplica a cualquier `Appointment`, sea `kind=ISSUE` (crea `incide
 
 ### Lógica de Asignación de Grupo
 
-`resolveAssignmentGroup()` en `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts` sigue esta cadena de fallback (sin lógica hardcodeada por ciudad):
+`resolveAssignmentGroup()` en `apps/micorner/src/core/services/servicenow/servicenow-integration.service.ts` sigue esta cadena de fallback (sin lógica hardcodeada por ciudad):
 
 ```
 1. CompanyIssueConfig(company.id, issueTypeId)              → servicenow_group específico de la empresa

@@ -44,7 +44,7 @@ import { JwtEd25519Module } from '@app/ed25519';
       defaultExpiresIn: 3600,                          // 1 hora en segundos
       verifyExpiration: true,
       verifyClaims: {
-        iss: 'monolith-event-corner',
+        iss: 'micorner-event-corner',
         aud: 'api-gateway',
       },
       debug: false,
@@ -217,7 +217,7 @@ const token = jwtService.sign({
   payload: {
     sub:   'user-123',
     roles: ['admin'],
-    iss:   'monolith-event-corner',
+    iss:   'micorner-event-corner',
     aud:   'api-gateway',
   },
   expiresIn: 900,  // 15 minutos
@@ -335,7 +335,7 @@ const result = JwtEd25519Service.verifyWithKey(
   incomingToken,
   {
     verifyExpiration: true,
-    verifyClaims: { iss: 'monolith-event-corner' },
+    verifyClaims: { iss: 'micorner-event-corner' },
     debug: true,
   },
 );
@@ -440,14 +440,14 @@ export class AuthService {
 ### Caso 2: Comunicación entre microservicios
 
 ```typescript
-// En el emisor (monolith):
+// En el emisor (micorner):
 const serviceToken = JwtEd25519Service.signWithKey(
   process.env.INTERNAL_PRIVATE_KEY!,
   {
     payload: {
-      sub:     'monolith',
+      sub:     'micorner',
       scope:   ['read:events', 'write:corners'],
-      iss:     'monolith',
+      iss:     'micorner',
       aud:     'corner-service',
     },
     expiresIn: 300,       // 5 minutos
@@ -462,7 +462,7 @@ const result = JwtEd25519Service.verifyWithKey(
   {
     verifyExpiration: true,
     verifyClaims: {
-      iss: 'monolith',
+      iss: 'micorner',
       aud: 'corner-service',
     },
   },

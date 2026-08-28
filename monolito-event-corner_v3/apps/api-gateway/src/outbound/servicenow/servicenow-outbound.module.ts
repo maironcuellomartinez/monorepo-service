@@ -9,7 +9,7 @@ import { OutboundResilienceModule } from '../outbound-resilience.module';
 /**
  * Módulo proxy hacia api-snowq-service para operaciones de ServiceNow.
  *
- * Único egress hacia ServiceNow del ecosistema: monolith → gateway (este módulo)
+ * Único egress hacia ServiceNow del ecosistema: micorner → gateway (este módulo)
  * → api-snowq-service → ServiceNow. integration-service ya no interviene en este flujo.
  *
  * Variables de entorno:

@@ -7,14 +7,14 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 
 @ApiTags('Availability')
 @ApiBearerAuth('jwt')
 @Controller('api/availability')
 export class AvailabilityController {
-    constructor(private readonly monolith: MonolithClient) {}
+    constructor(private readonly micorner: MicornerClient) {}
 
     @Get(':cornerId')
     @Permission('availability', 'read')
@@ -34,7 +34,7 @@ export class AvailabilityController {
         if (isNaN(new Date(date).getTime())) throw new BadRequestException('Invalid date format');
         if (isNaN(parseInt(duration)) || parseInt(duration) <= 0) throw new BadRequestException('Invalid duration');
 
-        return this.monolith.get('/availability', { cornerId, date, duration, ...(userId && { userId }) });
+        return this.micorner.get('/availability', { cornerId, date, duration, ...(userId && { userId }) });
     }
 
     @Get(':cornerId/technicians')
@@ -49,6 +49,6 @@ export class AvailabilityController {
         if (!date) throw new BadRequestException('Query param "date" is required');
         if (isNaN(new Date(date).getTime())) throw new BadRequestException('Invalid date format');
 
-        return this.monolith.get('/availability/technicians', { cornerId, date });
+        return this.micorner.get('/availability/technicians', { cornerId, date });
     }
 }

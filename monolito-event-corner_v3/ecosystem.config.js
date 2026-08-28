@@ -45,7 +45,7 @@ function loadEnv(appRelPath, environment) {
 
 const APPS = {
     'api-gateway':           'apps/api-gateway',
-    'monolith':              'apps/monolith',
+    'micorner':              'apps/micorner',
     'abac':                  '../abac-microservice',
     'integration-service':   '../integration-service',
     'observability-service': '../observability-service',
@@ -73,23 +73,23 @@ module.exports = {
             },
         },
 
-        // ── Monolith ──────────────────────────────────────────────────────────
+        // ── Micorner ──────────────────────────────────────────────────────────
         {
-            name:      'monolith',
-            script:    './dist/apps/monolith/main.js',
+            name:      'micorner',
+            script:    './dist/apps/micorner/main.js',
             instances: 1,
             exec_mode: 'fork',
             env_development: {
                 NODE_ENV: 'development',
-                ...loadEnv(APPS['monolith'], 'development'),
+                ...loadEnv(APPS['micorner'], 'development'),
             },
             env_staging: {
                 NODE_ENV: 'staging',
-                ...loadEnv(APPS['monolith'], 'staging'),
+                ...loadEnv(APPS['micorner'], 'staging'),
             },
             env_production: {
                 NODE_ENV: 'production',
-                ...loadEnv(APPS['monolith'], 'production'),
+                ...loadEnv(APPS['micorner'], 'production'),
             },
         },
 

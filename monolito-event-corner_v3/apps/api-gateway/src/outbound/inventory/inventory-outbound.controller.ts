@@ -18,7 +18,7 @@ import { InternalOnly } from '../../auth/decorators/internal.decorator';
  * Proxy de salida hacia el inventario externo (vía integration-service).
  *
  * Transforma la respuesta de integration-service al formato que espera
- * el InventoryHttpAdapter del monolith:
+ * el InventoryHttpAdapter del micorner:
  *   ApiDevice  → { serial_number, model, brand, device_type, assigned_user }
  *   ApiUser    → { userId, nombre, dispositivosAsignados }
  *
@@ -26,7 +26,7 @@ import { InternalOnly } from '../../auth/decorators/internal.decorator';
  *
  * El integration-service envuelve respuestas en { success, data, ... } vía
  * TransformResponseInterceptor. Este controller desenvuelve esa capa antes
- * de construir la respuesta para el monolith.
+ * de construir la respuesta para el micorner.
  */
 @InternalOnly()
 @Controller('outbound/inventory')

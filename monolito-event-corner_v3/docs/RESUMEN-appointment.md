@@ -1,6 +1,6 @@
-# Resumen — Módulo de Citas: api-gateway + monolith (entradas/salidas)
+# Resumen — Módulo de Citas: api-gateway + micorner (entradas/salidas)
 
-> Alcance: solo `api-gateway` y `monolith`, y sus salidas hacia `api-snowq-service` e `integration-service`. No incluye frontend.
+> Alcance: solo `api-gateway` y `micorner`, y sus salidas hacia `api-snowq-service` e `integration-service`. No incluye frontend.
 
 ## 1. Entrada — api-gateway (`api/appointments/*`)
 
@@ -19,15 +19,15 @@ Todo request pasa por la cadena de guards `JwtGuard → RolesGuard → AbacGuard
 | `PATCH` | `/:id/deliver` \| `/:id/take` \| `/:id/release` \| `/:id/reschedule` \| `/:id/estimated-close` \| `/:id/status` \| `/:id/cancel` | permiso específico por acción |
 | `PATCH` | `/:id/validate` \| `/:id/reopen` | `appointment:validate` \| `appointment:reopen` |
 
-`api-gateway` es un **proxy delgado**: no tiene lógica de dominio. Valida el DTO, resuelve el permiso, y reenvía tal cual al monolith.
+`api-gateway` es un **proxy delgado**: no tiene lógica de dominio. Valida el DTO, resuelve el permiso, y reenvía tal cual al micorner.
 
-## 2. api-gateway → monolith (`/internal/appointments/*`)
+## 2. api-gateway → micorner (`/internal/appointments/*`)
 
-- `MonolithClient` reenvía cada request con `Authorization: Bearer <JWT M2M Ed25519>` propio del gateway (no el token del usuario final).
+- `MicornerClient` reenvía cada request con `Authorization: Bearer <JWT M2M Ed25519>` propio del gateway (no el token del usuario final).
 - Mismo mapeo de rutas que el punto 1, con prefijo `/internal/` en vez de `/api/`.
-- El monolith no vuelve a validar permisos ABAC — confía en que el gateway ya filtró.
+- El micorner no vuelve a validar permisos ABAC — confía en que el gateway ya filtró.
 
-## 3. Monolith — qué hace con el request
+## 3. Micorner — qué hace con el request
 
 `AppointmentService.createAppointment()` (y equivalentes para el resto de las transiciones) es el único caso de uso para cualquier `kind`:
 
@@ -37,7 +37,7 @@ Todo request pasa por la cadena de guards `JwtGuard → RolesGuard → AbacGuard
 4. Persiste `Appointment` + `AppointmentSlot`(s) + `AppointmentTimeline` + un `ServiceNowTicketLink` en `PENDING`, y publica `APPOINTMENT_CREATED` en la misma transacción (patrón Outbox).
 5. Responde `201` **sin esperar** al ticket de ServiceNow — esa parte es asíncrona.
 
-## 4. Monolith → api-gateway → api-snowq-service (ServiceNow)
+## 4. Micorner → api-gateway → api-snowq-service (ServiceNow)
 
 Único egress hacia ServiceNow. Se dispara `≤5s` después, vía el worker del Outbox — nunca en el mismo request que crea la cita.
 
@@ -67,13 +67,13 @@ En `api-gateway`, `ServiceNowOutboundController` reenvía con su propio M2M a `a
 
 Resultado según la fase:
 - **Éxito inmediato:** `link.resolveImmediate(sysId, number)` — el `ServiceNowTicketLink` queda `ACTIVE` con el ticket real.
-- **Deferred (SN caído momentáneamente):** `link.markDeferred(correlationId)` — `MonolithReconcilerJob` (cada 30s) pregunta a `api-snowq-service` hasta que resuelve.
+- **Deferred (SN caído momentáneamente):** `link.markDeferred(correlationId)` — `MicornerReconcilerJob` (cada 30s) pregunta a `api-snowq-service` hasta que resuelve.
 - **Huérfana (nunca llegó a tener correlationId):** `SnowOrphanRecoveryJob` (cada 10 min) crea un link nuevo y reintenta.
-- **Cierre:** el monolito dispara el cierre real en dos casos — cuando la cita pasa a `CLOSED`, y ahora también cuando pasa a `CANCELED` (cancelable desde cualquier estado activo, no solo `CREATED`/`REOPENED`). Si al cancelar el link todavía no tenía `sysId` (creación diferida en curso), se marca `ABANDONED` en vez de intentar cerrarlo. No hay polling de estado desde ServiceNow hacia el monolito en ningún punto del flujo.
+- **Cierre:** el micorner dispara el cierre real en dos casos — cuando la cita pasa a `CLOSED`, y ahora también cuando pasa a `CANCELED` (cancelable desde cualquier estado activo, no solo `CREATED`/`REOPENED`). Si al cancelar el link todavía no tenía `sysId` (creación diferida en curso), se marca `ABANDONED` en vez de intentar cerrarlo. No hay polling de estado desde ServiceNow hacia el micorner en ningún punto del flujo.
 
 `integration-service` **no participa** en ninguna parte de este camino — el único egress hacia ServiceNow es `api-gateway → api-snowq-service`.
 
-## 5. Monolith → api-gateway → integration-service (resolución de dispositivo)
+## 5. Micorner → api-gateway → integration-service (resolución de dispositivo)
 
 Único punto de contacto real entre el módulo de citas e `integration-service`, y es de **entrada** de datos (no ServiceNow):
 
@@ -89,9 +89,9 @@ AppointmentService (al crear una cita con serialNumber)
   → integration-service → Minerva SOAP
 ```
 
-- Si `integration-service` no responde, `api-gateway` devuelve `502` y el monolito lo propaga — la creación de la cita puede fallar si el dispositivo no se puede resolver ni desde caché ni desde Minerva (fail-fast, no crea citas con datos de dispositivo inconsistentes).
+- Si `integration-service` no responde, `api-gateway` devuelve `502` y el micorner lo propaga — la creación de la cita puede fallar si el dispositivo no se puede resolver ni desde caché ni desde Minerva (fail-fast, no crea citas con datos de dispositivo inconsistentes).
 - Misma ruta para `GET /outbound/inventory/users/:userId` (dispositivos de un usuario, usado al sincronizar).
 
 ## 6. Resumen de autenticación entre saltos
 
-Todos los saltos internos (api-gateway↔monolith, api-gateway↔api-snowq-service, api-gateway↔integration-service) usan el mismo mecanismo: JWT M2M firmado con **Ed25519/EdDSA** por ABAC, verificado **localmente** por cada servicio receptor (sin llamada de red a ABAC por request). El `x-correlation-id` viaja en cada salto para no cortar la trazabilidad end-to-end.
+Todos los saltos internos (api-gateway↔micorner, api-gateway↔api-snowq-service, api-gateway↔integration-service) usan el mismo mecanismo: JWT M2M firmado con **Ed25519/EdDSA** por ABAC, verificado **localmente** por cada servicio receptor (sin llamada de red a ABAC por request). El `x-correlation-id` viaja en cada salto para no cortar la trazabilidad end-to-end.

@@ -18,14 +18,14 @@
         "tsConfigPath": "apps/api-gateway/tsconfig.app.json"
       }
     },
-    "monolith": {
+    "micorner": {
       "type": "application",
-      "root": "apps/monolith",
+      "root": "apps/micorner",
       "entryFile": "main",
-      "sourceRoot": "apps/monolith/src",
+      "sourceRoot": "apps/micorner/src",
       "compilerOptions": {
         "webpack": true,
-        "tsConfigPath": "apps/monolith/tsconfig.app.json"
+        "tsConfigPath": "apps/micorner/tsconfig.app.json"
       }
     },
     "shared": {

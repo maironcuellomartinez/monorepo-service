@@ -120,7 +120,7 @@ Elimina un item del lote y libera sus holds. Si el draft queda vacío, se elimin
 
 ### POST `/api/batch-drafts/submit`
 Envía el lote completo. Procesa cada item en orden:
-- Convierte HELD→BOOKED creando la cita en el monolito
+- Convierte HELD→BOOKED creando la cita en el micorner
 - Items exitosos se eliminan del draft
 - Items fallidos permanecen con `status: 'error'` y `lastError`
 - Si todos los items son exitosos, el draft se elimina
@@ -263,12 +263,12 @@ const {
 
 | Archivo | Propósito |
 |---|---|
-| `apps/api-gateway/src/inbound/batch-drafts/batch-drafts.controller.ts` | Controlador HTTP — proxea al monolito con `userId` del JWT |
-| `apps/monolith/src/core/services/batch-draft/batch-draft.service.ts` | Lógica de negocio — holds, idempotencia, submit |
-| `apps/monolith/src/core/services/batch-draft/batch-draft.types.ts` | Interfaces de datos y comandos |
-| `apps/monolith/src/infrastructure/persistence/typeorm/entities/batch-draft.entity.ts` | Entidad `incident_batch_drafts` |
-| `apps/monolith/src/infrastructure/persistence/typeorm/entities/batch-draft-item.entity.ts` | Entidad `incident_batch_draft_items` |
-| `apps/monolith/src/infrastructure/persistence/typeorm/repositories/batch-draft.repository.ts` | Acceso a datos |
-| `apps/monolith/src/infrastructure/persistence/typeorm/entities/corner-slot.entity.ts` | Columnas `held_by_user_id` y `held_until` |
+| `apps/api-gateway/src/inbound/batch-drafts/batch-drafts.controller.ts` | Controlador HTTP — proxea al micorner con `userId` del JWT |
+| `apps/micorner/src/core/services/batch-draft/batch-draft.service.ts` | Lógica de negocio — holds, idempotencia, submit |
+| `apps/micorner/src/core/services/batch-draft/batch-draft.types.ts` | Interfaces de datos y comandos |
+| `apps/micorner/src/infrastructure/persistence/typeorm/entities/batch-draft.entity.ts` | Entidad `incident_batch_drafts` |
+| `apps/micorner/src/infrastructure/persistence/typeorm/entities/batch-draft-item.entity.ts` | Entidad `incident_batch_draft_items` |
+| `apps/micorner/src/infrastructure/persistence/typeorm/repositories/batch-draft.repository.ts` | Acceso a datos |
+| `apps/micorner/src/infrastructure/persistence/typeorm/entities/corner-slot.entity.ts` | Columnas `held_by_user_id` y `held_until` |
 | `event-corner-app/src/hooks/use-batch-draft.ts` | Hook React — estado y operaciones del lote |
 | `event-corner-app/src/pages/batch-incident-page.tsx` | Página de creación masiva |

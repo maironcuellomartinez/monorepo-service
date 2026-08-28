@@ -13,30 +13,30 @@ El cambio central es la unificación de las entidades `Incident` y `Request` (an
 
 ## 1. Archivos nuevos (28)
 
-### Monolith — dominio Appointment
+### Micorner — dominio Appointment
 | Archivo | Líneas | Qué es |
 |---|---:|---|
-| `apps/monolith/src/core/domain/entities/appointment.entity.ts` | +765 | Entidad de dominio `Appointment`, reemplaza `Incident`+`Request` |
-| `apps/monolith/src/core/domain/entities/appointment.entity.spec.ts` | +511 | Tests unitarios de la entidad |
-| `apps/monolith/src/core/domain/entities/servicenow-ticket-link.entity.ts` | +158 | Entidad de dominio `ServiceNowTicketLink` (vínculo 1:N cita↔ticket SN) |
-| `apps/monolith/src/core/domain/enums/appointment-kind.enum.ts` | +52 | `AppointmentKind` (ISSUE/REQUEST) + `appointmentKindFromIssueCategory()` |
-| `apps/monolith/src/core/domain/enums/appointment-origin.enum.ts` | +8 | Canal de origen de la cita |
-| `apps/monolith/src/core/domain/enums/appointment-status.enum.spec.ts` | +88 | Tests de la máquina de estados |
-| `apps/monolith/src/core/domain/errors/appointment.errors.ts` | +47 | `AppointmentNotFoundError`, `AppointmentNotAvailableError`, `InvalidAppointmentStateError`, `AppointmentTechnicianNotAuthorizedError`, `DeviceHasActiveAppointmentError` |
-| `apps/monolith/src/core/domain/errors/servicenow.errors.ts` | +28 | Errores de dominio para `ServiceNowTicketLink` |
-| `apps/monolith/src/core/domain/value-objects/servicenow-ticket-type.value.ts` | +10 | `ServiceNowTicketType` (`'incident' \| 'sc_req_item' \| 'sc_task'`) |
-| `apps/monolith/src/core/ports/incoming/appointment/appointment-service.port.ts` | +135 | Puerto `IAppointmentService` |
-| `apps/monolith/src/core/ports/outgoing/repositories/appointment-repository.port.ts` | +135 | Puerto `IAppointmentRepository` (incluye `suggestDeviceSerials`/`suggestServiceNowNumbers` agregados en esta sesión) |
-| `apps/monolith/src/core/ports/outgoing/repositories/servicenow-ticket-link-repository.port.ts` | +15 | Puerto `IServiceNowTicketLinkRepository` |
-| `apps/monolith/src/core/services/appointment/appointment.service.ts` | +1271 | Servicio de aplicación `AppointmentService` — reemplaza `IncidentService`+`RequestService` |
-| `apps/monolith/src/infrastructure/event-handlers/appointment-servicenow.handler.ts` | +131 | Maneja creación de ticket SN al crear una cita |
-| `apps/monolith/src/infrastructure/event-handlers/appointment-status-changed.handler.ts` | +224 | Maneja cambios de estado + cierre de ticket SN (con el fix de persistencia de esta sesión) |
-| `apps/monolith/src/infrastructure/persistence/typeorm/entities/servicenow-ticket-link.entity.ts` | +58 | Entidad TypeORM `servicenow_ticket_links` |
-| `apps/monolith/src/infrastructure/persistence/typeorm/repositories/appointment.repository.ts` | +693 | Repositorio TypeORM (incluye enriquecimiento `serviceNowLinkInfo`, `customerInfo.upn`, y las queries de autocomplete agregadas esta sesión) |
-| `apps/monolith/src/infrastructure/persistence/typeorm/repositories/servicenow-ticket-link.repository.ts` | +121 | Repositorio TypeORM de `ServiceNowTicketLink` |
-| `apps/monolith/src/internal-api/appointments/internal-appointments.controller.ts` | +337 | Controller `/internal/appointments/*` — incluye los endpoints de sugerencias agregados esta sesión |
+| `apps/micorner/src/core/domain/entities/appointment.entity.ts` | +765 | Entidad de dominio `Appointment`, reemplaza `Incident`+`Request` |
+| `apps/micorner/src/core/domain/entities/appointment.entity.spec.ts` | +511 | Tests unitarios de la entidad |
+| `apps/micorner/src/core/domain/entities/servicenow-ticket-link.entity.ts` | +158 | Entidad de dominio `ServiceNowTicketLink` (vínculo 1:N cita↔ticket SN) |
+| `apps/micorner/src/core/domain/enums/appointment-kind.enum.ts` | +52 | `AppointmentKind` (ISSUE/REQUEST) + `appointmentKindFromIssueCategory()` |
+| `apps/micorner/src/core/domain/enums/appointment-origin.enum.ts` | +8 | Canal de origen de la cita |
+| `apps/micorner/src/core/domain/enums/appointment-status.enum.spec.ts` | +88 | Tests de la máquina de estados |
+| `apps/micorner/src/core/domain/errors/appointment.errors.ts` | +47 | `AppointmentNotFoundError`, `AppointmentNotAvailableError`, `InvalidAppointmentStateError`, `AppointmentTechnicianNotAuthorizedError`, `DeviceHasActiveAppointmentError` |
+| `apps/micorner/src/core/domain/errors/servicenow.errors.ts` | +28 | Errores de dominio para `ServiceNowTicketLink` |
+| `apps/micorner/src/core/domain/value-objects/servicenow-ticket-type.value.ts` | +10 | `ServiceNowTicketType` (`'incident' \| 'sc_req_item' \| 'sc_task'`) |
+| `apps/micorner/src/core/ports/incoming/appointment/appointment-service.port.ts` | +135 | Puerto `IAppointmentService` |
+| `apps/micorner/src/core/ports/outgoing/repositories/appointment-repository.port.ts` | +135 | Puerto `IAppointmentRepository` (incluye `suggestDeviceSerials`/`suggestServiceNowNumbers` agregados en esta sesión) |
+| `apps/micorner/src/core/ports/outgoing/repositories/servicenow-ticket-link-repository.port.ts` | +15 | Puerto `IServiceNowTicketLinkRepository` |
+| `apps/micorner/src/core/services/appointment/appointment.service.ts` | +1271 | Servicio de aplicación `AppointmentService` — reemplaza `IncidentService`+`RequestService` |
+| `apps/micorner/src/infrastructure/event-handlers/appointment-servicenow.handler.ts` | +131 | Maneja creación de ticket SN al crear una cita |
+| `apps/micorner/src/infrastructure/event-handlers/appointment-status-changed.handler.ts` | +224 | Maneja cambios de estado + cierre de ticket SN (con el fix de persistencia de esta sesión) |
+| `apps/micorner/src/infrastructure/persistence/typeorm/entities/servicenow-ticket-link.entity.ts` | +58 | Entidad TypeORM `servicenow_ticket_links` |
+| `apps/micorner/src/infrastructure/persistence/typeorm/repositories/appointment.repository.ts` | +693 | Repositorio TypeORM (incluye enriquecimiento `serviceNowLinkInfo`, `customerInfo.upn`, y las queries de autocomplete agregadas esta sesión) |
+| `apps/micorner/src/infrastructure/persistence/typeorm/repositories/servicenow-ticket-link.repository.ts` | +121 | Repositorio TypeORM de `ServiceNowTicketLink` |
+| `apps/micorner/src/internal-api/appointments/internal-appointments.controller.ts` | +337 | Controller `/internal/appointments/*` — incluye los endpoints de sugerencias agregados esta sesión |
 
-### Migraciones (monolith)
+### Migraciones (micorner)
 | Archivo | Líneas | Qué hace |
 |---|---:|---|
 | `1785100000000-CreateAppointmentsTable.ts` | +68 | Crea tabla `appointments` |
@@ -57,8 +57,8 @@ El cambio central es la unificación de las entidades `Incident` y `Request` (an
 
 ## 2. Archivos eliminados (32)
 
-### Monolith — dominio legacy Incident/Request
-`core/domain/entities/incident.entity.ts` (+ `.spec.ts`), `core/domain/entities/request.entity.ts`, `core/domain/enums/incident-origin.enum.ts`, `core/domain/enums/incident-status.enum.spec.ts`, `core/domain/errors/incident.errors.ts`, `core/ports/incoming/incident/incident-service.port.ts`, `core/ports/incoming/request/request-service.port.ts`, `core/ports/outgoing/repositories/incident-repository.port.ts`, `core/ports/outgoing/repositories/request-repository.port.ts`, `core/services/incident/incident.service.ts` (−1342 líneas), `core/services/request/request.service.ts`, `infrastructure/event-handlers/incident-servicenow.handler.ts`, `infrastructure/event-handlers/incident-status-changed.handler.ts`, `infrastructure/event-handlers/request-servicenow.handler.ts`, `infrastructure/jobs/snow-sync.job.ts` (**decisión de producto**: el monolito ya no polea estado desde SN, cierra directo), `infrastructure/persistence/typeorm/entities/request-activity.entity.ts`, `infrastructure/persistence/typeorm/entities/request.entity.ts`, `infrastructure/persistence/typeorm/repositories/incident.repository.ts` (−777 líneas), `infrastructure/persistence/typeorm/repositories/request.repository.ts`, `internal-api/incidents/internal-incidents.controller.ts`, `internal-api/requests/dto/requests.dto.ts`, `internal-api/requests/internal-requests.controller.ts`.
+### Micorner — dominio legacy Incident/Request
+`core/domain/entities/incident.entity.ts` (+ `.spec.ts`), `core/domain/entities/request.entity.ts`, `core/domain/enums/incident-origin.enum.ts`, `core/domain/enums/incident-status.enum.spec.ts`, `core/domain/errors/incident.errors.ts`, `core/ports/incoming/incident/incident-service.port.ts`, `core/ports/incoming/request/request-service.port.ts`, `core/ports/outgoing/repositories/incident-repository.port.ts`, `core/ports/outgoing/repositories/request-repository.port.ts`, `core/services/incident/incident.service.ts` (−1342 líneas), `core/services/request/request.service.ts`, `infrastructure/event-handlers/incident-servicenow.handler.ts`, `infrastructure/event-handlers/incident-status-changed.handler.ts`, `infrastructure/event-handlers/request-servicenow.handler.ts`, `infrastructure/jobs/snow-sync.job.ts` (**decisión de producto**: el micorner ya no polea estado desde SN, cierra directo), `infrastructure/persistence/typeorm/entities/request-activity.entity.ts`, `infrastructure/persistence/typeorm/entities/request.entity.ts`, `infrastructure/persistence/typeorm/repositories/incident.repository.ts` (−777 líneas), `infrastructure/persistence/typeorm/repositories/request.repository.ts`, `internal-api/incidents/internal-incidents.controller.ts`, `internal-api/requests/dto/requests.dto.ts`, `internal-api/requests/internal-requests.controller.ts`.
 
 ### api-gateway
 `inbound/requests/dto/create-request.dto.ts`, `inbound/requests/requests.controller.ts`.
@@ -88,13 +88,13 @@ El cambio central es la unificación de las entidades `Incident` y `Request` (an
 | `api-gateway/.../dto/reschedule-incident.dto.ts` | `appointments/dto/reschedule-appointment.dto.ts` | 83% |
 | `api-gateway/.../dto/set-estimated-close.dto.ts` | (mismo nombre, solo cambia de carpeta) | 100% |
 | `api-gateway/.../dto/take-incident.dto.ts` | `appointments/dto/take-appointment.dto.ts` | 87% |
-| `monolith/.../constants/incident.constants.ts` | `appointment.constants.ts` | 66% |
-| `monolith/.../enums/incident-status.enum.ts` | `appointment-status.enum.ts` | 54% (agrega `PAUSED`) |
-| `monolith/.../core/services/incident/incident.service.spec.ts` | `appointment/appointment.service.spec.ts` | 50% |
-| `monolith/.../typeorm/entities/incident-slot.entity.ts` | `appointment-slot.entity.ts` | 51% |
-| `monolith/.../typeorm/entities/incident-timeline.entity.ts` | `appointment-timeline.entity.ts` | 59% |
-| `monolith/.../typeorm/entities/incident.entity.ts` | `appointment.entity.ts` | 64% |
-| `monolith/internal-api/incidents/dto/incidents.dto.ts` | `appointments/dto/appointments.dto.ts` | 83% |
+| `micorner/.../constants/incident.constants.ts` | `appointment.constants.ts` | 66% |
+| `micorner/.../enums/incident-status.enum.ts` | `appointment-status.enum.ts` | 54% (agrega `PAUSED`) |
+| `micorner/.../core/services/incident/incident.service.spec.ts` | `appointment/appointment.service.spec.ts` | 50% |
+| `micorner/.../typeorm/entities/incident-slot.entity.ts` | `appointment-slot.entity.ts` | 51% |
+| `micorner/.../typeorm/entities/incident-timeline.entity.ts` | `appointment-timeline.entity.ts` | 59% |
+| `micorner/.../typeorm/entities/incident.entity.ts` | `appointment.entity.ts` | 64% |
+| `micorner/internal-api/incidents/dto/incidents.dto.ts` | `appointments/dto/appointments.dto.ts` | 83% |
 
 ---
 
@@ -115,37 +115,37 @@ El cambio central es la unificación de las entidades `Incident` y `Request` (an
 | `abac-microservice/src/abac/services/user.service.ts` | +8/−… | Persiste `firstName`/`lastName`/`username` en `updateUser()` |
 | `auth-configuration-app/src/components/users-page.tsx` | +123/−… | Nuevo diálogo "Editar datos" (nombre, apellido, usuario, teléfono) |
 | `monolito-event-corner_v3/apps/api-gateway/src/inbound/appointments/appointments.controller.ts` | (parte de +240 total) | Nuevos endpoints `suggestions/device-serial` y `suggestions/servicenow-number` |
-| `monolito-event-corner_v3/apps/monolith/src/core/ports/outgoing/repositories/appointment-repository.port.ts` | (parte de +135 total) | Firma de `suggestDeviceSerials`/`suggestServiceNowNumbers` |
-| `monolito-event-corner_v3/apps/monolith/src/infrastructure/persistence/typeorm/repositories/appointment.repository.ts` | (parte de +693 total) | Implementación de las sugerencias (con el fix del bug `DISTINCT` mal ubicado en `.select()`) |
-| `monolito-event-corner_v3/apps/monolith/src/internal-api/appointments/internal-appointments.controller.ts` | (parte de +337 total) | Endpoints de sugerencias en el monolito |
+| `monolito-event-corner_v3/apps/micorner/src/core/ports/outgoing/repositories/appointment-repository.port.ts` | (parte de +135 total) | Firma de `suggestDeviceSerials`/`suggestServiceNowNumbers` |
+| `monolito-event-corner_v3/apps/micorner/src/infrastructure/persistence/typeorm/repositories/appointment.repository.ts` | (parte de +693 total) | Implementación de las sugerencias (con el fix del bug `DISTINCT` mal ubicado en `.select()`) |
+| `monolito-event-corner_v3/apps/micorner/src/internal-api/appointments/internal-appointments.controller.ts` | (parte de +337 total) | Endpoints de sugerencias en el micorner |
 | `CLAUDE.md`, `docs/documentation.md`, `docs/er-diagram.md` | +2/+2/+4 (previos) + reescritura hoy | Actualizados hoy para reflejar el modelo `Appointment` unificado (ver este mismo commit) |
 
 ### 4.2 Commits previos — unificación Incident+Request → Appointment (grueso del diff)
 | Archivo | Δ líneas | Cambio |
 |---|---:|---|
-| `apps/monolith/src/core/domain/entities/user.entity.ts` | +14/−… | Agrega `upn` |
-| `apps/monolith/src/core/domain/enums/issue-category.enum.ts` | +13/−… | `CREATE-DELIVERY`/`CREATE-COLLECTION`/`REQUEST-ONBOARDING`/`REQUEST-DECOMISSION` (reemplaza categorías viejas) |
-| `apps/monolith/src/core/domain/value-objects/device-type.value.ts` | +2/−… | Agrega `PANTALLA`, `SIM`, `EQUIPO_SOBREMESA` |
-| `apps/monolith/src/core/domain/value-objects/servicenow-category.value.ts` | +27/−… | Ajustes de categorías SN |
-| `apps/monolith/src/core/ports/incoming/service-tokens.ts`, `core/ports/index.ts`, `core/ports/outgoing/repositories/tokens.ts` | varios | `APPOINTMENT_SERVICE`/`APPOINTMENT_REPOSITORY`/`SERVICENOW_TICKET_LINK_REPOSITORY` reemplazan tokens de Incident/Request |
-| `apps/monolith/src/core/services/availability/availability.service.ts` (+ `.spec.ts`) | +52/+30 | Adaptado a `Appointment` en vez de `Incident` |
-| `apps/monolith/src/core/services/batch-draft/batch-draft.service.ts` | +36/−… | Crea `Appointment` en vez de `Incident` |
-| `apps/monolith/src/core/services/core-services.module.ts` | +42/−… | Registra `AppointmentService`, quita `IncidentService`/`RequestService` |
-| `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts` (+ `.spec.ts`) | +551/+53 | Reescrito para operar sobre `ServiceNowTicketLink` en vez de campos inline; unifica lógica de creación incident/RITM |
-| `apps/monolith/src/infrastructure/external/servicenow/servicenow-proxy.adapter.ts` | +40/−… | Adaptado a la nueva integración |
-| `apps/monolith/src/infrastructure/jobs/monolith-reconciler.job.ts` | +221/−… (neto negativo) | Reconcilia `ServiceNowTicketLink` en vez de campos inline en Incident/Request |
-| `apps/monolith/src/infrastructure/jobs/sn-company-sync.job.ts`, `snow-orphan-recovery.job.ts` | menor | Adaptados a `Appointment` |
-| `apps/monolith/src/infrastructure/persistence/typeorm/entities/{company,corner,corner-slot,schedule-assignment,technician,user}.entity.ts` | menor | Ajustes de relaciones hacia `AppointmentEntity` |
-| `apps/monolith/src/infrastructure/persistence/typeorm/repositories/{issue-type,servicenow-profile,user}.repository.ts` | menor | Ajustes menores |
-| `apps/monolith/src/infrastructure/persistence/typeorm/typeorm-persistence.module.ts` | +40/−… | Registra nuevas entidades TypeORM |
-| `apps/monolith/src/internal-api/internal-api.module.ts` | +6/−… | Registra `InternalAppointmentsController`, quita los de incidents/requests |
-| `apps/monolith/src/internal-api/issue-type-trees/internal-issue-type-trees.controller.ts` | +23 | Fix de borrado de árbol bloqueado por FK (bug de esta rama, sesión anterior) |
-| `apps/monolith/src/internal-api/users/internal-users.controller.ts` | +21/−… | `SyncUserDto.upn`, respuestas usan `upn` |
-| `apps/monolith/src/monolith.module.ts` | +34/−… | Registro de módulos actualizado |
-| `apps/monolith/src/scripts/seed-test-data.ts` | +73/−… | Seed usa `appointments`/`upn` en vez de `incidents`/`requests`/`principal_name` |
+| `apps/micorner/src/core/domain/entities/user.entity.ts` | +14/−… | Agrega `upn` |
+| `apps/micorner/src/core/domain/enums/issue-category.enum.ts` | +13/−… | `CREATE-DELIVERY`/`CREATE-COLLECTION`/`REQUEST-ONBOARDING`/`REQUEST-DECOMISSION` (reemplaza categorías viejas) |
+| `apps/micorner/src/core/domain/value-objects/device-type.value.ts` | +2/−… | Agrega `PANTALLA`, `SIM`, `EQUIPO_SOBREMESA` |
+| `apps/micorner/src/core/domain/value-objects/servicenow-category.value.ts` | +27/−… | Ajustes de categorías SN |
+| `apps/micorner/src/core/ports/incoming/service-tokens.ts`, `core/ports/index.ts`, `core/ports/outgoing/repositories/tokens.ts` | varios | `APPOINTMENT_SERVICE`/`APPOINTMENT_REPOSITORY`/`SERVICENOW_TICKET_LINK_REPOSITORY` reemplazan tokens de Incident/Request |
+| `apps/micorner/src/core/services/availability/availability.service.ts` (+ `.spec.ts`) | +52/+30 | Adaptado a `Appointment` en vez de `Incident` |
+| `apps/micorner/src/core/services/batch-draft/batch-draft.service.ts` | +36/−… | Crea `Appointment` en vez de `Incident` |
+| `apps/micorner/src/core/services/core-services.module.ts` | +42/−… | Registra `AppointmentService`, quita `IncidentService`/`RequestService` |
+| `apps/micorner/src/core/services/servicenow/servicenow-integration.service.ts` (+ `.spec.ts`) | +551/+53 | Reescrito para operar sobre `ServiceNowTicketLink` en vez de campos inline; unifica lógica de creación incident/RITM |
+| `apps/micorner/src/infrastructure/external/servicenow/servicenow-proxy.adapter.ts` | +40/−… | Adaptado a la nueva integración |
+| `apps/micorner/src/infrastructure/jobs/micorner-reconciler.job.ts` | +221/−… (neto negativo) | Reconcilia `ServiceNowTicketLink` en vez de campos inline en Incident/Request |
+| `apps/micorner/src/infrastructure/jobs/sn-company-sync.job.ts`, `snow-orphan-recovery.job.ts` | menor | Adaptados a `Appointment` |
+| `apps/micorner/src/infrastructure/persistence/typeorm/entities/{company,corner,corner-slot,schedule-assignment,technician,user}.entity.ts` | menor | Ajustes de relaciones hacia `AppointmentEntity` |
+| `apps/micorner/src/infrastructure/persistence/typeorm/repositories/{issue-type,servicenow-profile,user}.repository.ts` | menor | Ajustes menores |
+| `apps/micorner/src/infrastructure/persistence/typeorm/typeorm-persistence.module.ts` | +40/−… | Registra nuevas entidades TypeORM |
+| `apps/micorner/src/internal-api/internal-api.module.ts` | +6/−… | Registra `InternalAppointmentsController`, quita los de incidents/requests |
+| `apps/micorner/src/internal-api/issue-type-trees/internal-issue-type-trees.controller.ts` | +23 | Fix de borrado de árbol bloqueado por FK (bug de esta rama, sesión anterior) |
+| `apps/micorner/src/internal-api/users/internal-users.controller.ts` | +21/−… | `SyncUserDto.upn`, respuestas usan `upn` |
+| `apps/micorner/src/micorner.module.ts` | +34/−… | Registro de módulos actualizado |
+| `apps/micorner/src/scripts/seed-test-data.ts` | +73/−… | Seed usa `appointments`/`upn` en vez de `incidents`/`requests`/`principal_name` |
 | `apps/api-gateway/src/api-gateway.module.ts` | +6/−… | Registra `AppointmentsController` |
 | `apps/api-gateway/src/auth/decorators/permission.decorator.ts` | +2/−… | Doc/ejemplo actualizado |
-| `apps/api-gateway/src/client/monolith.client.ts` | +16/−… | — |
+| `apps/api-gateway/src/client/micorner.client.ts` | +16/−… | — |
 | `apps/api-gateway/src/inbound/admin/issue-types.controller.ts` | +6/−… | — |
 | `apps/api-gateway/src/inbound/admin/users.controller.ts` | +2/−… | Doc actualizado a "email o upn" |
 | `apps/api-gateway/src/inbound/auth/auth.controller.ts` | +6/−… | `/me` usa `upn` en vez de `principal_name` |
@@ -178,10 +178,10 @@ Cambio posterior a la comparación original de arriba (commit `9080c06`, incluid
 
 | Archivo | Cambio |
 |---|---|
-| `apps/monolith/src/core/domain/constants/appointment.constants.ts` | `VALID_STATUS_TRANSITIONS`: `CANCELED` agregado como destino válido desde `DELIVERED`, `IN_PROGRESS` y los 5 `PENDING_*` (antes solo `CREATED`/`REOPENED`) |
-| `apps/monolith/src/core/services/appointment/appointment.service.ts` | `_cancelAppointment()`: guard hardcodeado `CREATED \|\| REOPENED` reemplazado por `ACTIVE_STATUSES.includes(status)` |
-| `apps/monolith/src/infrastructure/event-handlers/appointment-status-changed.handler.ts` | Nueva rama para `CANCELED`: si el `ServiceNowTicketLink` ya tiene `sysId` (ticket activo en SN), cierra el ticket real; si no, lo marca `ABANDONED` para que `SnowOrphanRecoveryJob` no lo reencole sobre una cita ya cancelada |
-| `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts` | `closeTicket()`: fix independiente encontrado en el camino — el cierre solo estaba cableado end-to-end para `incident` (endpoint dedicado `.../close` en api-snowq-service). `sc_req_item` ahora cierra vía el PATCH genérico (`{state:'closed', close_code, close_notes}`), que ya estaba 100% cableado para otras transiciones. `sc_task` devuelve error explícito — no es creable todavía (`CreatableTicketType` lo excluye), así que no hay nada real que cerrar |
-| `apps/monolith/src/core/domain/enums/appointment-status.enum.ts` (+ su spec, eliminado) | Baja de `canTransitionTo()` — dead code, duplicaba `VALID_STATUS_TRANSITIONS` sin estar referenciado desde ningún caller de producción |
+| `apps/micorner/src/core/domain/constants/appointment.constants.ts` | `VALID_STATUS_TRANSITIONS`: `CANCELED` agregado como destino válido desde `DELIVERED`, `IN_PROGRESS` y los 5 `PENDING_*` (antes solo `CREATED`/`REOPENED`) |
+| `apps/micorner/src/core/services/appointment/appointment.service.ts` | `_cancelAppointment()`: guard hardcodeado `CREATED \|\| REOPENED` reemplazado por `ACTIVE_STATUSES.includes(status)` |
+| `apps/micorner/src/infrastructure/event-handlers/appointment-status-changed.handler.ts` | Nueva rama para `CANCELED`: si el `ServiceNowTicketLink` ya tiene `sysId` (ticket activo en SN), cierra el ticket real; si no, lo marca `ABANDONED` para que `SnowOrphanRecoveryJob` no lo reencole sobre una cita ya cancelada |
+| `apps/micorner/src/core/services/servicenow/servicenow-integration.service.ts` | `closeTicket()`: fix independiente encontrado en el camino — el cierre solo estaba cableado end-to-end para `incident` (endpoint dedicado `.../close` en api-snowq-service). `sc_req_item` ahora cierra vía el PATCH genérico (`{state:'closed', close_code, close_notes}`), que ya estaba 100% cableado para otras transiciones. `sc_task` devuelve error explícito — no es creable todavía (`CreatableTicketType` lo excluye), así que no hay nada real que cerrar |
+| `apps/micorner/src/core/domain/enums/appointment-status.enum.ts` (+ su spec, eliminado) | Baja de `canTransitionTo()` — dead code, duplicaba `VALID_STATUS_TRANSITIONS` sin estar referenciado desde ningún caller de producción |
 
 No requirió cambios en `api-gateway`, `api-snowq-service` ni `servicenow-clone-backend` — el fix de `sc_req_item` reutiliza infraestructura ya cableada de punta a punta.

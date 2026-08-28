@@ -15,7 +15,7 @@ export class CreateIssueTypeDto {
   @IsNotEmpty()
   name: string;
 
-  /** Árbol al que pertenece el tipo — sin él, el monolito cae en el primer árbol disponible */
+  /** Árbol al que pertenece el tipo — sin él, el micorner cae en el primer árbol disponible */
   @IsOptional()
   @IsString()
   treeId?: string;

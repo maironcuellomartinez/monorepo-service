@@ -3,14 +3,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { HttpClientModule } from '@backendkit-labs/http-client/nestjs';
 import type { HttpClientConfig, HttpCtx } from '@backendkit-labs/http-client';
 import { CorrelationIdService } from '@app/observability';
-import { MONOLITH_HTTP, ABAC_HTTP, ABAC_HTTP_NOCB } from './http-client.tokens';
+import { MICORNER_HTTP, ABAC_HTTP, ABAC_HTTP_NOCB } from './http-client.tokens';
 
 /**
  * Registro central de los HTTP clients salientes del api-gateway, sobre
  * @backendkit-labs/http-client. Reemplaza al antiguo @app/http (HttpAxiosService).
  *
  * Tres clients:
- *   - MONOLITH_HTTP   → monolito, con circuit breaker.
+ *   - MICORNER_HTTP   → micorner, con circuit breaker.
  *   - ABAC_HTTP       → ABAC con circuit breaker (roles / batch / can-access).
  *   - ABAC_HTTP_NOCB  → ABAC sin circuit breaker (validación de token, auth crítica).
  *
@@ -41,21 +41,21 @@ function correlationStep(cor: CorrelationIdService): NonNullable<HttpClientConfi
         HttpClientModule.forRootAsync({
             imports: [ConfigModule],
             inject: [ConfigService, CorrelationIdService],
-            clients: [MONOLITH_HTTP, ABAC_HTTP, ABAC_HTTP_NOCB],
+            clients: [MICORNER_HTTP, ABAC_HTTP, ABAC_HTTP_NOCB],
             useFactory: (cs: ConfigService, cor: CorrelationIdService) => {
-                const monolithUrl = cs.get<string>('MONOLITH_URL', 'http://localhost:3001');
+                const micornerUrl = cs.get<string>('MICORNER_URL', 'http://localhost:3001');
                 const abacUrl = cs.get<string>('ABAC_URL', 'http://localhost:3005');
                 const step = correlationStep(cor);
 
                 return {
                     clients: [
                         {
-                            token: MONOLITH_HTTP,
+                            token: MICORNER_HTTP,
                             config: {
-                                baseURL: monolithUrl,
+                                baseURL: micornerUrl,
                                 timeout: 8_000,
                                 retry: { attempts: 3 },
-                                circuitBreaker: { name: 'monolith' },
+                                circuitBreaker: { name: 'micorner' },
                                 steps: [step],
                             },
                         },

@@ -12,8 +12,8 @@
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
-      "@app/core": ["apps/monolith/src/core/index.ts"],
-      "@app/core/*": ["apps/monolith/src/core/*"],
+      "@app/core": ["apps/micorner/src/core/index.ts"],
+      "@app/core/*": ["apps/micorner/src/core/*"],
       "@app/shared": ["libs/shared/src/index.ts"],
       "@app/shared/*": ["libs/shared/src/*"],
       "@app/observability": ["libs/observability/index.ts"],

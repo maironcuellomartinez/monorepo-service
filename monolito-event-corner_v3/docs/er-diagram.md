@@ -1,6 +1,6 @@
 # Modelo Entidad-Relación — Event Corner v3
 
-> Generado a partir de las entidades TypeORM del monolito y ABAC. Para el mapa de **infraestructura y servicios** (no solo el modelo de datos) ver [`infrastructure-diagram.md`](./infrastructure-diagram.md).
+> Generado a partir de las entidades TypeORM del micorner y ABAC. Para el mapa de **infraestructura y servicios** (no solo el modelo de datos) ver [`infrastructure-diagram.md`](./infrastructure-diagram.md).
 > Última actualización: 2026-08-18 — completado el modelo UML de dominio y el diagrama de resolución SN al `Appointment` unificado (2026-07-30: `Incident`+`Request` → `Appointment`, ver `1785500000000-BackfillAppointmentsFromIncidentsAndRequests` / `1785600000000-DropIncidentsAndRequestsLegacyTables`). Incluye la cancelación desde cualquier estado activo y el fix de cierre de tickets `sc_req_item`.
 ```mermaid
 erDiagram
@@ -438,7 +438,7 @@ erDiagram
 
 | Tabla | Descripción |
 |---|---|
-| `appointments` | Agregado raíz único de cita — reemplaza `incidents` + `requests`. `kind` (`ISSUE`/`REQUEST`) decide el mecanismo técnico de creación de ticket SN, derivado de `issueType.category`. Registra el técnico actual y el que la creó, el dispositivo y locker involucrados (opcionales), y los tiempos planificados. Máquina de estados completa (13 valores + transiciones válidas) en `apps/monolith/src/core/domain/enums/appointment-status.enum.ts` — fuente de verdad, no repetir aquí para evitar desincronización. |
+| `appointments` | Agregado raíz único de cita — reemplaza `incidents` + `requests`. `kind` (`ISSUE`/`REQUEST`) decide el mecanismo técnico de creación de ticket SN, derivado de `issueType.category`. Registra el técnico actual y el que la creó, el dispositivo y locker involucrados (opcionales), y los tiempos planificados. Máquina de estados completa (13 valores + transiciones válidas) en `apps/micorner/src/core/domain/enums/appointment-status.enum.ts` — fuente de verdad, no repetir aquí para evitar desincronización. |
 | `appointment_slots` | Tabla pivot que relaciona una cita con los slots que ocupa. Una cita puede requerir múltiples slots contiguos si la atención supera la duración de un slot. |
 | `appointment_timeline` | Historial inmutable de cambios de estado de una cita. Cada fila registra quién actuó, qué cambio de estado ocurrió, los tiempos reales de trabajo y un comentario opcional. Es la fuente de verdad para auditoría y métricas. |
 | `servicenow_ticket_links` | Vínculo polimórfico 1:N entre una cita y sus tickets SN — reemplaza los campos `servicenow_id`/`servicenow_number` inline que tenían `incidents`/`requests`. Soporta una RITM (`sc_req_item`, `role=primary`) con uno o más `sc_task` de cumplimiento (`role=fulfillment`) para citas `REQUEST`. |
@@ -474,12 +474,12 @@ graph LR
     subgraph GW["API Gateway  :3000"]
         direction TB
         GW_IN["inbound/\nControllers\n(thin proxies)"]
-        GW_MC["MonolithClient\nHTTP"]
+        GW_MC["MicornerClient\nHTTP"]
         GW_OUT["outbound/\nAdapters"]
     end
 
-    %% ── Monolito :3001 — capas ─────────────────────────────────────────────────
-    subgraph MONO["Monolito  :3001"]
+    %% ── Micorner :3001 — capas ─────────────────────────────────────────────────
+    subgraph MONO["Micorner  :3001"]
         direction TB
 
         %% Adaptador entrante
@@ -488,7 +488,7 @@ graph LR
         end
 
         %% Núcleo hexagonal
-        subgraph HEX["⬡  Núcleo Hexagonal  (apps/monolith/src/core/domain)"]
+        subgraph HEX["⬡  Núcleo Hexagonal  (apps/micorner/src/core/domain)"]
             direction TB
 
             subgraph PIN["Puertos de Entrada\n(ports/incoming/)"]
@@ -587,7 +587,7 @@ graph LR
 2. **Los puertos de salida son interfaces** (`IXxxRepository`, `IEventBus`, …).
    La DI se resuelve en `CoreServicesModule` mediante `useFactory`.
 3. **Los adaptadores salientes egresan siempre por el API Gateway.**
-   El monolito nunca llama directamente a ServiceNow o Inventory — usa los proxies `outbound/` del gateway.
+   El micorner nunca llama directamente a ServiceNow o Inventory — usa los proxies `outbound/` del gateway.
 4. **Los controladores `internal-api/` son finos** — solo deserializan la request, invocan el servicio y serializan la respuesta con `unwrapOrThrow()`.
 
 ### Mapa de tokens DI (`service-tokens.ts` / `tokens.ts`)
@@ -617,7 +617,7 @@ graph LR
 
 ---
 
-> ⚠️ **Pendiente de actualizar:** de acá en adelante (`Modelo UML del Dominio`, `Diagrama de flujo de implementación`, `Checklist por entidad nueva`) el documento todavía describe las clases `Incident`/`Request` separadas, `IncidentServiceNowHandler`/`IncidentStatusChangedHandler`, y menciona `SnowSyncJob` — que **ya no existe** (se decidió que el monolito cierra los tickets SN directamente en vez de pollear estado, ver comentario en `appointment-status-changed.handler.ts`). Los diagramas ER, de relaciones y el mapa de tokens DI de más arriba en este archivo, y todo `documentation.md`, ya están actualizados al modelo `Appointment` unificado. Reemplazar `Incident`/`Request` por `Appointment` + `ServiceNowTicketLink` en las clases UML de abajo (`AppointmentServiceNowHandler`, `AppointmentStatusChangedHandler`) es el trabajo que falta — pendiente por el volumen de diagramas mermaid involucrados.
+> ⚠️ **Pendiente de actualizar:** de acá en adelante (`Modelo UML del Dominio`, `Diagrama de flujo de implementación`, `Checklist por entidad nueva`) el documento todavía describe las clases `Incident`/`Request` separadas, `IncidentServiceNowHandler`/`IncidentStatusChangedHandler`, y menciona `SnowSyncJob` — que **ya no existe** (se decidió que el micorner cierra los tickets SN directamente en vez de pollear estado, ver comentario en `appointment-status-changed.handler.ts`). Los diagramas ER, de relaciones y el mapa de tokens DI de más arriba en este archivo, y todo `documentation.md`, ya están actualizados al modelo `Appointment` unificado. Reemplazar `Incident`/`Request` por `Appointment` + `ServiceNowTicketLink` en las clases UML de abajo (`AppointmentServiceNowHandler`, `AppointmentStatusChangedHandler`) es el trabajo que falta — pendiente por el volumen de diagramas mermaid involucrados.
 
 ## Modelo UML del Dominio
 
@@ -1093,21 +1093,21 @@ Device (aggregate root — ciclo de vida independiente)
 flowchart TD
     A([🎯 Nueva funcionalidad]) --> B
 
-    B["1️⃣  DOMINIO\napps/monolith/src/core/domain/\n─────────────────────\nEntidad: create() + reconstitute()\nValue objects si aplica\nDomain events si aplica\nErrors tipados"]
+    B["1️⃣  DOMINIO\napps/micorner/src/core/domain/\n─────────────────────\nEntidad: create() + reconstitute()\nValue objects si aplica\nDomain events si aplica\nErrors tipados"]
 
-    B --> C["2️⃣  PUERTO DE SALIDA\napps/monolith/src/core/ports/outgoing/repositories/\n─────────────────────\nInterface IXxxRepository\nAgregar método al token existente\no crear nuevo token en tokens.ts"]
+    B --> C["2️⃣  PUERTO DE SALIDA\napps/micorner/src/core/ports/outgoing/repositories/\n─────────────────────\nInterface IXxxRepository\nAgregar método al token existente\no crear nuevo token en tokens.ts"]
 
-    C --> D["3️⃣  PUERTO DE ENTRADA\napps/monolith/src/core/ports/incoming/\n─────────────────────\nInterface IXxxService\nCommands / DTOs de entrada\nToken en service-tokens.ts"]
+    C --> D["3️⃣  PUERTO DE ENTRADA\napps/micorner/src/core/ports/incoming/\n─────────────────────\nInterface IXxxService\nCommands / DTOs de entrada\nToken en service-tokens.ts"]
 
-    D --> E["4️⃣  SERVICIO DE APLICACIÓN\napps/monolith/src/core/services/\n─────────────────────\nImplementa IXxxService\nOrquesta dominio + repos\nEmite domain events\nDevuelve Result&#60;T&#62;"]
+    D --> E["4️⃣  SERVICIO DE APLICACIÓN\napps/micorner/src/core/services/\n─────────────────────\nImplementa IXxxService\nOrquesta dominio + repos\nEmite domain events\nDevuelve Result&#60;T&#62;"]
 
-    E --> F["5️⃣  MÓDULO DI\napps/monolith/src/core/services/core-services.module.ts\n─────────────────────\nAgregar provider con useFactory\nInyectar repos y tokens\nExportar token"]
+    E --> F["5️⃣  MÓDULO DI\napps/micorner/src/core/services/core-services.module.ts\n─────────────────────\nAgregar provider con useFactory\nInyectar repos y tokens\nExportar token"]
 
-    F --> G["6️⃣  REPOSITORIO TypeORM\napps/monolith/src/infrastructure/persistence/typeorm/\n─────────────────────\nEntidad @Entity con columnas\nImplementa IXxxRepository\ntoEntity() + toDomain()\nRegistrar en TypeOrmModule"]
+    F --> G["6️⃣  REPOSITORIO TypeORM\napps/micorner/src/infrastructure/persistence/typeorm/\n─────────────────────\nEntidad @Entity con columnas\nImplementa IXxxRepository\ntoEntity() + toDomain()\nRegistrar en TypeOrmModule"]
 
-    G --> H["7️⃣  CONTROLLER INTERNO\napps/monolith/src/internal-api/\n─────────────────────\nController /internal/xxx\n@Inject(XXX_SERVICE)\nunwrapOrThrow() en cada ruta\nRegistrar en InternalApiModule"]
+    G --> H["7️⃣  CONTROLLER INTERNO\napps/micorner/src/internal-api/\n─────────────────────\nController /internal/xxx\n@Inject(XXX_SERVICE)\nunwrapOrThrow() en cada ruta\nRegistrar en InternalApiModule"]
 
-    H --> I["8️⃣  PROXY API GATEWAY\napps/api-gateway/src/inbound/\n─────────────────────\nController público /api/xxx\nLlama MonolithClient.forward()\nRegistrar en InboundModule"]
+    H --> I["8️⃣  PROXY API GATEWAY\napps/api-gateway/src/inbound/\n─────────────────────\nController público /api/xxx\nLlama MicornerClient.forward()\nRegistrar en InboundModule"]
 
     I --> J([✅ Funcionalidad lista])
 
@@ -1127,14 +1127,14 @@ flowchart TD
 
 | Paso | Qué crear | Ruta base | Regla clave |
 |---|---|---|---|
-| **1 — Dominio** | Entidad / Value Object / Error | `apps/monolith/src/core/domain/` | `create()` emite eventos. `reconstitute()` no. Nunca importar infra. |
-| **2 — Puerto salida** | `IXxxRepository` + token | `apps/monolith/src/core/ports/outgoing/repositories/` | Solo métodos que necesita el dominio. Sin TypeORM. |
-| **3 — Puerto entrada** | `IXxxService` + Commands + token | `apps/monolith/src/core/ports/incoming/` | Commands son POJOs planos. El token va en `service-tokens.ts`. |
-| **4 — Servicio** | `XxxService implements IXxxService` | `apps/monolith/src/core/services/` | Devuelve `Result<T>`. Nunca lanza excepciones. Inyecta por interfaz. |
-| **5 — DI** | `useFactory` en `CoreServicesModule` | `apps/monolith/src/core/services/core-services.module.ts` | Un provider por token. `inject:` en el mismo orden que el constructor. |
-| **6 — Repo TypeORM** | `TypeOrmXxxRepository` + `XxxEntity` | `apps/monolith/src/infrastructure/persistence/typeorm/` | `toDomain()` usa `reconstitute()`. `toEntity()` usa getters públicos. |
-| **7 — Controller interno** | `InternalXxxController` | `apps/monolith/src/internal-api/` | Solo `@Inject` + `unwrapOrThrow()`. Sin lógica de negocio. |
-| **8 — Gateway proxy** | `XxxController` inbound | `apps/api-gateway/src/inbound/` | Llama `MonolithClient.forward(req, '/internal/xxx')`. Sin lógica. |
+| **1 — Dominio** | Entidad / Value Object / Error | `apps/micorner/src/core/domain/` | `create()` emite eventos. `reconstitute()` no. Nunca importar infra. |
+| **2 — Puerto salida** | `IXxxRepository` + token | `apps/micorner/src/core/ports/outgoing/repositories/` | Solo métodos que necesita el dominio. Sin TypeORM. |
+| **3 — Puerto entrada** | `IXxxService` + Commands + token | `apps/micorner/src/core/ports/incoming/` | Commands son POJOs planos. El token va en `service-tokens.ts`. |
+| **4 — Servicio** | `XxxService implements IXxxService` | `apps/micorner/src/core/services/` | Devuelve `Result<T>`. Nunca lanza excepciones. Inyecta por interfaz. |
+| **5 — DI** | `useFactory` en `CoreServicesModule` | `apps/micorner/src/core/services/core-services.module.ts` | Un provider por token. `inject:` en el mismo orden que el constructor. |
+| **6 — Repo TypeORM** | `TypeOrmXxxRepository` + `XxxEntity` | `apps/micorner/src/infrastructure/persistence/typeorm/` | `toDomain()` usa `reconstitute()`. `toEntity()` usa getters públicos. |
+| **7 — Controller interno** | `InternalXxxController` | `apps/micorner/src/internal-api/` | Solo `@Inject` + `unwrapOrThrow()`. Sin lógica de negocio. |
+| **8 — Gateway proxy** | `XxxController` inbound | `apps/api-gateway/src/inbound/` | Llama `MicornerClient.forward(req, '/internal/xxx')`. Sin lógica. |
 
 ### Checklist por entidad nueva
 
@@ -1161,7 +1161,7 @@ graph TB
           ADM2["GET/POST/PUT/DELETE\n/internal/servicenow-groups\n(catálogo de grupos conocidos)"]
       end
 
-      subgraph MONOLITH["Monolith :3001/:3002"]
+      subgraph MICORNER["Micorner :3001/:3002"]
           subgraph CRUD_CIC["CompanyIssueConfigService"]
               CIC_SVC["create / update / delete\ngetByCompany / getByCompanyAndIssueType"]
           end
@@ -1182,7 +1182,7 @@ graph TB
           end
 
           subgraph JOBS["Scheduled Jobs"]
-              RECONCILER["MonolithReconcilerJob\n(cada 30s)\n─────────────────────────\nlinks con snowqCorrelationId pendiente\n→ GET /snow-requests/:correlationId\n→ resuelve sysId/number"]
+              RECONCILER["MicornerReconcilerJob\n(cada 30s)\n─────────────────────────\nlinks con snowqCorrelationId pendiente\n→ GET /snow-requests/:correlationId\n→ resuelve sysId/number"]
               ORPHAN["SnowOrphanRecoveryJob\n(cada 10 min)\n─────────────────────────\ncitas activas sin link ACTIVE\n→ crea link nuevo + re-encola (async)"]
           end
 
@@ -1240,7 +1240,7 @@ graph TB
 | Resolución de grupo | `CompanyIssueConfig(company)` → `CompanyIssueConfig(default)` → `corner.snowAssignmentGroup` → fallback `'SOPORTE_GENERAL'` (+ warn log) |
 | Catálogo `servicenow_groups` | CRUD admin, referencia local de todos los grupos SN conocidos |
 | Creación | `APPOINTMENT_CREATED` → `AppointmentServiceNowHandler` → `createTicket()` — dos fases (síncrona + fallback async vía `snowqCorrelationId`) |
-| Cierre en SN | `APPOINTMENT_STATUS_CHANGED(CLOSED \| CANCELED)` → `AppointmentStatusChangedHandler` → `closeTicket()` → gateway → snowq. Único disparador de cierre — nunca hay polling de estado desde SN hacia el monolito (`SnowSyncJob`, que hacía eso, fue eliminado). |
+| Cierre en SN | `APPOINTMENT_STATUS_CHANGED(CLOSED \| CANCELED)` → `AppointmentStatusChangedHandler` → `closeTicket()` → gateway → snowq. Único disparador de cierre — nunca hay polling de estado desde SN hacia el micorner (`SnowSyncJob`, que hacía eso, fue eliminado). |
 | Cancelación | Alcanzable desde cualquier estado activo (no solo `CREATED`/`REOPENED`); si el link ya tenía `sysId` se cierra el ticket real, si no se marca `ABANDONED` |
 
 La lógica de `resolveAssignmentGroup()` es prioridad de lo más específico a lo más genérico (4 niveles):
@@ -1248,7 +1248,7 @@ La lógica de `resolveAssignmentGroup()` es prioridad de lo más específico a l
 | Nivel | Fuente | Cuándo aplica |
 |---|---|---|
 | 🟢 Específico | `company_issue_configs` (`company.id`) | Hay config para esa empresa + tipo de cita puntual |
-| 🟢 Default | `company_issue_configs` (`SN_DEFAULT_COMPANY_ID`) | No hay config para la empresa, pero sí para la empresa default configurada en el monolito |
+| 🟢 Default | `company_issue_configs` (`SN_DEFAULT_COMPANY_ID`) | No hay config para la empresa, pero sí para la empresa default configurada en el micorner |
 | 🟡 General | `corners.snow_assignment_group` | El corner tiene un grupo por defecto pero sin config fina |
 | 🔴 Fallback | `'SOPORTE_GENERAL'` | No hay ninguna configuración definida — se loguea warning |
 
@@ -1315,7 +1315,7 @@ applications
 
 | Valor | Uso |
 |---|---|
-| `'internal'` | Servicio del ecosistema (api-gateway, monolith, snowq). Creado por seed M2M. |
+| `'internal'` | Servicio del ecosistema (api-gateway, micorner, snowq). Creado por seed M2M. |
 | `'oauth_client'` | App externa con OAuth 2.0 Client Credentials. Creada por `POST /applications/oauth`. |
 | `'entra_app'` | Aplicación Azure AD registrada. Reservado para future use. |
 

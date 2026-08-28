@@ -34,7 +34,7 @@ El vínculo con ServiceNow (`sys_id`, `number`, `correlation_id` async) ya no so
 
 ## Otros cambios de esta rama
 
-- **`SnowSyncJob` eliminado** — el monolito ya nunca polea estado desde ServiceNow. El cierre siempre se dispara desde el monolito hacia SN (`AppointmentStatusChangedHandler`), nunca al revés.
+- **`SnowSyncJob` eliminado** — el micorner ya nunca polea estado desde ServiceNow. El cierre siempre se dispara desde el micorner hacia SN (`AppointmentStatusChangedHandler`), nunca al revés.
 - **`upn`** reemplaza a `email` como identificador primario del usuario en el frontend; `email` queda como campo separado, reservado para notificaciones futuras. Tiene constraint `UNIQUE`.
 - **event-corner-app**: autocomplete de UPN/serial de dispositivo/número SN en `/citas`, filtro por defecto a citas activas (checkbox "Todas las citas"), logout+tema movidos al header, corner sigue siendo obligatorio para listar citas.
 - **ABAC / `auth-configuration-app`**: nuevo diálogo para editar `firstName`/`lastName`/`username`/`phone` de un usuario — antes solo se completaban en el primer login vía Entra ID y quedaban fijos.

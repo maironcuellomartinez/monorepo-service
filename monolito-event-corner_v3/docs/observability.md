@@ -15,11 +15,11 @@
   │  api-gateway                                                  │
   │  CorrelationInterceptor → OTel span + AsyncLocalStorage       │
   │       │
-  │       │  HTTP call al monolith
+  │       │  HTTP call al micorner
   │       │  Headers: x-correlation-id: <mismo UUID>            │
   │       ▼
   ┌─────────────────────────────────────────────────────────────┐
-  │  monolith                                                     │
+  │  micorner                                                     │
   │  CorrelationMiddleware → propaga contexto (mismo UUID)       │
   │       │
   │       │  HTTP call a api-snowq
@@ -92,10 +92,10 @@
       │      ▼
       │   abac-microservice recibe x-correlation-id  ✓
       │
-      └─ MonolithClient  (@backendkit-labs/http-client)
+      └─ MicornerClient  (@backendkit-labs/http-client)
              pipeline step 'inject-correlation-id' → header x-correlation-id: abc-123  ✓
              ▼
-          monolith
+          micorner
             CorrelationMiddleware_v2 → ALS: { correlationId: 'abc-123' }  ✓
             CorrelationInterceptor  → ALS: { correlationId: 'abc-123' }  ✓
               │

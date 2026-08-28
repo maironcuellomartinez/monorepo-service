@@ -1,7 +1,7 @@
 // api-gateway/inbound/admin/technicians.controller.ts
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 import { AbacClient } from '../../auth/abac.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { TracingService } from '@app/observability';
@@ -11,19 +11,19 @@ import { TracingService } from '@app/observability';
 @Controller('api/admin/technicians')
 export class TechniciansController {
     constructor(
-        private readonly monolith: MonolithClient,
+        private readonly micorner: MicornerClient,
         private readonly abac: AbacClient,
         private readonly tracing: TracingService,
     ) {}
 
     /**
-     * Lista todos los usuarios activos del monolith — para el picker del modal de técnicos.
+     * Lista todos los usuarios activos del micorner — para el picker del modal de técnicos.
      */
     @Get('users')
     @Permission('technician', 'create')
     @ApiOperation({ summary: 'Listar usuarios disponibles para vincular como técnicos' })
     listUsers() {
-        return this.monolith.get('/users');
+        return this.micorner.get('/users');
     }
 
     /**
@@ -35,7 +35,7 @@ export class TechniciansController {
     @ApiOperation({ summary: 'Buscar usuario por email para vincularlo como técnico' })
     @ApiQuery({ name: 'email', required: true })
     lookupUser(@Query('email') email: string) {
-        return this.monolith.get(`/users/by-email/${encodeURIComponent(email)}`);
+        return this.micorner.get(`/users/by-email/${encodeURIComponent(email)}`);
     }
 
     /**
@@ -46,11 +46,11 @@ export class TechniciansController {
     @ApiOperation({ summary: 'Listar técnicos. Sin cornerId devuelve todos.' })
     @ApiQuery({ name: 'cornerId', required: false })
     list(@Query('cornerId') cornerId?: string) {
-        return this.monolith.get('/technicians', cornerId ? { cornerId } : {});
+        return this.micorner.get('/technicians', cornerId ? { cornerId } : {});
     }
 
     /**
-     * Crea un técnico vinculado a un User existente del monolith.
+     * Crea un técnico vinculado a un User existente del micorner.
      * El admin selecciona un User (que ya hizo login) y le asigna un corner.
      * Los datos de nombre/email se envían explícitamente desde el frontend
      * (ya los tiene porque los leyó de /auth/me o de la lista de usuarios).
@@ -76,15 +76,15 @@ export class TechniciansController {
         lastName?: string;
     }) {
         // El rol técnico se otorga en ABAC, no acá — solo verificamos que ya lo tenga
-        // antes de crear el vínculo operativo (corner/horario) en el monolith.
-        const monolithUser = await this.monolith.get<{ externalId: string }>(`/users/${dto.userId}`);
-        const hasTechnicianRole = await this.abac.canAccess(monolithUser.externalId, 'dashboard-technician', 'read');
+        // antes de crear el vínculo operativo (corner/horario) en el micorner.
+        const micornerUser = await this.micorner.get<{ externalId: string }>(`/users/${dto.userId}`);
+        const hasTechnicianRole = await this.abac.canAccess(micornerUser.externalId, 'dashboard-technician', 'read');
         if (!hasTechnicianRole) {
             throw new ForbiddenException(
                 'El usuario no tiene el rol "technician" en ABAC. Asignale el rol antes de promoverlo.',
             );
         }
-        return this.monolith.post('/technicians', dto);
+        return this.micorner.post('/technicians', dto);
     }
 
     /**
@@ -95,7 +95,7 @@ export class TechniciansController {
     @ApiOperation({ summary: 'Obtener técnico por ID' })
     @ApiParam({ name: 'id' })
     getOne(@Param('id') id: string) {
-        return this.monolith.get(`/technicians/${id}`);
+        return this.micorner.get(`/technicians/${id}`);
     }
 
     /**
@@ -109,7 +109,7 @@ export class TechniciansController {
         return this.tracing.run('gateway.controller.technicians.assignCorner', { kind: 'server', attributes: { 'technician.id': id } }, () => this._assignCorner(id, dto));
     }
     private async _assignCorner(id: string, dto: { cornerId: string }) {
-        return this.monolith.patch(`/technicians/${id}/corner`, dto);
+        return this.micorner.patch(`/technicians/${id}/corner`, dto);
     }
 
     /**
@@ -124,7 +124,7 @@ export class TechniciansController {
         return this.tracing.run('gateway.controller.technicians.remove', { kind: 'server', attributes: { 'technician.id': id } }, () => this._remove(id));
     }
     private async _remove(id: string) {
-        return this.monolith.delete(`/technicians/${id}`);
+        return this.micorner.delete(`/technicians/${id}`);
     }
 
     /**
@@ -139,7 +139,7 @@ export class TechniciansController {
         return this.tracing.run('gateway.controller.technicians.disable', { kind: 'server', attributes: { 'technician.id': id } }, () => this._disable(id));
     }
     private async _disable(id: string) {
-        return this.monolith.patch(`/technicians/${id}/disable`, {});
+        return this.micorner.patch(`/technicians/${id}/disable`, {});
     }
 
     /**
@@ -154,6 +154,6 @@ export class TechniciansController {
         return this.tracing.run('gateway.controller.technicians.enable', { kind: 'server', attributes: { 'technician.id': id } }, () => this._enable(id));
     }
     private async _enable(id: string) {
-        return this.monolith.patch(`/technicians/${id}/enable`, {});
+        return this.micorner.patch(`/technicians/${id}/enable`, {});
     }
 }

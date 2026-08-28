@@ -1,21 +1,21 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { InternalOnly } from '../../auth/decorators/internal.decorator';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 
 @ApiTags('External Records')
 @ApiBearerAuth('jwt')
 @InternalOnly()
 @Controller('internal-api')
 export class ExternalRecordsController {
-    constructor(private readonly monolith: MonolithClient) {}
+    constructor(private readonly micorner: MicornerClient) {}
 
     @Get('incidents/by-number/:number')
     @ApiOperation({ summary: 'Incidencia por número SN — solo M2M' })
     @ApiParam({ name: 'number', example: 'INC0001234' })
     @ApiResponse({ status: 200 }) @ApiResponse({ status: 404 })
     getIncidentByNumber(@Param('number') number: string) {
-        return this.monolith.getAppointmentByNumber(number);
+        return this.micorner.getAppointmentByNumber(number);
     }
 
     @Get('requests/by-number/:number')
@@ -23,7 +23,7 @@ export class ExternalRecordsController {
     @ApiParam({ name: 'number', example: 'REQ0001234' })
     @ApiResponse({ status: 200 }) @ApiResponse({ status: 404 })
     getRequestByNumber(@Param('number') number: string) {
-        return this.monolith.getAppointmentByNumber(number);
+        return this.micorner.getAppointmentByNumber(number);
     }
 
     @Get('incidents')
@@ -39,7 +39,7 @@ export class ExternalRecordsController {
     @ApiQuery({ name: 'limit', required: false })
     @ApiResponse({ status: 200 })
     listIncidents(@Query() query: Record<string, string>) {
-        return this.monolith.listAppointments(query);
+        return this.micorner.listAppointments(query);
     }
 
     @Get('requests')
@@ -56,6 +56,6 @@ export class ExternalRecordsController {
     @ApiQuery({ name: 'limit', required: false })
     @ApiResponse({ status: 200 })
     listRequests(@Query() query: Record<string, string>) {
-        return this.monolith.listAppointments(query);
+        return this.micorner.listAppointments(query);
     }
 }

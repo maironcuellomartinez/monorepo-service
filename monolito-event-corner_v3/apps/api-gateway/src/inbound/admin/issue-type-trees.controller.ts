@@ -2,7 +2,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { IsString, IsNotEmpty } from 'class-validator';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { TracingService } from '@app/observability';
@@ -25,7 +25,7 @@ class RenameTreeDto {
 @Controller('api/admin/trees')
 export class AdminIssueTypeTreesController {
     constructor(
-        private readonly monolith: MonolithClient,
+        private readonly micorner: MicornerClient,
         private readonly tracing: TracingService,
     ) {}
 
@@ -33,7 +33,7 @@ export class AdminIssueTypeTreesController {
     @Permission('issue-type', 'list')
     @ApiOperation({ summary: 'Listar árboles de tipos de cita' })
     list() {
-        return this.monolith.get('/trees');
+        return this.micorner.get('/trees');
     }
 
     @Post()
@@ -45,7 +45,7 @@ export class AdminIssueTypeTreesController {
         return this.tracing.run('gateway.controller.trees.create', { kind: 'server' }, () => this._create(dto));
     }
     private async _create(dto: CreateTreeDto) {
-        return this.monolith.post('/trees', dto);
+        return this.micorner.post('/trees', dto);
     }
 
     @Put(':id')
@@ -57,7 +57,7 @@ export class AdminIssueTypeTreesController {
         return this.tracing.run('gateway.controller.trees.rename', { kind: 'server', attributes: { 'tree.id': id } }, () => this._rename(id, dto));
     }
     private async _rename(id: string, dto: RenameTreeDto) {
-        return this.monolith.put(`/trees/${id}`, dto);
+        return this.micorner.put(`/trees/${id}`, dto);
     }
 
     @Delete(':id')
@@ -70,6 +70,6 @@ export class AdminIssueTypeTreesController {
         return this.tracing.run('gateway.controller.trees.delete', { kind: 'server', attributes: { 'tree.id': id } }, () => this._delete(id));
     }
     private async _delete(id: string) {
-        return this.monolith.delete(`/trees/${id}`);
+        return this.micorner.delete(`/trees/${id}`);
     }
 }

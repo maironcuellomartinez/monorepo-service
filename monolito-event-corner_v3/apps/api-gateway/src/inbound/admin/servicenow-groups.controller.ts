@@ -5,7 +5,7 @@ import {
   ApiOperation,
   ApiParam,
 } from '@nestjs/swagger';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { ServiceNowCatalogClient } from '../../outbound/servicenow/servicenow-catalog.client';
 
@@ -14,18 +14,18 @@ import { ServiceNowCatalogClient } from '../../outbound/servicenow/servicenow-ca
 @Controller('api/admin/servicenow-groups')
 export class AdminServiceNowGroupsController {
   constructor(
-    private readonly monolith: MonolithClient,
+    private readonly micorner: MicornerClient,
     private readonly snCatalog: ServiceNowCatalogClient,
   ) {}
 
-  /** Catálogo local del monolith (grupos ya registrados) */
+  /** Catálogo local del micorner (grupos ya registrados) */
   @Get()
   @Permission('corner', 'list')
   @ApiOperation({
-    summary: 'Listar grupos de ServiceNow registrados en el monolith',
+    summary: 'Listar grupos de ServiceNow registrados en el micorner',
   })
   findAll() {
-    return this.monolith.get('/servicenow-groups');
+    return this.micorner.get('/servicenow-groups');
   }
 
   /** Catálogo de SN-clone (fuente de verdad — para el picker del dashboard) */
@@ -48,7 +48,7 @@ export class AdminServiceNowGroupsController {
     return this.snCatalog.getGroupBySysId(sys_id);
   }
 
-  /** Trae el catálogo vivo de SN y lo upsertea en el catálogo local del monolith */
+  /** Trae el catálogo vivo de SN y lo upsertea en el catálogo local del micorner */
   @Post('sync')
   @HttpCode(HttpStatus.OK)
   @Permission('corner', 'list')
@@ -58,7 +58,7 @@ export class AdminServiceNowGroupsController {
   })
   async sync() {
     const groups = await this.snCatalog.getGroups();
-    return this.monolith.post('/servicenow-groups/sync', {
+    return this.micorner.post('/servicenow-groups/sync', {
       groups: groups.map((g) => ({ groupId: g.sys_id, groupName: g.name })),
     });
   }

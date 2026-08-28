@@ -24,7 +24,7 @@ import {
   ApiPropertyOptional,
 } from '@nestjs/swagger';
 import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 import { AbacClient } from '../../auth/abac.client';
 import {
   CurrentUser,
@@ -58,7 +58,7 @@ class DevLoginDto {
 @Controller('api/auth')
 export class AuthController {
   constructor(
-    private readonly monolith: MonolithClient,
+    private readonly micorner: MicornerClient,
     private readonly abacClient: AbacClient,
     private readonly tracing: TracingService,
   ) {}
@@ -125,21 +125,21 @@ export class AuthController {
   }
 
   /**
-   * Retorna el perfil del usuario autenticado, sincronizando con el monolith.
-   * - Si el usuario no existe en el monolith → lo crea (lazy provisioning).
+   * Retorna el perfil del usuario autenticado, sincronizando con el micorner.
+   * - Si el usuario no existe en el micorner → lo crea (lazy provisioning).
    * - Si existe → actualiza nombre/email y retorna.
-   * Llamado por el frontend después del login para obtener el monolithUserId (customerId).
+   * Llamado por el frontend después del login para obtener el micornerUserId (customerId).
    */
   @Get('me')
   @UseGuards(JwtGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Perfil del usuario autenticado (con sync al monolith)',
+    summary: 'Perfil del usuario autenticado (con sync al micorner)',
     description:
-      'Upsert del usuario en el monolith vía externalId. Retorna monolithUserId para usar como customerId.',
+      'Upsert del usuario en el micorner vía externalId. Retorna micornerUserId para usar como customerId.',
   })
   async me(@CurrentUser() user: JwtPayload) {
-    const monolithUser = await this.monolith.post<{
+    const micornerUser = await this.micorner.post<{
       id: string;
       companyId: string | null;
       upn: string | null;
@@ -154,20 +154,20 @@ export class AuthController {
       upn: user.email,
     });
 
-    // Bloquear acceso si el usuario fue desactivado en el monolito
-    if (!monolithUser.isActive) {
+    // Bloquear acceso si el usuario fue desactivado en el micorner
+    if (!micornerUser.isActive) {
       throw new ForbiddenException(
         'Tu cuenta ha sido desactivada. Contacta al administrador.',
       );
     }
 
     // Sync de dispositivos desde Minerva — fire-and-forget, no bloquea el login
-    this.monolith
-      .post(`/devices/sync-for-user/${monolithUser.id}`, {})
+    this.micorner
+      .post(`/devices/sync-for-user/${micornerUser.id}`, {})
       .catch(() => {});
 
     // Si el usuario tiene el permiso de técnico en ABAC, debe existir su perfil
-    // de técnico en el monolith (creado por un admin vía /api/admin/technicians,
+    // de técnico en el micorner (creado por un admin vía /api/admin/technicians,
     // que ya valida el rol ABAC). Si el rol está pero todavía no fue promovido,
     // se rechaza el login en vez de auto-provisionar: de lo contrario el usuario
     // entra al Panel Técnico sin technicianId y no puede tomar/entregar/liberar
@@ -177,13 +177,13 @@ export class AuthController {
     );
     let technicianId: string | null = null;
     if (isTechnician) {
-      const technicianProfile = await this.monolith
-        .get<{ id: string } | null>(`/technicians/by-user/${monolithUser.id}`)
+      const technicianProfile = await this.micorner
+        .get<{ id: string } | null>(`/technicians/by-user/${micornerUser.id}`)
         .catch(() => null);
 
       if (!technicianProfile?.id) {
         throw new ForbiddenException(
-          'Se debe promover como técnico en el monolith. Contactá a un administrador.',
+          'Se debe promover como técnico en el micorner. Contactá a un administrador.',
         );
       }
       technicianId = technicianProfile.id;
@@ -197,11 +197,11 @@ export class AuthController {
       lastName: user.lastName,
       username: user.username,
       permissions: user.permissions,
-      // Monolith fields
-      monolithUserId: monolithUser.id,
-      companyId: monolithUser.companyId,
-      upn: monolithUser.upn,
-      isActive: monolithUser.isActive,
+      // Micorner fields
+      micornerUserId: micornerUser.id,
+      companyId: micornerUser.companyId,
+      upn: micornerUser.upn,
+      isActive: micornerUser.isActive,
       // Technician field (null si no es técnico o aún no tiene corner asignado)
       technicianId,
     };

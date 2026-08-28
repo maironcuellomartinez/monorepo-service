@@ -18,22 +18,22 @@ Customer App / event-corner-app (cliente real de Entra ID — hace login contra 
 │  Controllers: Appointments, Corners, Availability, IssueTypes,       │
 │    Devices, BatchDrafts, Admin(*), ServiceNowOutbound,               │
 │    ExternalRecords                                                   │
-│  Proxy HTTP → monolith (/internal/*) con Bearer M2M EdDSA            │
+│  Proxy HTTP → micorner (/internal/*) con Bearer M2M EdDSA            │
 └───────────┬──────────────────────────────────────┬───────────────────┘
             │ Bearer M2M EdDSA                       │ POST /auth/validate-entra
             ▼                                        ▼ POST /abac/can-access, /abac/user-roles
 ┌────────────────────────────────┐        ┌──────────────────────────────────────┐
-│ MONOLITH (Hexagonal)           │        │ ABAC MICROSERVICE :3005              │
+│ MICORNER (Hexagonal)           │        │ ABAC MICROSERVICE :3005              │
 │  staging/prod :3001 · dev :3002│        │  AuthService: login M2M/OAuth,       │
 │  Core: Appointment, Corner,    │        │    validateEntraToken (JWKS)         │
 │    Technician, Device, Locker, │        │  EntraIdService: jwks-rsa + jose     │
 │    IssueType, ServiceNowTicket │        │    contra login.microsoftonline.com  │
 │    Link                        │        │  AbacService: canAccess(),           │
 │  Outbox pattern → eventos      │        │    json-rules-engine                 │
-│  MonolithReconcilerJob,        │        │  MySQL: abac_db                      │
+│  MicornerReconcilerJob,        │        │  MySQL: abac_db                      │
 │    SnowOrphanRecoveryJob       │        └──────────────────────────────────────┘
 │  (SnowSyncJob fue ELIMINADO —  │
-│   el monolito cierra el ticket │
+│   el micorner cierra el ticket │
 │   directo, no polea estado SN) │
 │  MySQL: event_corner           │
 └───────────┬────────────────────┘
@@ -60,7 +60,7 @@ Customer App / event-corner-app (cliente real de Entra ID — hace login contra 
 │ servicenow-clone-backend :3010 │  (dev)  /  ServiceNow real (staging/prod)
 └────────────────────────────────┘
 
-integration-service :3008 → api-gateway / monolith (M2M) — Minerva SOAP, DropPoint, Outlook
+integration-service :3008 → api-gateway / micorner (M2M) — Minerva SOAP, DropPoint, Outlook
   (NO maneja ServiceNow — ver egress arriba)
 
 ────────────────────────────────────────────────────────────────────────
@@ -116,13 +116,13 @@ Authorization: Bearer <token>
                          Controller (thin proxy)
                                  │
                                  ▼
-                   MonolithClient → HTTP /internal/*
+                   MicornerClient → HTTP /internal/*
                    Authorization: Bearer <M2M EdDSA JWT>
 ```
 
 ---
 
-## 3. Monolith — Arquitectura Hexagonal
+## 3. Micorner — Arquitectura Hexagonal
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -157,7 +157,7 @@ Authorization: Bearer <token>
 └──────────────────────────┘              │  TypeORM Repositories         │
                                           │  Redis CacheAdapter           │
                                           │  ServiceNowProxyAdapter       │
-                                          │    (monolith → api-gateway    │
+                                          │    (micorner → api-gateway    │
                                           │     /outbound/servicenow/*)   │
                                           │  Outbox pattern:              │
                                           │    OutboxWorkerService (5s)   │
@@ -170,7 +170,7 @@ Authorization: Bearer <token>
                                                       ▼
                                          ┌──────────────────────────────┐
                                          │ Jobs programados             │
-                                         │  MonolithReconcilerJob (30s) │
+                                         │  MicornerReconcilerJob (30s) │
                                          │  SnowOrphanRecoveryJob(10min)│
                                          │  (SnowSyncJob ELIMINADO —    │
                                          │   ver nota abajo)            │
@@ -187,7 +187,7 @@ Authorization: Bearer <token>
 > `OutboxWorkerService`) y de ahí a `api-gateway → api-snowq-service → SN`. Ver diagrama 6.
 >
 > **`SnowSyncJob` fue eliminado** (existía en versiones previas, pollaba el estado en SN cada
-> 5 min para auto-cerrar incidencias). Decisión de producto: el monolito **siempre** cierra el
+> 5 min para auto-cerrar incidencias). Decisión de producto: el micorner **siempre** cierra el
 > ticket SN directamente cuando la cita pasa a `CLOSED` (vía `AppointmentStatusChangedHandler`
 > → `ServiceNowTicketLink`), nunca al revés — no hace falta pollear SN para saber que algo se
 > cerró.
@@ -205,7 +205,7 @@ Authorization: Bearer <token>
 ## 4b. OAuth 2.0 Client Credentials (app externa)
 
 ```
-App Externa (client_id/secret)              ABAC :3005                  Gateway :3000        Monolith
+App Externa (client_id/secret)              ABAC :3005                  Gateway :3000        Micorner
       │                                          │                             │                  │
       │  POST /auth/oauth/token                  │                             │                  │
       │  { grant_type: 'client_credentials',     │                             │                  │
@@ -295,14 +295,14 @@ event-corner-app                 API Gateway :3000        ABAC :3005            
 
 ## 4d. M2M Token (servicio de infraestructura)
 
-Los servicios de infraestructura (api-gateway, monolith, api-snowq-service, integration-service,
+Los servicios de infraestructura (api-gateway, micorner, api-snowq-service, integration-service,
 observability-service) **no** intercambian `apiKey`/`apiSecret` en runtime — el JWT M2M de larga
 duración se emite **manualmente por un admin, una sola vez**, y se copia al `.env` de cada
 servicio como `ABAC_M2M_TOKEN`.
 
 ```
 Admin                              ABAC :3005                        Servicio Interno
-  │                                                                    (ej. monolith)
+  │                                                                    (ej. micorner)
   │  (una sola vez, setup/rotación)
   │  POST /applications/m2m-service   (@Roles admin)
   │  registra la Application type='m2m_service', SIN apiKey/apiSecret
@@ -327,7 +327,7 @@ Admin                              ABAC :3005                        Servicio In
 ```
 
 ```
-Servicio Interno (ej. monolith)                                    API Gateway :3000
+Servicio Interno (ej. micorner)                                    API Gateway :3000
       │
       │  POST /outbound/servicenow/...
       │  Authorization: Bearer <ABAC_M2M_TOKEN>
@@ -396,7 +396,7 @@ Usuario/Frontend            API Gateway :3000                    ABAC :3005
 ## 6. Crear una Cita ISSUE (flujo completo, con outbox + ServiceNow)
 
 ```
-Técnico          API Gateway         Monolith              MySQL      Outbox      snowq/SN
+Técnico          API Gateway         Micorner              MySQL      Outbox      snowq/SN
   │
   │ POST /api/appointments
   │ { cornerId, issueTypeId, customerId, slotIds, device }
@@ -443,13 +443,13 @@ Técnico          API Gateway         Monolith              MySQL      Outbox   
   │                │                │  → link.markDeferred(correlationId)         │
   │                │                ├──────────────►│ UPDATE servicenow_ticket_links│
   │                │                │                │                            │
-  │                │                │  MonolithReconcilerJob (30s) poll si DEFERRED
+  │                │                │  MicornerReconcilerJob (30s) poll si DEFERRED
   │                │                │  → DELIVERED: link.reconcileDelivered(), limpia correlationId
   │                │                │  → FAILED fatal: limpia correlationId → huérfana
   │                │                │  → FAILED temporal: pide retry a snowq (mismo correlationId)
 ```
 
-> Si la llamada inicial monolith→snowq falla del todo (no HTTP response), el `OutboxWorkerService`
+> Si la llamada inicial micorner→snowq falla del todo (no HTTP response), el `OutboxWorkerService`
 > reintenta hasta 5 veces (~2.5min de backoff). Si se agotan, la cita queda con su
 > `ServiceNowTicketLink` sin `sys_id` ni `correlationId` — la recupera `SnowOrphanRecoveryJob`
 > (cada 10min, si `SNOW_ORPHAN_RECOVERY_ENABLED=true`). Ver
@@ -460,7 +460,7 @@ Técnico          API Gateway         Monolith              MySQL      Outbox   
 
 ## 7. Máquina de estados de la cita
 
-Fuente de verdad: `apps/monolith/src/core/domain/enums/appointment-status.enum.ts`
+Fuente de verdad: `apps/micorner/src/core/domain/enums/appointment-status.enum.ts`
 
 ```
                                    ┌─────────┐
@@ -525,7 +525,7 @@ Notas:
 ## 8. Verificar disponibilidad de slots
 
 ```
-Frontend         API Gateway            Monolith                Redis        MySQL
+Frontend         API Gateway            Micorner                Redis        MySQL
   │
   │ GET /api/availability/slots?cornerIds=1,2&date=2025-06-15
   ├────────────►│
@@ -597,7 +597,7 @@ API Gateway (AbacGuard)              ABAC :3005                    MySQL abac_db
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Cualquier servicio (gateway, monolith, abac, snowq, integration…)  │
+│ Cualquier servicio (gateway, micorner, abac, snowq, integration…)  │
 │                                                                      │
 │  Incoming Request                                                   │
 │      │                                                               │
@@ -667,7 +667,7 @@ Verificado contra los `.env.development` reales de cada servicio (2026-07-09).
                                      │  sin llamar a ABAC por request)
                                      ▼
 ┌────────────────┬────────────────┬────────────────┬────────────────┬────────────────┐
-│  api-gateway    │   monolith     │ api-snowq-svc  │ integration-svc│observability-svc│
+│  api-gateway    │   micorner     │ api-snowq-svc  │ integration-svc│observability-svc│
 │                 │                │                │                │                 │
 │ ED25519_PUBLIC_ │ED25519_PUBLIC_ │ED25519_PUBLIC_ │ED25519_PUBLIC_ │ED25519_PUBLIC_  │
 │ KEY             │KEY             │KEY             │KEY             │KEY              │
@@ -717,9 +717,9 @@ Puntos que suelen confundir:
 
 ---
 
-## 12. `Symbol(token)` — cómo conecta la arquitectura hexagonal del monolith
+## 12. `Symbol(token)` — cómo conecta la arquitectura hexagonal del micorner
 
-El monolith no usa `@Injectable()` + inyección por tipo para sus casos de uso — usa **tokens
+El micorner no usa `@Injectable()` + inyección por tipo para sus casos de uso — usa **tokens
 `Symbol()`** para desacoplar el puerto (interfaz) de su implementación. Cada `Symbol(...)` es
 único en memoria (evita colisiones de nombre) y actúa de "enchufe": el dominio define el enchufe,
 la infraestructura provee lo que se enchufa ahí. Verificado contra el código real (2026-07-10).
@@ -840,7 +840,7 @@ la infraestructura provee lo que se enchufa ahí. Verificado contra el código r
 | Servicio | Puerto (staging/prod · dev) | Base de Datos | Responsabilidad |
 |----------|------------------------------|----------------|-----------------|
 | API Gateway | :3000 · :4000 | — (sin DB propia) | Proxy público, autenticación, guards, egress ServiceNow |
-| Monolith | :3001 · :3002 | MySQL `event_corner` | Lógica de negocio, dominio, persistencia |
+| Micorner | :3001 · :3002 | MySQL `event_corner` | Lógica de negocio, dominio, persistencia |
 | ABAC Microservice | :3005 | MySQL `abac_db` | Autenticación, autorización, políticas |
 | api-snowq-service | :3090 | MySQL (snow_requests) | Cola + circuit breaker hacia ServiceNow |
 | integration-service | :3008 | — | Minerva SOAP, DropPoint, Outlook (CQRS + Event Sourcing) |
@@ -850,14 +850,14 @@ la infraestructura provee lo que se enchufa ahí. Verificado contra el código r
 | Tecnología | Uso |
 |------------|-----|
 | NestJS 11 | Framework base de todos los servicios |
-| TypeORM | ORM para MySQL (Monolith, ABAC, snowq) |
+| TypeORM | ORM para MySQL (Micorner, ABAC, snowq) |
 | MySQL 8 | Persistencia principal |
-| Redis | Cache de disponibilidad (Monolith) |
+| Redis | Cache de disponibilidad (Micorner) |
 | Ed25519 (EdDSA) | Firma/verificación de tokens M2M — `@app/ed25519` |
 | jwks-rsa + jose | Validación de tokens Azure AD (JWKS) — en ABAC |
 | json-rules-engine | Evaluación de políticas ABAC |
 | Winston | Logging estructurado, transporte HTTP a observability-service |
-| @backendkit-labs/circuit-breaker | Resiliencia en gateway/monolith/observability transports |
+| @backendkit-labs/circuit-breaker | Resiliencia en gateway/micorner/observability transports |
 | opossum | Circuit breaker en api-snowq-service |
 | PM2 | Process manager (dev/staging) |
 | Axios | HTTP client entre servicios |
@@ -868,7 +868,7 @@ la infraestructura provee lo que se enchufa ahí. Verificado contra el código r
 | Modo | Endpoint de obtención | Quién lo usa | Firma |
 |---|---|---|---|
 | **Entra ID (Azure AD)** ⭐ | Login MSAL contra Azure (fuera de este repo) | Todos los usuarios finales — cliente real: `event-corner-app` | RS256, verificado en ABAC vía JWKS |
-| M2M (servicio) | `POST /auth/m2m-token` | Servicios internos (gateway↔monolith↔snowq↔integration↔observability) | Ed25519 (EdDSA) |
+| M2M (servicio) | `POST /auth/m2m-token` | Servicios internos (gateway↔micorner↔snowq↔integration↔observability) | Ed25519 (EdDSA) |
 | OAuth Client Credentials | `POST /auth/oauth/token` | Apps externas con client_id/secret + scopes | Ed25519 (EdDSA) |
 
 > ⭐ **Requerimiento del cliente:** los usuarios finales solo pueden autenticarse con Entra ID.

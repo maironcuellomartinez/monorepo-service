@@ -17,7 +17,7 @@ import {
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import {
@@ -34,7 +34,7 @@ import { TracingService } from '@app/observability';
 
 /**
  * Superficie unificada "Cita" para el frontend event-corner-app. Proxy
- * delgado hacia /internal/appointments del monolito. Permisos ABAC bajo
+ * delgado hacia /internal/appointments del micorner. Permisos ABAC bajo
  * el recurso `appointment:*` (abac-microservice/src/scripts/seed-initial-data.ts).
  */
 @ApiTags('Appointments')
@@ -42,7 +42,7 @@ import { TracingService } from '@app/observability';
 @Controller('api/appointments')
 export class AppointmentsController {
   constructor(
-    private readonly monolith: MonolithClient,
+    private readonly micorner: MicornerClient,
     private readonly tracing: TracingService,
   ) {}
 
@@ -53,7 +53,7 @@ export class AppointmentsController {
     summary: 'Listar usuarios activos — para el picker al crear citas',
   })
   async listUsers() {
-    return this.monolith.get('/users');
+    return this.micorner.get('/users');
   }
 
   @Get('users/search')
@@ -68,7 +68,7 @@ export class AppointmentsController {
     description: 'Término de búsqueda (mínimo 2 caracteres)',
   })
   async searchUsers(@Query('q') q: string) {
-    return this.monolith.get('/users/search', { q });
+    return this.micorner.get('/users/search', { q });
   }
 
   @Get()
@@ -115,7 +115,7 @@ export class AppointmentsController {
     @Query('limit') limit?: string,
     @Query('availableOnly') availableOnly?: string,
   ) {
-    return this.monolith.get('/appointments', {
+    return this.micorner.get('/appointments', {
       cornerId,
       status,
       issueTypeId,
@@ -143,7 +143,7 @@ export class AppointmentsController {
     @Query('cornerId') cornerId: string,
     @Query('q') q: string,
   ) {
-    return this.monolith.get('/appointments/suggestions/device-serial', {
+    return this.micorner.get('/appointments/suggestions/device-serial', {
       cornerId,
       q,
     });
@@ -161,7 +161,7 @@ export class AppointmentsController {
     @Query('cornerId') cornerId: string,
     @Query('q') q: string,
   ) {
-    return this.monolith.get('/appointments/suggestions/servicenow-number', {
+    return this.micorner.get('/appointments/suggestions/servicenow-number', {
       cornerId,
       q,
     });
@@ -175,11 +175,11 @@ export class AppointmentsController {
       'Retorna las citas del usuario identificado por el JWT (empleado).',
   })
   async mine(@CurrentUser() user: JwtPayload) {
-    const monolithUser = await this.monolith.get<{ id: string }>(
+    const micornerUser = await this.micorner.get<{ id: string }>(
       `/users/by-external-id/${user.sub}`,
     );
-    return this.monolith.get('/appointments', {
-      customerId: monolithUser.id,
+    return this.micorner.get('/appointments', {
+      customerId: micornerUser.id,
       limit: '50',
     });
   }
@@ -193,7 +193,7 @@ export class AppointmentsController {
   })
   @ApiQuery({ name: 'cornerId', required: true })
   async getAvailable(@Query('cornerId') cornerId: string) {
-    return this.monolith.get('/appointments/available', { cornerId });
+    return this.micorner.get('/appointments/available', { cornerId });
   }
 
   @Get('technician/:technicianId')
@@ -201,7 +201,7 @@ export class AppointmentsController {
   @ApiOperation({ summary: 'Citas de un técnico' })
   @ApiParam({ name: 'technicianId' })
   async getByTechnician(@Param('technicianId') technicianId: string) {
-    return this.monolith.get(`/appointments/technician/${technicianId}`);
+    return this.micorner.get(`/appointments/technician/${technicianId}`);
   }
 
   @Get(':id')
@@ -209,7 +209,7 @@ export class AppointmentsController {
   @ApiOperation({ summary: 'Obtener cita por ID' })
   @ApiParam({ name: 'id' })
   async getOne(@Param('id') id: string) {
-    return this.monolith.get(`/appointments/${id}`);
+    return this.micorner.get(`/appointments/${id}`);
   }
 
   @Post()
@@ -228,7 +228,7 @@ export class AppointmentsController {
     );
   }
   private async _create(dto: CreateAppointmentDto, user: JwtPayload) {
-    return this.monolith.post('/appointments', { ...dto, creatorExternalId: user.sub });
+    return this.micorner.post('/appointments', { ...dto, creatorExternalId: user.sub });
   }
 
   @Patch(':id/deliver')
@@ -251,7 +251,7 @@ export class AppointmentsController {
     );
   }
   private async _deliver(id: string, body: { technicianId: string }) {
-    return this.monolith.patch(`/appointments/${id}/deliver`, body);
+    return this.micorner.patch(`/appointments/${id}/deliver`, body);
   }
 
   @Patch(':id/take')
@@ -270,7 +270,7 @@ export class AppointmentsController {
     );
   }
   private async _take(id: string, dto: TakeAppointmentDto) {
-    return this.monolith.patch(`/appointments/${id}/take`, dto);
+    return this.micorner.patch(`/appointments/${id}/take`, dto);
   }
 
   @Patch(':id/release')
@@ -289,7 +289,7 @@ export class AppointmentsController {
     );
   }
   private async _release(id: string, dto: ReleaseAppointmentDto) {
-    return this.monolith.patch(`/appointments/${id}/release`, dto);
+    return this.micorner.patch(`/appointments/${id}/release`, dto);
   }
 
   @Patch(':id/reschedule')
@@ -312,7 +312,7 @@ export class AppointmentsController {
     );
   }
   private async _reschedule(id: string, dto: RescheduleAppointmentDto) {
-    return this.monolith.patch(`/appointments/${id}/reschedule`, dto);
+    return this.micorner.patch(`/appointments/${id}/reschedule`, dto);
   }
 
   @Patch(':id/estimated-close')
@@ -335,7 +335,7 @@ export class AppointmentsController {
     );
   }
   private async _setEstimatedClose(id: string, dto: SetEstimatedCloseDto) {
-    return this.monolith.patch(`/appointments/${id}/estimated-close`, dto);
+    return this.micorner.patch(`/appointments/${id}/estimated-close`, dto);
   }
 
   @Patch(':id/status')
@@ -358,7 +358,7 @@ export class AppointmentsController {
     );
   }
   private async _changeStatus(id: string, dto: ChangeAppointmentStatusDto) {
-    return this.monolith.patch(`/appointments/${id}/status`, dto);
+    return this.micorner.patch(`/appointments/${id}/status`, dto);
   }
 
   @Patch(':id/cancel')
@@ -384,7 +384,7 @@ export class AppointmentsController {
     id: string,
     body: { customerId: string; reason?: string },
   ) {
-    return this.monolith.patch(`/appointments/${id}/cancel`, body);
+    return this.micorner.patch(`/appointments/${id}/cancel`, body);
   }
 
   @Patch(':id/validate')
@@ -407,7 +407,7 @@ export class AppointmentsController {
     );
   }
   private async _validate(id: string, body: { customerId: string }) {
-    return this.monolith.patch(`/appointments/${id}/validate`, body);
+    return this.micorner.patch(`/appointments/${id}/validate`, body);
   }
 
   @Patch(':id/reopen')
@@ -433,7 +433,7 @@ export class AppointmentsController {
     id: string,
     body: { customerId: string; reason?: string },
   ) {
-    return this.monolith.patch(`/appointments/${id}/reopen`, body);
+    return this.micorner.patch(`/appointments/${id}/reopen`, body);
   }
 
   @Get(':id/timeline')
@@ -445,7 +445,7 @@ export class AppointmentsController {
   })
   @ApiParam({ name: 'id' })
   async getTimeline(@Param('id') id: string) {
-    return this.monolith.get(`/appointments/${id}/timeline`);
+    return this.micorner.get(`/appointments/${id}/timeline`);
   }
 
   @Post(':id/notes')
@@ -471,6 +471,6 @@ export class AppointmentsController {
     id: string,
     body: { technicianId?: string; comment: string },
   ) {
-    return this.monolith.post(`/appointments/${id}/notes`, body);
+    return this.micorner.post(`/appointments/${id}/notes`, body);
   }
 }

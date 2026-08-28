@@ -8,7 +8,7 @@ This workspace is a microservices ecosystem for the **Event Corner** platform. S
 
 ```
 MySQL + Redis → servicenow-clone-backend → api-snowq-service
-             → abac-microservice → monolith → api-gateway
+             → abac-microservice → micorner → api-gateway
              → integration-service (independent, needs api-gateway)
              → observability-service (independent telemetry sink)
 ```
@@ -20,7 +20,7 @@ MySQL + Redis → servicenow-clone-backend → api-snowq-service
 | Service | Port (staging/prod) | Notes |
 |---|---|---|
 | api-gateway | 3000 | Swagger: `/docs`. **Dev usa :4000** (`API_GATEWAY_PORT`) |
-| monolith | 3001 | Internal only. **Dev usa :3002** (`MONOLITH_PORT`) |
+| micorner | 3001 | Internal only. **Dev usa :3002** (`MICORNER_PORT`) |
 | abac-microservice | 3005 | Swagger: `/api-docs`, Metrics: `/metrics` |
 | integration-service | 3008 | External integrations (Minerva, ERPs). CQRS + Event Sourcing. Swagger: `/api/docs` |
 | api-snowq-service | 3090 | Queue + circuit breaker for ServiceNow |
@@ -39,7 +39,7 @@ cd monolito-event-corner_v3
 npm install
 
 # Start individual services
-npm run start:monolith:dev    # monolith (dev :3002)
+npm run start:micorner:dev    # micorner (dev :3002)
 npm run start:api-gateway:dev # api-gateway (dev :4000)
 
 # Or use PM2 for all services (includes abac, integration-service)
@@ -47,7 +47,7 @@ npm run pm2:dev
 npm run pm2:logs / pm2:status / pm2:stop / pm2:delete
 
 # Build
-npm run build:all             # builds api-gateway + monolith only
+npm run build:all             # builds api-gateway + micorner only
 
 # Tests
 npm test                      # all tests
@@ -56,7 +56,7 @@ npm run test:e2e
 
 # Seeds (run in order, first time only — idempotent)
 # Step 1: run abac seed from abac-microservice directory (see below)
-npm run monolith:seed         # Step 2: reads initial-credentials.json automatically
+npm run micorner:seed         # Step 2: reads initial-credentials.json automatically
 # Step 3: run abac:seed:m2m from abac-microservice directory
 ```
 
@@ -117,8 +117,8 @@ npm run seed                  # Step 3 of the seed sequence
 
 Two apps under `apps/`:
 
-- **api-gateway** — JWT validation via ABAC (usuarios Entra ID) + verificación local Ed25519 de tokens M2M, ABAC guards, HTTP proxy to monolith (`/internal/*`), `ServiceNowOutboundController` for ServiceNow integration (único egress hacia api-snowq-service), `ExternalRecordsController` for internal-api queries
-- **monolith** — Core business logic (incidents, corners, users), TypeORM + MySQL, outbox pattern, `ReconcilerJob` for async reconciliation
+- **api-gateway** — JWT validation via ABAC (usuarios Entra ID) + verificación local Ed25519 de tokens M2M, ABAC guards, HTTP proxy to micorner (`/internal/*`), `ServiceNowOutboundController` for ServiceNow integration (único egress hacia api-snowq-service), `ExternalRecordsController` for internal-api queries
+- **micorner** — Core business logic (incidents, corners, users), TypeORM + MySQL, outbox pattern, `ReconcilerJob` for async reconciliation
 
 Shared libraries under `libs/`:
 - `@app/observability` (`libs/observability/`) — Logging + métricas + trazas; transporta telemetría por HTTP al observability-service (winston-http transport con circuit breaker `@backendkit-labs/circuit-breaker`)
@@ -135,7 +135,7 @@ Attribute-Based Access Control engine. Three auth entry points: Entra ID (JWKS/R
 
 ### integration-service (standalone — `integration-service/`)
 
-External integrations (Minerva SOAP, DropPoint, Outlook Calendar). CQRS + Event Sourcing. Sincroniza dispositivos hacia el monolith. **No maneja ServiceNow** — ese egress es exclusivo de api-gateway → api-snowq-service. Auth M2M Ed25519 contra ABAC.
+External integrations (Minerva SOAP, DropPoint, Outlook Calendar). CQRS + Event Sourcing. Sincroniza dispositivos hacia el micorner. **No maneja ServiceNow** — ese egress es exclusivo de api-gateway → api-snowq-service. Auth M2M Ed25519 contra ABAC.
 
 ### observability-service (standalone — `observability-service/`)
 
@@ -143,8 +143,8 @@ Sink central de telemetría (puerto 3099). Recibe logs/métricas/trazas de **tod
 
 ### Key Architectural Patterns
 
-1. **Outbox Pattern** — Monolith guarantees event delivery to downstream services
-2. **Circuit Breaker** — `@backendkit-labs/circuit-breaker` (transportes de observability, gateway, monolith) y `opossum` (api-snowq-service)
+1. **Outbox Pattern** — Micorner guarantees event delivery to downstream services
+2. **Circuit Breaker** — `@backendkit-labs/circuit-breaker` (transportes de observability, gateway, micorner) y `opossum` (api-snowq-service)
 3. **Two-Phase ServiceNow Integration** — Immediate synchronous call + async queue fallback
 4. **Bulkhead** — Workload isolation by priority in api-snowq-service
 5. **ABAC + Multi-Auth** — Three authentication methods (Entra ID for users, M2M for internal services, OAuth 2.0 Client Credentials for external apps) all converge on ABAC for fine-grained authorization via `json-rules-engine`. User.accountType distinguishes `'user'` (Entra ID humans) from `'service'` (M2M/OAuth Application owners). Permission chain: User → UserRole → Role → RolePermission → Permission (`resource:action`). Policy evaluation pipeline: validateUserApplication → getUserPermissions → evaluatePolicies
@@ -162,21 +162,21 @@ Each app has `.env.development`, `.env.staging`, `.env.production` files. Critic
 | `SYNCHRONIZE_DATABASE` | `true` | **`false`** (never true in prod) |
 | `RECONCILER_ENABLED` | `false` | `true` |
 | `API_GATEWAY_PORT` | `4000` | `3000` |
-| `MONOLITH_PORT` | `3002` | `3001` |
+| `MICORNER_PORT` | `3002` | `3001` |
 
 **Autenticación entre servicios (Ed25519):**
 - `ED25519_PUBLIC_KEY` en cada servicio debe corresponder a la clave Ed25519 con la que ABAC **firmó** los tokens M2M vigentes (el `kid` del token). Si no coincide, la verificación falla con 401.
 - `JWT_ISSUER` (`abac-service`) y `JWT_AUDIENCE` (`abac-clients`) deben coincidir entre ABAC y los consumidores.
 - En **staging/prod** las claves se inyectan por secretos (k8s); los `.env.*` traen placeholders (`CHANGE_ME` / `REPLACE_WITH_...`). En **dev** las claves reales están en los `.env.development`.
 
-### ServiceNow group resolution — monolith env vars
+### ServiceNow group resolution — micorner env vars
 
-Two distinct variables control ServiceNow defaults (both in `apps/monolith/.env.*`):
+Two distinct variables control ServiceNow defaults (both in `apps/micorner/.env.*`):
 
 | Variable | Purpose |
 |---|---|
 | `SN_DEFAULT_COMPANY_SYS_ID` | `sys_id` in ServiceNow for the `company` field of the ticket. Used when a company has no SN profile. |
-| `SN_DEFAULT_COMPANY_ID` | Internal `company_id` in the monolith. Used to look up `CompanyIssueConfig` as fallback when a company has no group config for a given issue type. |
+| `SN_DEFAULT_COMPANY_ID` | Internal `company_id` in the micorner. Used to look up `CompanyIssueConfig` as fallback when a company has no group config for a given issue type. |
 
 `resolveAssignmentGroup()` in `ServiceNowIntegrationService` follows this chain:
 ```
@@ -186,11 +186,11 @@ Two distinct variables control ServiceNow defaults (both in `apps/monolith/.env.
 4. 'SOPORTE_GENERAL' + warn log  ← indicates missing configuration
 ```
 
-In dev both point to `Santander Corporate (Default)` (`company-santander-default-001`), seeded by `npm run monolith:seed`.
+In dev both point to `Santander Corporate (Default)` (`company-santander-default-001`), seeded by `npm run micorner:seed`.
 
 ### servicenow-clone-backend — closed state codes
 
-The simulator stores state as numeric strings. `api-snowq-service` (`SN_CLOSED_STATES`) recognizes these as closed. **Note:** the monolith's old `SnowSyncJob` (which polled these states to auto-close incidents) was **removed** — the monolith now always closes the SN ticket directly when an appointment reaches `CLOSED` (`AppointmentStatusChangedHandler`), never the reverse:
+The simulator stores state as numeric strings. `api-snowq-service` (`SN_CLOSED_STATES`) recognizes these as closed. **Note:** the micorner's old `SnowSyncJob` (which polled these states to auto-close incidents) was **removed** — the micorner now always closes the SN ticket directly when an appointment reaches `CLOSED` (`AppointmentStatusChangedHandler`), never the reverse:
 
 | Code | Type | Meaning |
 |---|---|---|
@@ -211,7 +211,7 @@ Customer App / event-corner-app
 api-gateway (staging/prod :3000 · dev :4000)
     │ HTTP  Authorization: Bearer <M2M EdDSA JWT>
     ▼
-monolith (staging/prod :3001 · dev :3002)
+micorner (staging/prod :3001 · dev :3002)
     │ HTTP  Authorization: Bearer <M2M EdDSA JWT>  →  {API_GATEWAY_URL}/outbound/servicenow/*
     ▼
 api-gateway (ServiceNowOutboundController — /outbound/servicenow/*)
@@ -228,7 +228,7 @@ api-snowq-service :3090
     ▼
 servicenow-clone-backend :3010  (dev)  /  ServiceNow real (staging/prod)
 
-integration-service :3008  →  api-gateway / monolith (M2M)  ·  Minerva SOAP, DropPoint, Outlook Calendar
+integration-service :3008  →  api-gateway / micorner (M2M)  ·  Minerva SOAP, DropPoint, Outlook Calendar
                                 (NO maneja ServiceNow — único egress hacia SN es api-gateway → api-snowq-service)
 Nagios/Thruk  →  POST :3090/monitoring/alerts  →  api-snowq-service  →  ServiceNow
 
@@ -236,19 +236,19 @@ Nagios/Thruk  →  POST :3090/monitoring/alerts  →  api-snowq-service  →  Se
 TODOS los servicios  →  observability-service :3099  (/ingest/logs · /ingest/metrics · /ingest/traces, Bearer M2M EdDSA)
 ```
 
-### Background Jobs (monolith)
+### Background Jobs (micorner)
 
 | Job | Interval | What it does |
 |---|---|---|
-| `MonolithReconcilerJob` | 30 s | Polls `GET {SNOWQ_URL}/snow-requests/{correlationId}` for appointments whose `ServiceNowTicketLink` has a `snowq_correlation_id` (deferred/async creation). On DELIVERED: stores `sys_id`+`number` on the link, clears correlationId. On FAILED: logs + clears. |
+| `MicornerReconcilerJob` | 30 s | Polls `GET {SNOWQ_URL}/snow-requests/{correlationId}` for appointments whose `ServiceNowTicketLink` has a `snowq_correlation_id` (deferred/async creation). On DELIVERED: stores `sys_id`+`number` on the link, clears correlationId. On FAILED: logs + clears. |
 | `SnowOrphanRecoveryJob` | 10 min | Finds non-terminal appointments with no active `ServiceNowTicketLink` (none, or all ABANDONED/CLOSED) created more than `SNOW_ORPHAN_MIN_AGE_MINUTES` ago; creates a new link and re-queues it in `api-snowq-service` (async only). Disabled by default in dev (`SNOW_ORPHAN_RECOVERY_ENABLED`). |
 | `SnCompanySyncJob` | daily, `SNOW_COMPANY_SYNC_CRON` (default 2 AM) | For each company in the ServiceNow catalog: ensures the `ServiceNowProfile` exists (create or reuse by `snowCompanySysId`) and ensures a linked `Company` exists (create with `treeId = null` if missing — covers both newly-synced profiles and pre-existing profiles without a company). Disabled by default (`SNOW_COMPANY_SYNC_ENABLED`). Also runs on demand via `POST /internal/companies/sync-from-sn` (dashboard "Sincronizar desde SN" button, proxied by the gateway) — same code path, registered as a global provider in `JobsModule` so the controller can inject it. |
 
-> **`SnowSyncJob` was removed** (it used to poll SN state every 5 min to auto-close incidents). The monolith now only ever closes a ticket **outbound** — when an appointment reaches `CLOSED`, `AppointmentStatusChangedHandler` calls `ServiceNowIntegrationService.closeTicket()` directly. There is no inbound polling of SN state.
+> **`SnowSyncJob` was removed** (it used to poll SN state every 5 min to auto-close incidents). The micorner now only ever closes a ticket **outbound** — when an appointment reaches `CLOSED`, `AppointmentStatusChangedHandler` calls `ServiceNowIntegrationService.closeTicket()` directly. There is no inbound polling of SN state.
 
 ### Key env vars per service
 
-**monolith** — `apps/monolith/.env.*`
+**micorner** — `apps/micorner/.env.*`
 ```
 API_GATEWAY_URL=http://localhost:4000   # dev (staging/prod: http://api-gateway:3000)
 ABAC_URL=http://localhost:3005
@@ -267,7 +267,7 @@ OBS_TRACES_URL=http://localhost:3099/ingest/traces
 **api-gateway** — `apps/api-gateway/.env.*`
 ```
 API_GATEWAY_PORT=4000                    # dev (staging/prod: 3000)
-MONOLITH_URL=http://localhost:3002       # dev (staging/prod: http://monolith:3001)
+MICORNER_URL=http://localhost:3002       # dev (staging/prod: http://micorner:3001)
 INTEGRATION_SERVICE_INVENTORY_URL=http://localhost:3008/api/v1/minerva   # solo Minerva/DropPoint — ya no se usa para ServiceNow
 SNOWQ_URL=http://localhost:3090                 # único egress hacia ServiceNow (vía api-snowq-service)
 ABAC_URL=http://localhost:3005
@@ -314,7 +314,7 @@ JAEGER_OTLP_URL=                         # opcional: reenvío de trazas
 PROMETHEUS_PUSHGATEWAY_URL=              # opcional: reenvío de métricas
 ```
 
-## Domain Model (monolith)
+## Domain Model (micorner)
 
 ### Entity Relationships
 
@@ -465,22 +465,22 @@ UserPolicyAssignment  (join: User ↔ Policy per Application)
 | File | Purpose |
 |---|---|
 | `monolito-event-corner_v3/docs/infrastructure-diagram.md` | Diagrama Mermaid del ecosistema completo (todos los servicios, puertos, auth, orden de arranque) |
-| `monolito-event-corner_v3/ecosystem.config.js` | PM2 multi-app config (api-gateway, monolith, abac) |
-| `apps/monolith/src/core/services/servicenow/servicenow-integration.service.ts` | Group + company resolution, ticket creation/close |
-| `apps/monolith/src/infrastructure/external/servicenow/servicenow-proxy.adapter.ts` | Monolith → gateway HTTP calls |
+| `monolito-event-corner_v3/ecosystem.config.js` | PM2 multi-app config (api-gateway, micorner, abac) |
+| `apps/micorner/src/core/services/servicenow/servicenow-integration.service.ts` | Group + company resolution, ticket creation/close |
+| `apps/micorner/src/infrastructure/external/servicenow/servicenow-proxy.adapter.ts` | Micorner → gateway HTTP calls |
 | `apps/api-gateway/src/outbound/servicenow/servicenow-outbound.controller.ts` | Único egress hacia api-snowq-service: two-phase creation (sync + async fallback), update, close, reconcile |
 | `apps/api-gateway/src/inbound/external/external-records.controller.ts` | Internal-API endpoints |
 | `apps/api-gateway/src/auth/guards/jwt.guard.ts` | Verificación local Ed25519 de M2M + delegación de Entra ID a ABAC |
 | `libs/shared/src/guards/m2m-jwt.guard.ts` | Guard M2M EdDSA compartido |
 | `libs/ed25519.service/src/jwt-ed25519.service.ts` | Firma/verificación EdDSA con `kid`/claims |
 | `libs/observability/transports/winston-http.transport.ts` | Transporte de logs vía HTTP al observability-service (circuit breaker) |
-| `apps/monolith/src/infrastructure/jobs/monolith-reconciler.job.ts` | Async ticket correlation reconciliation |
-| `apps/monolith/src/infrastructure/jobs/snow-orphan-recovery.job.ts` | Recupera citas huérfanas sin `ServiceNowTicketLink` activo (`snow-sync.job.ts`, que polleaba estado desde SN, fue eliminado) |
-| `apps/monolith/src/infrastructure/jobs/sn-company-sync.job.ts` | Sincroniza `ServiceNowProfile` + `Company` desde el catálogo de SN — única vía de alta de compañías (2026-08) |
-| `apps/monolith/src/internal-api/companies/internal-companies.controller.ts` | `GET/PUT /internal/companies`, `POST /internal/companies/sync-from-sn` — sin alta manual, `PUT` acotado a `treeId`/`isActive` |
-| `apps/monolith/src/infrastructure/event-handlers/appointment-status-changed.handler.ts` | Cierra el ticket SN cuando la cita pasa a `CLOSED` (único disparador de cierre — nunca al revés) |
-| `apps/monolith/src/core/services/appointment/appointment.service.ts` | Caso de uso principal — reemplaza `IncidentService`/`RequestService` |
-| `apps/monolith/src/scripts/seed-test-data.ts` | Full seed (companies, corners, users, issue types, CICs, groups) |
+| `apps/micorner/src/infrastructure/jobs/micorner-reconciler.job.ts` | Async ticket correlation reconciliation |
+| `apps/micorner/src/infrastructure/jobs/snow-orphan-recovery.job.ts` | Recupera citas huérfanas sin `ServiceNowTicketLink` activo (`snow-sync.job.ts`, que polleaba estado desde SN, fue eliminado) |
+| `apps/micorner/src/infrastructure/jobs/sn-company-sync.job.ts` | Sincroniza `ServiceNowProfile` + `Company` desde el catálogo de SN — única vía de alta de compañías (2026-08) |
+| `apps/micorner/src/internal-api/companies/internal-companies.controller.ts` | `GET/PUT /internal/companies`, `POST /internal/companies/sync-from-sn` — sin alta manual, `PUT` acotado a `treeId`/`isActive` |
+| `apps/micorner/src/infrastructure/event-handlers/appointment-status-changed.handler.ts` | Cierra el ticket SN cuando la cita pasa a `CLOSED` (único disparador de cierre — nunca al revés) |
+| `apps/micorner/src/core/services/appointment/appointment.service.ts` | Caso de uso principal — reemplaza `IncidentService`/`RequestService` |
+| `apps/micorner/src/scripts/seed-test-data.ts` | Full seed (companies, corners, users, issue types, CICs, groups) |
 | `abac-microservice/src/abac/services/auth.service.ts` | Entra ID sync, M2M token (EdDSA), OAuth 2.0 Client Credentials |
 | `abac-microservice/src/abac/services/entra-id.service.ts` | Verifica tokens Entra ID vía JWKS (RS256) — NO es el cliente Azure, solo el verificador |
 | `event-corner-app/src/pages/login-page.tsx` | Cliente real de Entra ID — realiza el login contra Azure AD |

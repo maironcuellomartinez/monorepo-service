@@ -17,7 +17,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { IsString, IsOptional, IsBoolean } from 'class-validator';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { TracingService } from '@app/observability';
@@ -37,7 +37,7 @@ class UpdateCompanyDto {
 @Controller('api/admin/companies')
 export class AdminCompaniesController {
   constructor(
-    private readonly monolith: MonolithClient,
+    private readonly micorner: MicornerClient,
     private readonly tracing: TracingService,
   ) {}
 
@@ -45,14 +45,14 @@ export class AdminCompaniesController {
   @Permission('company', 'list')
   @ApiOperation({ summary: 'Listar empresas activas (sincronizadas desde ServiceNow)' })
   list() {
-    return this.monolith.get('/companies');
+    return this.micorner.get('/companies');
   }
 
   @Get('trees')
   @Permission('company', 'list')
   @ApiOperation({ summary: 'Listar árboles de tipos de cita' })
   listTrees() {
-    return this.monolith.get('/companies/trees');
+    return this.micorner.get('/companies/trees');
   }
 
   @Post('sync-from-sn')
@@ -61,7 +61,7 @@ export class AdminCompaniesController {
   @ApiOperation({
     summary: 'Sincronizar empresas desde ServiceNow',
     description:
-      'Importa al monolito las empresas del catálogo de ServiceNow que todavía no están registradas y crea la compañía local vinculada a cada una (sin árbol asignado hasta que el admin lo configure).',
+      'Importa al micorner las empresas del catálogo de ServiceNow que todavía no están registradas y crea la compañía local vinculada a cada una (sin árbol asignado hasta que el admin lo configure).',
   })
   syncFromServiceNow() {
     return this.tracing.run(
@@ -69,13 +69,13 @@ export class AdminCompaniesController {
       { kind: 'server' },
       // Timeout largo a propósito: sincroniza el catálogo completo de SN en
       // una sola llamada síncrona (perfil + compañía por empresa) — con el
-      // timeout default de 8s del cliente monolith, un catálogo real lo
+      // timeout default de 8s del cliente micorner, un catálogo real lo
       // supera con facilidad. Eso dispararía los 3 reintentos configurados a
       // nivel cliente, cada uno relanzando otra corrida completa del sync en
-      // el monolito (sin este timeout, la corrida "lenta pero exitosa" se
+      // el micorner (sin este timeout, la corrida "lenta pero exitosa" se
       // reporta como fallo y el circuit breaker compartido con el resto del
-      // tráfico gateway→monolith termina abriéndose).
-      () => this.monolith.post('/companies/sync-from-sn', undefined, undefined, 60_000),
+      // tráfico gateway→micorner termina abriéndose).
+      () => this.micorner.post('/companies/sync-from-sn', undefined, undefined, 60_000),
     );
   }
 
@@ -84,7 +84,7 @@ export class AdminCompaniesController {
   @ApiOperation({ summary: 'Obtener empresa por ID' })
   @ApiParam({ name: 'id' })
   getOne(@Param('id') id: string) {
-    return this.monolith.get(`/companies/${id}`);
+    return this.micorner.get(`/companies/${id}`);
   }
 
   @Put(':id')
@@ -99,7 +99,7 @@ export class AdminCompaniesController {
     return this.tracing.run(
       'gateway.controller.companies.update',
       { kind: 'server', attributes: { 'company.id': id } },
-      () => this.monolith.put(`/companies/${id}`, dto),
+      () => this.micorner.put(`/companies/${id}`, dto),
     );
   }
 
@@ -113,7 +113,7 @@ export class AdminCompaniesController {
     return this.tracing.run(
       'gateway.controller.companies.delete',
       { kind: 'server', attributes: { 'company.id': id } },
-      () => this.monolith.delete(`/companies/${id}`),
+      () => this.micorner.delete(`/companies/${id}`),
     );
   }
 }

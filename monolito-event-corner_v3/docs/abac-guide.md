@@ -556,7 +556,7 @@ No existe un único endpoint `/auth/m2m-token`. Hay dos mecanismos distintos seg
 
 | | M2M infraestructura (`POST /applications/:id/issue-token`) | M2M ad-hoc (`POST /auth/service-token`) | OAuth externo (`POST /auth/oauth/token`) |
 |---|---|---|---|
-| Quién lo usa | Servicios de infraestructura (api-gateway, monolith, snowq, etc.) | Integraciones puntuales que ya tienen `apiKey`/`apiSecret` | Apps externas (BI, integraciones) |
+| Quién lo usa | Servicios de infraestructura (api-gateway, micorner, snowq, etc.) | Integraciones puntuales que ya tienen `apiKey`/`apiSecret` | Apps externas (BI, integraciones) |
 | `Application.type` | `'m2m_service'` | `'internal'` | `'oauth_client'` |
 | Credenciales | Ninguna — requiere JWT admin (`JwtAuthGuard` + rol `admin`) | `apiKey` + `apiSecret` en el body | `client_id` + `client_secret` |
 | Duración del token | `durationDays` del body (máx. 730) o `Application.tokenDurationDays` (default 365) | Fija: 1 hora (3600 s) | Configurable, RFC 6749 (`expires_in`) |
@@ -615,7 +615,7 @@ Authorization: Bearer <admin-jwt>
 | `npm run abac:seed` | Seed principal: aplicación, roles, permisos, políticas, 7 usuarios |
 | `npm run abac:seed:m2m` | Registra/actualiza las 6 Applications `type='m2m_service'` (ver `SERVICE_DEFINITIONS` en `seed-m2m-services.ts`) y (re)emite sus JWT |
 | `npm run abac:seed:full` | `abac:seed` + `abac:seed:m2m` en el orden correcto |
-| `npm run monolith:seed` | Datos de negocio del monolito (companies, corners, etc.) |
+| `npm run micorner:seed` | Datos de negocio del micorner (companies, corners, etc.) |
 
 ### Prerequisito: schema de base de datos
 
@@ -629,7 +629,7 @@ npm run start:abac:dev   # arranca, crea/actualiza tablas, puede cerrarse con Ct
 
 ```bash
 npm run abac:seed:full   # paso 1 — seed ABAC completo (usuarios + M2M)
-npm run monolith:seed    # paso 2 — datos de negocio
+npm run micorner:seed    # paso 2 — datos de negocio
 ```
 
 ### Re-ejecutar el seed principal (destructivo)
@@ -663,7 +663,7 @@ Las credenciales de usuarios (email/password) se muestran una vez en consola al 
 
 ### Rotación M2M
 
-> **Modelo real (post-refactor):** las Applications `type='m2m_service'` (api-gateway, monolith,
+> **Modelo real (post-refactor):** las Applications `type='m2m_service'` (api-gateway, micorner,
 > integration-service, api-snowq-service, api-middleware-service, observability-service) se crean
 > con `apiKey=NULL` y `apiSecret=NULL` (`application.service.ts` → `createM2mService`,
 > `seed-m2m-services.ts:156-190`). **No existen cuentas de servicio (`svc-*@*.internal`), ni
@@ -676,7 +676,7 @@ Las credenciales de usuarios (email/password) se muestran una vez en consola al 
 | Servicio | `tokenDurationDays` | Rotación aproximada |
 |---|---|---|
 | api-gateway | 180 | ~Septiembre / ~Marzo |
-| monolith | 180 | ~Septiembre / ~Marzo |
+| micorner | 180 | ~Septiembre / ~Marzo |
 | integration-service | 90 | Trimestral |
 | api-snowq-service | 365 | Anual (~Marzo) |
 | api-middleware-service | 180 | ~Septiembre / ~Marzo *(nota: retirado de la infraestructura activa según CLAUDE.md, pero el seed lo sigue registrando)* |
@@ -698,7 +698,7 @@ npm run abac:seed:m2m
 # Reiniciar cada servicio afectado
 npm run pm2:dev   # o el comando específico del servicio
 
-# Verificar conectividad (ej. gateway → monolith)
+# Verificar conectividad (ej. gateway → micorner)
 curl -s http://localhost:3000/health
 ```
 
@@ -933,7 +933,7 @@ Evaluación de una request (resource:action)
     │ granted: false → 403 ForbiddenException
     │ granted: true  → proxy request
     ▼
-  monolith :3001
+  micorner :3001
 
   ══════════════════════════════════════════════════
     PRIMERA VEZ (usuario sin roles asignados)

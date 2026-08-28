@@ -20,12 +20,12 @@ El sistema está compuesto por **tres procesos independientes** que se comunican
 ```
                         ┌─────────────────────────────────────────┐
  Cliente (browser/app)  │           API Gateway (:3000)           │
- ──────────────────────►│  inbound/*  →  MonolithClient           │
+ ──────────────────────►│  inbound/*  →  MicornerClient           │
                         │  outbound/* →  Servicios externos        │
                         └────────────────┬────────────────────────┘
                                          │ HTTP /internal/*
                         ┌────────────────▼────────────────────────┐
-                        │           Monolith (:3001)              │
+                        │           Micorner (:3001)              │
                         │  Lógica de negocio + TypeORM + MySQL    │
                         │  Egress → API Gateway /outbound/*       │
                         └─────────────────────────────────────────┘
@@ -43,8 +43,8 @@ El sistema está compuesto por **tres procesos independientes** que se comunican
 2. `JwtGuard` valida el token con el ABAC microservice.
 3. `RolesGuard` verifica que el usuario tenga el rol requerido (caché 60s).
 4. `AbacGuard` verifica el permiso específico (`resource:action`) en ABAC.
-5. El API Gateway hace proxy al Monolito (`/internal/*`) con header `x-internal-token`.
-6. El Monolito ejecuta la lógica de dominio y devuelve la respuesta.
+5. El API Gateway hace proxy al Micorner (`/internal/*`) con header `x-internal-token`.
+6. El Micorner ejecuta la lógica de dominio y devuelve la respuesta.
 
 ---
 
@@ -66,8 +66,8 @@ apps/
       auth/           ← Guards (JWT, Roles, ABAC), decoradores
       inbound/        ← Controllers públicos (thin proxies)
       outbound/       ← Proxies hacia servicios externos
-      client/         ← MonolithClient (HTTP al monolito)
-  monolith/           ← Proceso independiente, puerto MONOLITH_PORT
+      client/         ← MicornerClient (HTTP al micorner)
+  micorner/           ← Proceso independiente, puerto MICORNER_PORT
     src/
       internal-api/   ← Controllers /internal/* (solo para API GW)
       infrastructure/ ← TypeORM, cache, adapters externos
@@ -105,7 +105,7 @@ Cada app tiene su propio conjunto de variables. Copia los `.env.example` y relle
 
 ```bash
 cp apps/api-gateway/.env.example       apps/api-gateway/.env.development
-cp apps/monolith/.env.example          apps/monolith/.env.development
+cp apps/micorner/.env.example          apps/micorner/.env.development
 cp apps/abac-microservice/.env.example apps/abac-microservice/.env.development
 ```
 
@@ -114,7 +114,7 @@ cp apps/abac-microservice/.env.example apps/abac-microservice/.env.development
 | Variable                        | Descripción                                      |
 |---------------------------------|--------------------------------------------------|
 | `API_GATEWAY_PORT`              | Puerto donde escucha el gateway (ej: 3000)       |
-| `MONOLITH_URL`                  | URL interna del monolito (ej: http://localhost:3001) |
+| `MICORNER_URL`                  | URL interna del micorner (ej: http://localhost:3001) |
 | `ABAC_URL`                      | URL del microservicio ABAC                       |
 | `ABAC_API_KEY`                  | API key para llamadas al ABAC                    |
 | `INTERNAL_API_TOKEN`            | Token secreto para comunicación interna          |
@@ -124,11 +124,11 @@ cp apps/abac-microservice/.env.example apps/abac-microservice/.env.development
 | `OUTBOUND_GATEWAY_CLIENT_ID`    | Client ID OAuth2                                 |
 | `OUTBOUND_GATEWAY_CLIENT_SECRET`| Client Secret OAuth2                             |
 
-### Monolith (`apps/monolith/.env.example`)
+### Micorner (`apps/micorner/.env.example`)
 
 | Variable             | Descripción                                       |
 |----------------------|---------------------------------------------------|
-| `MONOLITH_PORT`      | Puerto donde escucha el monolito (ej: 3001)       |
+| `MICORNER_PORT`      | Puerto donde escucha el micorner (ej: 3001)       |
 | `API_GATEWAY_URL`    | URL del API Gateway (para egress)                 |
 | `INTERNAL_API_TOKEN` | Token secreto para comunicación interna           |
 | `DB_HOST`            | Host de MySQL                                     |
@@ -142,7 +142,7 @@ cp apps/abac-microservice/.env.example apps/abac-microservice/.env.development
 | Variable          | Descripción                                        |
 |-------------------|----------------------------------------------------|
 | `ABAC_PORT`       | Puerto donde escucha ABAC (ej: 3005)               |
-| `DB_HOST`         | Host de MySQL (puede ser distinto al del monolito) |
+| `DB_HOST`         | Host de MySQL (puede ser distinto al del micorner) |
 | `DB_PORT`         | Puerto de MySQL                                    |
 | `DB_NAME`         | Nombre de la base de datos ABAC                    |
 | `DB_USER`         | Usuario MySQL                                      |
@@ -172,7 +172,7 @@ npm run start:abac:dev   # arranca, crea las tablas, puede cerrarse con Ctrl+C
 
 ```
 1. npm run abac:seed:full    ← crea roles, permisos, usuarios y cuentas de servicio M2M
-2. npm run monolith:seed     ← crea companies, corners, issue types, CICs (lee initial-credentials.json)
+2. npm run micorner:seed     ← crea companies, corners, issue types, CICs (lee initial-credentials.json)
 3. cd ../servicenow-clone-backend && npm run seed   ← datos del simulador de ServiceNow
 ```
 
@@ -207,7 +207,7 @@ Crea 4 cuentas de servicio (`accountType = 'service'`) con sus Applications en A
 | Servicio | Email de cuenta |
 |---|---|
 | `api-gateway` | `svc-api-gateway@eventcorner.internal` |
-| `monolith` | `svc-monolith@eventcorner.internal` |
+| `micorner` | `svc-micorner@eventcorner.internal` |
 | `integration-service` | `svc-integration@eventcorner.internal` |
 | `api-snowq-service` | `svc-snowq@eventcorner.internal` |
 
@@ -217,9 +217,9 @@ Al finalizar imprime en consola las credenciales M2M (`ABAC_M2M_API_KEY` / `ABAC
 
 Equivalente a `abac:seed && abac:seed:m2m`. Garantiza el orden correcto de dependencias.
 
-#### `npm run monolith:seed` — datos de negocio
+#### `npm run micorner:seed` — datos de negocio
 
-Crea en la base de datos del monolito:
+Crea en la base de datos del micorner:
 - Companies, ServiceNow profiles, issue types, corners, users, `CompanyIssueConfig`
 - Lee `initial-credentials.json` generado por `abac:seed` para enlazar usuarios
 
@@ -238,7 +238,7 @@ El seed principal detecta datos existentes y pregunta confirmación antes de lim
 Después de un re-seed:
 1. Actualizar `ABAC_APP_ID` y `ABAC_API_KEY` en `apps/api-gateway/.env.*`
 2. Actualizar `ABAC_M2M_API_KEY` / `ABAC_M2M_API_SECRET` en cada servicio
-3. Re-ejecutar `npm run monolith:seed` si querés recrear los datos de negocio
+3. Re-ejecutar `npm run micorner:seed` si querés recrear los datos de negocio
 
 ---
 
@@ -250,8 +250,8 @@ Levanta los tres procesos en terminales separadas:
 # Terminal 1 — API Gateway (puerto 3000)
 npm run start:api-gateway:dev
 
-# Terminal 2 — Monolito (puerto 3001)
-npm run start:monolith:dev
+# Terminal 2 — Micorner (puerto 3001)
+npm run start:micorner:dev
 
 # Terminal 3 — ABAC Microservice (puerto 3005)
 npm run start:abac:dev
@@ -280,17 +280,17 @@ Para cada entorno, crea los archivos de variables:
 ```bash
 # Development
 cp apps/api-gateway/.env.example       apps/api-gateway/.env.development
-cp apps/monolith/.env.example          apps/monolith/.env.development
+cp apps/micorner/.env.example          apps/micorner/.env.development
 cp apps/abac-microservice/.env.example apps/abac-microservice/.env.development
 
 # Staging
 cp apps/api-gateway/.env.example       apps/api-gateway/.env.staging
-cp apps/monolith/.env.example          apps/monolith/.env.staging
+cp apps/micorner/.env.example          apps/micorner/.env.staging
 cp apps/abac-microservice/.env.example apps/abac-microservice/.env.staging
 
 # Production
 cp apps/api-gateway/.env.example       apps/api-gateway/.env.production
-cp apps/monolith/.env.example          apps/monolith/.env.production
+cp apps/micorner/.env.example          apps/micorner/.env.production
 cp apps/abac-microservice/.env.example apps/abac-microservice/.env.production
 ```
 
@@ -440,7 +440,7 @@ Los endpoints `/outbound/*` del API Gateway solo aceptan llamadas con el header:
 x-internal-token: <INTERNAL_API_TOKEN>
 ```
 
-Este token debe ser el mismo en la variable `INTERNAL_API_TOKEN` de ambas apps (API Gateway y Monolito).
+Este token debe ser el mismo en la variable `INTERNAL_API_TOKEN` de ambas apps (API Gateway y Micorner).
 
 ---
 
@@ -449,12 +449,12 @@ Este token debe ser el mismo en la variable `INTERNAL_API_TOKEN` de ambas apps (
 ```bash
 # Desarrollo (watch mode)
 npm run start:api-gateway:dev
-npm run start:monolith:dev
+npm run start:micorner:dev
 npm run start:abac:dev
 
 # Build
 npm run build:api-gateway
-npm run build:monolith
+npm run build:micorner
 npm run build:abac
 npm run build:all
 
@@ -467,7 +467,7 @@ npm run pm2:status / pm2:logs / pm2:stop / pm2:delete / pm2:save
 npm run abac:seed:full    # seed principal + M2M (recomendado, primera vez)
 npm run abac:seed         # solo seed principal ABAC
 npm run abac:seed:m2m     # solo cuentas de servicio M2M
-npm run monolith:seed     # datos de negocio (requiere initial-credentials.json)
+npm run micorner:seed     # datos de negocio (requiere initial-credentials.json)
 
 # Tests
 npm run test

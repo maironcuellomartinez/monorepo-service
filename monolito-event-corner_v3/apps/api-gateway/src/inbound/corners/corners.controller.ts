@@ -16,7 +16,7 @@ import {
   ApiOperation,
   ApiParam,
 } from '@nestjs/swagger';
-import { MonolithClient } from '../../client/monolith.client';
+import { MicornerClient } from '../../client/micorner.client';
 import { Permission } from '../../auth/decorators/permission.decorator';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { CreateCornerDto } from './dto/create-corner.dto';
@@ -30,7 +30,7 @@ import { ServiceNowCatalogClient } from '../../outbound/servicenow/servicenow-ca
 @Controller('api/corners')
 export class CornersController {
   constructor(
-    private readonly monolith: MonolithClient,
+    private readonly micorner: MicornerClient,
     private readonly snCatalog: ServiceNowCatalogClient,
     private readonly tracing: TracingService,
   ) {}
@@ -43,7 +43,7 @@ export class CornersController {
   @Permission('corner', 'list')
   @ApiOperation({ summary: 'Listar corners' })
   async getAll() {
-    return this.monolith.get('/corners');
+    return this.micorner.get('/corners');
   }
 
   @Get(':id')
@@ -51,7 +51,7 @@ export class CornersController {
   @ApiOperation({ summary: 'Obtener corner por ID' })
   @ApiParam({ name: 'id' })
   async getOne(@Param('id') id: string) {
-    return this.monolith.get(`/corners/${id}`);
+    return this.micorner.get(`/corners/${id}`);
   }
 
   @Post()
@@ -69,7 +69,7 @@ export class CornersController {
   private async _create(dto: CreateCornerDto) {
     if (dto.snowAssignmentGroup)
       await this.validateSnGroup(dto.snowAssignmentGroup);
-    return this.monolith.post('/corners', dto);
+    return this.micorner.post('/corners', dto);
   }
 
   @Put(':id')
@@ -87,7 +87,7 @@ export class CornersController {
   private async _update(id: string, dto: UpdateCornerDto) {
     if (dto.snowAssignmentGroup)
       await this.validateSnGroup(dto.snowAssignmentGroup);
-    return this.monolith.put(`/corners/${id}`, dto);
+    return this.micorner.put(`/corners/${id}`, dto);
   }
 
   @Delete(':id')
@@ -103,7 +103,7 @@ export class CornersController {
     );
   }
   private async _deactivate(id: string) {
-    return this.monolith.delete(`/corners/${id}`);
+    return this.micorner.delete(`/corners/${id}`);
   }
 
   @Post(':id/schedules')
@@ -123,7 +123,7 @@ export class CornersController {
     );
   }
   private async _addSchedule(cornerId: string, dto: AddScheduleDto) {
-    return this.monolith.post(`/corners/${cornerId}/schedules`, dto);
+    return this.micorner.post(`/corners/${cornerId}/schedules`, dto);
   }
 
   @Get(':id/schedules')
@@ -131,7 +131,7 @@ export class CornersController {
   @ApiOperation({ summary: 'Listar horarios de un corner' })
   @ApiParam({ name: 'id', description: 'Corner ID' })
   async getSchedules(@Param('id') cornerId: string) {
-    return this.monolith.get(`/corners/${cornerId}/schedules`);
+    return this.micorner.get(`/corners/${cornerId}/schedules`);
   }
 
   @Put(':id/schedules/:scheduleId')
@@ -156,7 +156,7 @@ export class CornersController {
     scheduleId: string,
     dto: AddScheduleDto,
   ) {
-    return this.monolith.put(
+    return this.micorner.put(
       `/corners/${cornerId}/schedules/${scheduleId}`,
       dto,
     );
@@ -179,7 +179,7 @@ export class CornersController {
     );
   }
   private async _deleteSchedule(cornerId: string, scheduleId: string) {
-    return this.monolith.delete(`/corners/${cornerId}/schedules/${scheduleId}`);
+    return this.micorner.delete(`/corners/${cornerId}/schedules/${scheduleId}`);
   }
 
   @Post(':id/schedules/:scheduleId/technicians')
@@ -204,7 +204,7 @@ export class CornersController {
     scheduleId: string,
     dto: AssignTechniciansDto,
   ) {
-    return this.monolith.post(
+    return this.micorner.post(
       `/corners/${cornerId}/schedules/${scheduleId}/technicians`,
       dto,
     );

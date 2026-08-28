@@ -26,7 +26,7 @@ const SNOWQ_PREFIX = 'snowq:';
 /**
  * Proxy HTTP hacia api-snowq-service para operaciones de ServiceNow.
  *
- * Flujo: monolito → gateway (/outbound/servicenow/*) → api-snowq-service (/snow-requests/*) → SN
+ * Flujo: micorner → gateway (/outbound/servicenow/*) → api-snowq-service (/snow-requests/*) → SN
  * Único egress hacia ServiceNow del ecosistema — integration-service ya no interviene acá.
  *
  * Creación de tickets: dos fases contra api-snowq-service
@@ -74,7 +74,7 @@ export class ServiceNowOutboundController {
   }
 
   private buildIncidentBody(payload: Record<string, any>) {
-    // Clasificación SN provista por el monolith (desde el IssueType). Fallback a
+    // Clasificación SN provista por el micorner (desde el IssueType). Fallback a
     // los valores neutros previos por robustez (si el emisor no los envía).
     const severity = payload.severity ?? 'medium';
     const impact = payload.impact ?? 2;
