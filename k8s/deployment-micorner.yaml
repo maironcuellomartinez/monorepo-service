@@ -1,31 +1,31 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: monolith
+  name: micorner
   namespace: event-corner
   labels:
-    app: monolith
+    app: micorner
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: monolith
+      app: micorner
   template:
     metadata:
       labels:
-        app: monolith
+        app: micorner
     spec:
       containers:
-        - name: monolith
-          image: event-corner/monolith:latest
+        - name: micorner
+          image: event-corner/micorner:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3001
           envFrom:
             - configMapRef:
-                name: monolith-config
+                name: micorner-config
             - secretRef:
-                name: monolith-secrets
+                name: micorner-secrets
           livenessProbe:
             httpGet:
               path: /health/live
@@ -51,11 +51,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: monolith
+  name: micorner
   namespace: event-corner
 spec:
   selector:
-    app: monolith
+    app: micorner
   ports:
     - port: 3001
       targetPort: 3001

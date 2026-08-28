@@ -6,7 +6,7 @@ metadata:
 data:
   NODE_ENV: "production"
   API_GATEWAY_PORT: "3000"
-  MONOLITH_URL: "http://monolith:3001"
+  MICORNER_URL: "http://micorner:3001"
   ABAC_URL: "http://abac-microservice:3005"
   INTEGRATION_SERVICE_URL: "http://integration-service:3008"
   JWT_ISSUER: "abac-service"

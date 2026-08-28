@@ -67,7 +67,7 @@ export interface MeResponse {
   lastName: string
   username: string
   permissions: string[]
-  monolithUserId: string
+  micornerUserId: string
   companyId: string | null
   upn: string | null
   isActive: boolean

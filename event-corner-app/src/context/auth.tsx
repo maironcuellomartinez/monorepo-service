@@ -8,7 +8,7 @@ interface AuthUser {
   upn?: string | null
   customerId: string
   companyId: string | null
-  monolithUserId: string
+  micornerUserId: string
   abacUserId?: string
   /** Presente solo si el usuario es técnico y ya tiene corner asignado */
   technicianId: string | null
@@ -69,9 +69,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       oid,
       name: name || email,
       upn: me.upn,
-      monolithUserId: me.monolithUserId,
+      micornerUserId: me.micornerUserId,
       abacUserId: me.abacUserId,
-      customerId: me.monolithUserId,
+      customerId: me.micornerUserId,
       companyId: me.companyId,
       technicianId: me.technicianId ?? null,
       permissions: me.permissions ?? [],

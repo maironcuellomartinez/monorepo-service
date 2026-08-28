@@ -626,7 +626,7 @@ export function BatchIncidentPage() {
   const {
     items, isLoading, addItem, editItem, removeItem, submit, discard,
     renewedUntil, hasLegacyDraft, dismissLegacy,
-  } = useBatchDraft(user!.monolithUserId)
+  } = useBatchDraft(user!.micornerUserId)
 
   const [editingItem, setEditingItem] = useState<UIBatchItem | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)

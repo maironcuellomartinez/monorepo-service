@@ -9,13 +9,13 @@ resources:
   - configmap-abac.yaml
   - configmap-snowq.yaml
   - configmap-integration.yaml
-  - configmap-monolith.yaml
+  - configmap-micorner.yaml
   - configmap-gateway.yaml
   # Deployments + Services (orden de dependencias)
   - deployment-abac.yaml
   - deployment-snowq.yaml
   - deployment-integration.yaml
-  - deployment-monolith.yaml
+  - deployment-micorner.yaml
   - deployment-gateway.yaml
 
 # Prefijo de imagen: ajustar al registry real en staging/prod

@@ -152,7 +152,7 @@ function CreateAppointmentModal({ device, open, onClose, onCreated }: CreateAppo
       const incident = await appointmentsApi.create({
         cornerId,
         issueTypeId,
-        customerId: user.monolithUserId,
+        customerId: user.micornerUserId,
         slotIds: selectedSlot.slotIds,
         startTime: selectedSlot.startTime,
         endTime: selectedSlot.endTime,
@@ -485,11 +485,11 @@ function AppointmentActionsModal({ incident, open, onClose, onUpdated }: Appoint
     try {
       let updated: Appointment
       if (action === 'cancel') {
-        updated = await appointmentsApi.cancel(incident.id, user.monolithUserId, reason.trim() || undefined)
+        updated = await appointmentsApi.cancel(incident.id, user.micornerUserId, reason.trim() || undefined)
       } else if (action === 'validate') {
-        updated = await appointmentsApi.validate(incident.id, user.monolithUserId)
+        updated = await appointmentsApi.validate(incident.id, user.micornerUserId)
       } else {
-        updated = await appointmentsApi.reopen(incident.id, user.monolithUserId, { reason: reason.trim() || undefined })
+        updated = await appointmentsApi.reopen(incident.id, user.micornerUserId, { reason: reason.trim() || undefined })
       }
       onUpdated(updated)
     } catch (err: unknown) {
@@ -1234,7 +1234,7 @@ function EmployeeDashboard() {
 
     const [incResult] = await Promise.allSettled([
       appointmentsApi.mine(),
-      devicesApi.syncForUser(user.monolithUserId).catch(() => null),
+      devicesApi.syncForUser(user.micornerUserId).catch(() => null),
     ])
 
     if (incResult.status === 'fulfilled') {
@@ -1245,7 +1245,7 @@ function EmployeeDashboard() {
     setLoadingAppointments(false)
 
     try {
-      const devData = await devicesApi.listByUser(user.monolithUserId)
+      const devData = await devicesApi.listByUser(user.micornerUserId)
       setDevices(devData)
     } catch {
       // no devices is OK
@@ -1253,7 +1253,7 @@ function EmployeeDashboard() {
     setLoadingDevices(false)
   }
 
-  useEffect(() => { loadAll() }, [user?.monolithUserId])
+  useEffect(() => { loadAll() }, [user?.micornerUserId])
 
   const deviceIdsWithActiveAppointment = new Set(
     incidents
