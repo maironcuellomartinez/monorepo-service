@@ -463,7 +463,7 @@ export const companiesApi = {
     apiClient.delete(`/api/admin/companies/${id}`).then((r) => r.data),
   syncFromSn: () =>
     apiClient
-      .post<{ synced: number; skipped: number; errors: number; companiesCreated: number }>(
+      .post<{ synced: number; skipped: number; errors: number; companiesCreated: number; companiesLinked: number }>(
         '/api/admin/companies/sync-from-sn',
       )
       .then((r) => r.data),

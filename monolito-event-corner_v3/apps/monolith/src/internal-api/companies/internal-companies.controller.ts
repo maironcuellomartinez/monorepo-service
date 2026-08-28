@@ -41,9 +41,20 @@ export class InternalCompaniesController {
         const result = await this.companyService.listCompanies();
         const companies = unwrapOrThrow(result);
 
-        const profilesResult = await this.snProfileRepo.findAllActive();
-        const profiles = unwrapOrThrow(profilesResult);
-        const profileById = new Map(profiles.map((p) => [p.id.toString(), p]));
+        // Se resuelve por findById (no findAllActive) para que una compañía
+        // vinculada a un perfil desactivado siga mostrando su sys_id/nombre SN
+        // — mismo criterio que getOne()/update(), que usan profileMapFor().
+        // resolveSnowCompanySysId() también sigue usando ese perfil aunque
+        // esté inactive, así que ocultarlo acá sería mostrar un dato distinto
+        // del que realmente se usa al abrir el ticket en SN.
+        const profileById = new Map<string, ServiceNowProfile>();
+        for (const c of companies) {
+            if (!c.profileId) continue;
+            const key = c.profileId.toString();
+            if (profileById.has(key)) continue;
+            const profile = await this.profileById(key);
+            if (profile) profileById.set(key, profile);
+        }
 
         return companies.map((c) => this.toDto(c, profileById));
     }
@@ -122,12 +133,17 @@ export class InternalCompaniesController {
         unwrapOrThrow(result);
     }
 
+    /** Perfil por id, sin filtrar por isActive — un perfil desactivado sigue siendo el que usa resolveSnowCompanySysId() para la compañía que lo referencia. */
+    private async profileById(id: string): Promise<ServiceNowProfile | null> {
+        const profileResult = await this.snProfileRepo.findById(id as any);
+        return profileResult.isFailure ? null : profileResult.unwrap();
+    }
+
     private async profileMapFor(company: Company): Promise<Map<string, ServiceNowProfile>> {
         const profileById = new Map<string, ServiceNowProfile>();
         if (!company.profileId) return profileById;
-        const profileResult = await this.snProfileRepo.findById(company.profileId);
-        const profile = profileResult.isFailure ? null : profileResult.unwrap();
-        if (profile) profileById.set(profile.id.toString(), profile);
+        const profile = await this.profileById(company.profileId.toString());
+        if (profile) profileById.set(company.profileId.toString(), profile);
         return profileById;
     }
 

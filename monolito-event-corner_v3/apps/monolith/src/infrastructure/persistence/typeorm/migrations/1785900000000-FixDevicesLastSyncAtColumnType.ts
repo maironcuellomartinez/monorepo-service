@@ -14,9 +14,12 @@ export class FixDevicesLastSyncAtColumnType1785900000000 implements MigrationInt
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // '...:01', no '...:00' — timestamp no admite el epoch exacto, y revertir
+    // con el mismo default inválido haría fallar el propio down() con el
+    // error que esta migración existe para arreglar.
     await queryRunner.query(`
             ALTER TABLE devices
-            MODIFY COLUMN last_sync_at TIMESTAMP NOT NULL DEFAULT '1970-01-01 00:00:00'
+            MODIFY COLUMN last_sync_at TIMESTAMP NOT NULL DEFAULT '1970-01-01 00:00:01'
         `);
   }
 }

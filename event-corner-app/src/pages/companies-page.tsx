@@ -28,7 +28,7 @@ export function CompaniesPage() {
   const [companyFormError, setCompanyFormError] = useState('')
 
   const [syncingFromSn, setSyncingFromSn] = useState(false)
-  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; errors: number; companiesCreated: number } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ synced: number; skipped: number; errors: number; companiesCreated: number; companiesLinked: number } | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -162,6 +162,7 @@ export function CompaniesPage() {
                   Sincronización completada —{' '}
                   <strong>{syncResult.synced}</strong> perfiles importados,{' '}
                   <strong>{syncResult.companiesCreated}</strong> compañías nuevas,{' '}
+                  <strong>{syncResult.companiesLinked}</strong> vinculadas a compañías existentes,{' '}
                   <strong>{syncResult.skipped}</strong> ya existían
                   {syncResult.errors > 0 && <>, <strong>{syncResult.errors}</strong> con errores</>}
                 </span>

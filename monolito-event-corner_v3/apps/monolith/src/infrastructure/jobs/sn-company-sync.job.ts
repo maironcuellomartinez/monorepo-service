@@ -8,8 +8,10 @@ import { ICompanyService } from '../../core/ports/incoming/company/company-servi
 import { IServiceNowClient } from '../../core/ports/outgoing/servicenow/servicenow-client.port';
 import { SERVICENOW_CLIENT } from '../../core/ports/outgoing/infrastructure-tokens';
 import { ICompanyRepository } from '../../core/ports/outgoing/repositories/company-repository.port';
-import { COMPANY_REPOSITORY } from '../../core/ports/outgoing/repositories/tokens';
+import { IServiceNowProfileRepository } from '../../core/ports/outgoing/repositories/servicenow-profile-repository.port';
+import { COMPANY_REPOSITORY, SERVICE_NOW_PROFILE_REPOSITORY } from '../../core/ports/outgoing/repositories/tokens';
 import { ServiceNowProfileAlreadyExistsError } from '../../core/domain/errors/servicenow.errors';
+import { ServiceNowProfile } from '../../core/domain/entities/servicenow-profile.entity';
 
 const DEFAULT_CRON = '0 2 * * *'; // 2 AM todos los días
 
@@ -18,6 +20,7 @@ export interface SnCompanySyncResult {
   skipped: number;
   errors: number;
   companiesCreated: number;
+  companiesLinked: number;
 }
 
 /**
@@ -46,6 +49,7 @@ export class SnCompanySyncJob {
     @Inject(SERVICENOW_CLIENT) private readonly snClient: IServiceNowClient,
     @Inject(COMPANY_SERVICE) private readonly companyService: ICompanyService,
     @Inject(COMPANY_REPOSITORY) private readonly companyRepo: ICompanyRepository,
+    @Inject(SERVICE_NOW_PROFILE_REPOSITORY) private readonly profileRepo: IServiceNowProfileRepository,
     private readonly tracing: TracingService,
   ) {
     this.enabled = process.env.SNOW_COMPANY_SYNC_ENABLED === 'true';
@@ -80,7 +84,7 @@ export class SnCompanySyncJob {
       this.logger.error(
         `SnCompanySyncJob: no se pudo obtener el catálogo de empresas — ${companiesResult.unwrapError().message}`,
       );
-      return { synced: 0, skipped: 0, errors: 1, companiesCreated: 0 };
+      return { synced: 0, skipped: 0, errors: 1, companiesCreated: 0, companiesLinked: 0 };
     }
     const snCompanies = companiesResult.unwrap();
 
@@ -88,7 +92,7 @@ export class SnCompanySyncJob {
       this.logger.log(
         'SnCompanySyncJob: no hay empresas activas en el catálogo de SN',
       );
-      return { synced: 0, skipped: 0, errors: 0, companiesCreated: 0 };
+      return { synced: 0, skipped: 0, errors: 0, companiesCreated: 0, companiesLinked: 0 };
     }
 
     const existingProfilesResult = await this.profileService.getAllProfiles();
@@ -96,7 +100,7 @@ export class SnCompanySyncJob {
       this.logger.error(
         `SnCompanySyncJob: error obteniendo perfiles existentes — ${existingProfilesResult.unwrapError().message}`,
       );
-      return { synced: 0, skipped: 0, errors: 1, companiesCreated: 0 };
+      return { synced: 0, skipped: 0, errors: 1, companiesCreated: 0, companiesLinked: 0 };
     }
     const existingProfiles = existingProfilesResult.unwrap();
     const existingProfileBySysId = new Map(
@@ -107,9 +111,10 @@ export class SnCompanySyncJob {
     let skipped = 0;
     let errors = 0;
     let companiesCreated = 0;
+    let companiesLinked = 0;
 
     for (const snCompany of snCompanies) {
-      let profile = existingProfileBySysId.get(snCompany.sys_id) ?? null;
+      let profile: ServiceNowProfile | null = existingProfileBySysId.get(snCompany.sys_id) ?? null;
 
       if (profile) {
         skipped++;
@@ -121,28 +126,42 @@ export class SnCompanySyncJob {
         });
         if (profileResult.isFailure) {
           const error = profileResult.unwrapError();
-          // Otro proceso (sync manual o esta misma corrida en otra instancia)
-          // ya creó el perfil entre el snapshot inicial y este insert — no es
-          // un error real, es la constraint de BD atajando la carrera.
+          // Otro proceso (sync manual o esta misma corrida en otra instancia) ya
+          // creó el perfil entre el snapshot inicial y este insert, o SN renombró
+          // una empresa cuyo perfil ya existía con otro nombre (la reactivación
+          // por nombre en ServiceNowProfileService no lo encuentra, pero el
+          // insert choca igual contra el índice único de snow_company_sys_id).
+          // En ambos casos el perfil real existe — se resuelve por sys_id para
+          // no perder el backfill de Company de este ciclo.
           if (error instanceof ServiceNowProfileAlreadyExistsError) {
+            const existingResult = await this.profileRepo.findByCompanySysId(snCompany.sys_id);
+            const existing = existingResult.isFailure ? null : existingResult.unwrap();
+            if (!existing) {
+              this.logger.warn(
+                `SnCompanySyncJob: perfil para "${snCompany.name}" (sys_id=${snCompany.sys_id}) reportado como duplicado pero no se pudo resolver — ${existingResult.isFailure ? existingResult.unwrapError().message : 'sin resultado'}`,
+              );
+              errors++;
+              continue;
+            }
             this.logger.debug(
-              `SnCompanySyncJob: perfil para "${snCompany.name}" (sys_id=${snCompany.sys_id}) ya existía (creado concurrentemente)`,
+              `SnCompanySyncJob: perfil para "${snCompany.name}" (sys_id=${snCompany.sys_id}) ya existía (creado concurrentemente o renombrado en SN)`,
             );
+            profile = existing;
             skipped++;
+          } else {
+            this.logger.warn(
+              `SnCompanySyncJob: error creando perfil para "${snCompany.name}" — ${error.message}`,
+            );
+            errors++;
             continue;
           }
-          this.logger.warn(
-            `SnCompanySyncJob: error creando perfil para "${snCompany.name}" — ${error.message}`,
+        } else {
+          profile = profileResult.unwrap();
+          synced++;
+          this.logger.log(
+            `SnCompanySyncJob: perfil "${snCompany.name}" importado (sys_id=${snCompany.sys_id})`,
           );
-          errors++;
-          continue;
         }
-
-        profile = profileResult.unwrap();
-        synced++;
-        this.logger.log(
-          `SnCompanySyncJob: perfil "${snCompany.name}" importado (sys_id=${snCompany.sys_id})`,
-        );
       }
 
       // Asegura que exista una Company local vinculada al perfil — tanto para
@@ -159,6 +178,40 @@ export class SnCompanySyncJob {
         continue;
       }
       if (existingCompanyResult.unwrap()) continue;
+
+      // companies.name es unique — si ya existe una compañía local con ese
+      // nombre (creada a mano en el pasado, o migrada sin perfil todavía) el
+      // create() de más abajo chocaría contra esa constraint en cada corrida,
+      // sin converger nunca. Se prefiere vincular esa compañía existente al
+      // perfil SN en vez de intentar crear una duplicada.
+      const byNameResult = await this.companyRepo.findByName(snCompany.name);
+      if (byNameResult.isFailure) {
+        this.logger.warn(
+          `SnCompanySyncJob: error buscando compañía por nombre "${snCompany.name}" — ${byNameResult.unwrapError().message}`,
+        );
+        errors++;
+        continue;
+      }
+      const byName = byNameResult.unwrap();
+
+      if (byName) {
+        const linkResult = await this.companyService.linkServiceNowProfile(
+          byName.id.toString(),
+          profile.id.toString(),
+        );
+        if (linkResult.isFailure) {
+          this.logger.warn(
+            `SnCompanySyncJob: no se pudo vincular la compañía existente "${snCompany.name}" al perfil SN — ${linkResult.unwrapError().message}`,
+          );
+          errors++;
+          continue;
+        }
+        companiesLinked++;
+        this.logger.log(
+          `SnCompanySyncJob: compañía existente "${snCompany.name}" vinculada al perfil SN (profileId=${profile.id})`,
+        );
+        continue;
+      }
 
       const companyResult = await this.companyService.createCompany({
         name: snCompany.name,
@@ -179,8 +232,8 @@ export class SnCompanySyncJob {
     }
 
     this.logger.log(
-      `SnCompanySyncJob: completado — synced=${synced} skipped=${skipped} errors=${errors} companiesCreated=${companiesCreated}`,
+      `SnCompanySyncJob: completado — synced=${synced} skipped=${skipped} errors=${errors} companiesCreated=${companiesCreated} companiesLinked=${companiesLinked}`,
     );
-    return { synced, skipped, errors, companiesCreated };
+    return { synced, skipped, errors, companiesCreated, companiesLinked };
   }
 }

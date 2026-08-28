@@ -86,6 +86,16 @@ export class IssueTypeNotAllowedForCompanyError extends DomainError {
     }
 }
 
+export class CompanyAlreadyLinkedError extends DomainError {
+    readonly code = 'COMPANY_ALREADY_LINKED';
+    readonly message: string;
+
+    constructor(companyId: string, currentProfileId: string) {
+        super(`Company ${companyId} is already linked to ServiceNow profile ${currentProfileId} — refusing to overwrite`);
+        this.message = `Company ${companyId} is already linked to ServiceNow profile ${currentProfileId} — refusing to overwrite`;
+    }
+}
+
 export class CompanyMissingTreeError extends DomainError {
     readonly code = 'COMPANY_MISSING_TREE';
     readonly message: string;

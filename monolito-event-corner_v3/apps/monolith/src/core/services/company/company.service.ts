@@ -6,7 +6,7 @@ import { Result } from '@app/result';
 import { Company } from '../../domain/entities/company.entity';
 import { CompanyId, IssueTypeTreeId } from '../../domain/value-objects/ids';
 import { ServiceNowProfileId } from '@app/shared/types/branded-ids';
-import { IssueTypeTreeNotFoundError } from '@app/shared/errors/domain-error';
+import { IssueTypeTreeNotFoundError, CompanyAlreadyLinkedError } from '@app/shared/errors/domain-error';
 import { TracingService } from '@app/observability';
 
 @Injectable()
@@ -105,6 +105,32 @@ export class CompanyService implements ICompanyService {
         if (!company) return Result.err(new Error(`Company ${companyId} not found`));
 
         company.assignTree(IssueTypeTreeId(treeId as any));
+
+        const updateResult = await this.companyRepo.update(company);
+        if (updateResult.isFailure) return Result.err(updateResult.unwrapError());
+
+        return Result.ok(undefined);
+    }
+
+    async linkServiceNowProfile(companyId: string, profileId: string): Promise<Result<void>> {
+        return this.tracing.run(
+            'monolith.linkServiceNowProfile',
+            { kind: 'server', attributes: { 'company.id': companyId } },
+            () => this._linkServiceNowProfile(companyId, profileId),
+        );
+    }
+
+    private async _linkServiceNowProfile(companyId: string, profileId: string): Promise<Result<void>> {
+        const companyResult = await this.companyRepo.findById(companyId);
+        if (companyResult.isFailure) return Result.err(companyResult.unwrapError());
+        const company = companyResult.unwrap();
+        if (!company) return Result.err(new Error(`Company ${companyId} not found`));
+
+        if (company.profileId && company.profileId.toString() !== profileId) {
+            return Result.err(new CompanyAlreadyLinkedError(companyId, company.profileId.toString()));
+        }
+
+        company.assignServiceNowProfile(ServiceNowProfileId(profileId as any));
 
         const updateResult = await this.companyRepo.update(company);
         if (updateResult.isFailure) return Result.err(updateResult.unwrapError());

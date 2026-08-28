@@ -58,6 +58,7 @@ import { CreateServicenowTicketLinksTable1785300000000 } from './infrastructure/
 import { CreateAppointmentTimelineTable1785400000000 } from './infrastructure/persistence/typeorm/migrations/1785400000000-CreateAppointmentTimelineTable';
 import { BackfillAppointmentsFromIncidentsAndRequests1785500000000 } from './infrastructure/persistence/typeorm/migrations/1785500000000-BackfillAppointmentsFromIncidentsAndRequests';
 import { DropIncidentsAndRequestsLegacyTables1785600000000 } from './infrastructure/persistence/typeorm/migrations/1785600000000-DropIncidentsAndRequestsLegacyTables';
+import { RenamePrincipalNameToUpnOnUsers1785700000000 } from './infrastructure/persistence/typeorm/migrations/1785700000000-RenamePrincipalNameToUpnOnUsers';
 import { MakeCompaniesTreeIdNullable1785800000000 } from './infrastructure/persistence/typeorm/migrations/1785800000000-MakeCompaniesTreeIdNullable';
 import { FixDevicesLastSyncAtColumnType1785900000000 } from './infrastructure/persistence/typeorm/migrations/1785900000000-FixDevicesLastSyncAtColumnType';
 
@@ -114,6 +115,7 @@ import { FixDevicesLastSyncAtColumnType1785900000000 } from './infrastructure/pe
         CreateAppointmentTimelineTable1785400000000,
         BackfillAppointmentsFromIncidentsAndRequests1785500000000,
         DropIncidentsAndRequestsLegacyTables1785600000000,
+        RenamePrincipalNameToUpnOnUsers1785700000000,
         MakeCompaniesTreeIdNullable1785800000000,
         FixDevicesLastSyncAtColumnType1785900000000,
       ],

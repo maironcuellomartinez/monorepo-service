@@ -37,6 +37,17 @@ export class Company {
         this.props.updatedAt = new Date();
     }
 
+    /**
+     * Vincula esta compañía a un perfil SN. Uso exclusivo del sync
+     * (SnCompanySyncJob) cuando encuentra por nombre una compañía existente
+     * sin perfil todavía — no se expone en ninguna API, `profileId` no es
+     * editable por el admin.
+     */
+    assignServiceNowProfile(profileId: ServiceNowProfileId): void {
+        this.props.profileId = profileId;
+        this.props.updatedAt = new Date();
+    }
+
     deactivate(): void {
         this.props.isActive = false;
         this.props.updatedAt = new Date();

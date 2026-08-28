@@ -72,7 +72,12 @@ npm run seed:m2m              # Registers M2M service accounts, signs Ed25519 M2
 npm run seed:full             # seed + seed:m2m in sequence
 ```
 
-> **`abac_db` completamente vacía (sin tablas):** `database.config.ts` tiene `synchronize: true`, pero en la práctica no crea el schema — hay que correr las migraciones a mano antes del primer `npm run seed`: `npx typeorm-ts-node-commonjs migration:run -d src/config/data-source.config.ts -t each`. Usar `-t each` (no el default `-t all`) — los dos últimos archivos en `src/migrations/` (nombrados mal, `$npm_config_name...`, restos de un `migration:generate` sin `npm_config_name` seteado) fallan contra el schema actual y con `-t all` hacen rollback de *toda* la corrida, incluida la migración base que sí funciona.
+> **NO correr las migraciones de `abac-microservice`.** El schema real lo crea `synchronize: true` (`src/config/database.config.ts`) al arrancar el servicio — eso es todo lo que hace falta antes del primer `npm run seed`. Los archivos en `src/migrations/` son legacy y están rotos:
+> - `1700000000000-CreateInitialTables` crea `application` y `policy` **en singular**, que ninguna entidad mapea (las reales son `applications`/`policies`) — correrla solo agrega tablas huérfanas vacías.
+> - Los otros dos (`$npm_config_name...`, restos de un `migration:generate` sin la env var seteada) fallan contra el schema actual.
+> - `src/scripts/run-migrations.ts` ni siquiera compila: importa `{ dataSource } from "data-source"` — módulo inexistente, y `data-source.config.ts` exporta `default`, no un named `dataSource`. No está cableado a ningún npm script.
+>
+> Si `abac_db` parece vacía, sospechar del entorno antes que del código: convivir un MySQL nativo y un contenedor Docker ambos en `:3306` hace que `localhost` resuelva a uno por IPv4 y a otro por IPv6, y termines mirando una base distinta a la que escribe el servicio (`Get-NetTCPConnection -LocalPort 3306` lista los dos listeners).
 
 ### api-snowq-service
 ```bash

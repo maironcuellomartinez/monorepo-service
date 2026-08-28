@@ -17,6 +17,8 @@ export interface ICompanyService {
     createCompany(command: CreateCompanyCommand): Promise<Result<Company>>;
     updateCompany(id: string, command: UpdateCompanyCommand): Promise<Result<Company>>;
     assignTree(companyId: string, treeId: string): Promise<Result<void>>;
+    /** Uso exclusivo del sync — vincula una compañía existente (por nombre) a un perfil SN nuevo, sin pisar uno ya asignado. */
+    linkServiceNowProfile(companyId: string, profileId: string): Promise<Result<void>>;
     getCompany(id: string): Promise<Result<Company | null>>;
     getCompanyByName(name: string): Promise<Result<Company | null>>;
     listCompanies(): Promise<Result<Company[]>>;
