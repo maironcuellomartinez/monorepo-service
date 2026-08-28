@@ -151,8 +151,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'super-admin': ALL_PERMISSIONS.map(([r, a]) => `${r}:${a}`),
 
     'admin': [
-        // Appointments — visión total + deliver (unifica incident+request)
-        'appointment:read', 'appointment:list', 'appointment:list-all',
+        // Appointments — visión total + crear + deliver (unifica incident+request)
+        'appointment:create', 'appointment:read', 'appointment:list', 'appointment:list-all',
         'appointment:deliver', 'appointment:change-status',
         'appointment:validate', 'appointment:reopen', 'appointment:delete',
         // Corners & schedules — configuración completa
