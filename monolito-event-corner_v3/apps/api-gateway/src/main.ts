@@ -12,41 +12,12 @@ import helmet from 'helmet';
 import { LoggerService } from '@app/observability';
 import { ApiGatewayModule } from './api-gateway.module';
 
-function validateConfig(): void {
-  if (env === 'development') return;
-
-  const required: Record<string, string> = {
-    JWT_SECRET:
-      'Secret para verificar JWT — debe coincidir con abac-microservice',
-    ABAC_URL: 'URL del ABAC microservice',
-    ABAC_M2M_TOKEN: 'Token M2M para llamadas internas al ABAC',
-    MICORNER_URL: 'URL interna del micorner',
-    ED25519_PUBLIC_KEY: 'Clave publica Ed25519 para verificar tokens M2M',
-  };
-
-  const invalid = Object.entries(required).filter(
-    ([key]) => !process.env[key] || process.env[key].startsWith('CHANGE_ME'),
-  );
-
-  if (invalid.length > 0) {
-    const lines = invalid
-      .map(([key, desc]) => `  • ${key} — ${desc}`)
-      .join('\n');
-    throw new Error(
-      `Variables de entorno requeridas no configuradas:\n${lines}\n` +
-        `Revisa el archivo .env.${env} antes de iniciar el servicio.`,
-    );
-  }
-}
+// La validación de env vars la hace Joi vía ConfigModule.forRoot()
+// (apps/api-gateway/src/config/env.validation.ts) — corre en todos los
+// ambientes, no solo staging/prod, y lista todas las variables inválidas
+// de una sola vez en vez de una por una.
 
 async function bootstrap() {
-  try {
-    validateConfig();
-  } catch (err: any) {
-    console.error(`\n[Bootstrap] ${err.message}\n`);
-    process.exit(1);
-  }
-
   const app = await NestFactory.create(ApiGatewayModule, { bufferLogs: true });
   app.useLogger(app.get(LoggerService));
   const logger = new Logger('Bootstrap');

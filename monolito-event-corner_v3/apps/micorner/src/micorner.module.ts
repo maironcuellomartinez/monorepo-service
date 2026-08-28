@@ -4,6 +4,7 @@ import { HttpModule } from '@nestjs/axios';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import * as path from 'path';
+import { micornerEnvSchema } from './config/env.validation';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SharedModule } from '@app/shared/shared.module';
 import {
@@ -133,6 +134,8 @@ import { FixDevicesLastSyncAtColumnType1785900000000 } from './infrastructure/pe
         `.env.${process.env.NODE_ENV ?? 'development'}`,
         '.env',
       ],
+      validationSchema: micornerEnvSchema,
+      validationOptions: { abortEarly: false, allowUnknown: true },
     }),
     ScheduleModule.forRoot(),
     HttpModule,

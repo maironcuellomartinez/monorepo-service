@@ -2,6 +2,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import * as path from 'path';
+import { apiGatewayEnvSchema } from './config/env.validation';
 import { HttpClientsModule } from './http/http-clients.module';
 import { ClientModule } from './client/client.module';
 import { OutboundGatewayModule } from './outbound/outbound-gateway.module';
@@ -38,6 +39,8 @@ import { HealthModule } from './health/health.module';
         `apps/api-gateway/.env.${process.env.NODE_ENV ?? 'development'}`,
         'apps/api-gateway/.env',
       ],
+      validationSchema: apiGatewayEnvSchema,
+      validationOptions: { abortEarly: false, allowUnknown: true },
     }),
     ObservabilityModule.forRoot({ serviceName: 'api-gateway' }),
     HttpClientsModule,
