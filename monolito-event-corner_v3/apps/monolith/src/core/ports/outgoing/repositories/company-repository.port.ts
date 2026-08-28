@@ -7,7 +7,8 @@ export interface ICompanyRepository {
     save(company: Company): Promise<Result<void>>;
     findById(id: CompanyId | string): Promise<Result<Company | null>>;
     findByName(name: string): Promise<Result<Company | null>>;
-    findAllActive(): Promise<Result<Company[]>>;
+    /** Todas las compañías, activas e inactivas — desactivar una no debe volverla inalcanzable. */
+    findAll(): Promise<Result<Company[]>>;
     update(company: Company): Promise<Result<void>>;
     delete(id: CompanyId | string): Promise<Result<void>>;
 

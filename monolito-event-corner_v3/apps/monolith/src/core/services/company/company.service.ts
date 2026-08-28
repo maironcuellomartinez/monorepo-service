@@ -147,6 +147,6 @@ export class CompanyService implements ICompanyService {
     }
 
     async listCompanies(): Promise<Result<Company[]>> {
-        return this.companyRepo.findAllActive();
+        return this.companyRepo.findAll();
     }
 }

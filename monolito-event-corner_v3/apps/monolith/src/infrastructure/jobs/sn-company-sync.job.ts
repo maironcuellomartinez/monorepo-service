@@ -42,6 +42,10 @@ export interface SnCompanySyncResult {
 export class SnCompanySyncJob {
   private readonly logger = new Logger(SnCompanySyncJob.name);
   private readonly enabled: boolean;
+  // Guard de re-entrancia: sin esto, el cron y un disparo manual pueden
+  // solaparse, o un timeout del lado del cliente HTTP (que dispara reintento)
+  // puede lanzar una segunda corrida completa mientras la primera sigue viva.
+  private isRunning = false;
 
   constructor(
     @Inject(SERVICENOW_PROFILE_SERVICE)
@@ -67,11 +71,22 @@ export class SnCompanySyncJob {
   }
 
   async run(): Promise<SnCompanySyncResult> {
-    return this.tracing.run(
-      'monolith.job.snCompanySync',
-      { kind: 'internal' },
-      () => this._run(),
-    );
+    if (this.isRunning) {
+      this.logger.warn(
+        'SnCompanySyncJob: ya hay una corrida en curso — se ignora este disparo (cron y manual solapados, o reintento del cliente HTTP)',
+      );
+      return { synced: 0, skipped: 0, errors: 0, companiesCreated: 0, companiesLinked: 0 };
+    }
+    this.isRunning = true;
+    try {
+      return await this.tracing.run(
+        'monolith.job.snCompanySync',
+        { kind: 'internal' },
+        () => this._run(),
+      );
+    } finally {
+      this.isRunning = false;
+    }
   }
 
   private async _run(): Promise<SnCompanySyncResult> {

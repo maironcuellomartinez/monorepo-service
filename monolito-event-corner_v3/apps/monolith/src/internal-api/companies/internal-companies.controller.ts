@@ -14,6 +14,7 @@ import { SnCompanySyncJob } from '../../infrastructure/jobs/sn-company-sync.job'
 import { Company } from '../../core/domain/entities/company.entity';
 import { ServiceNowProfile } from '../../core/domain/entities/servicenow-profile.entity';
 import { unwrapOrThrow } from '@app/shared/utils/result-to-http';
+import { Result } from '@app/result';
 
 class UpdateCompanyDto {
     @IsOptional() @IsString()
@@ -36,8 +37,13 @@ export class InternalCompaniesController {
     ) {}
 
     @Get()
-    @ApiOperation({ summary: 'Listar todas las empresas activas (sincronizadas desde ServiceNow)' })
+    @ApiOperation({ summary: 'Listar todas las empresas sincronizadas desde ServiceNow (activas e inactivas)' })
     async list() {
+        // Incluye inactivas a propósito: es la única superficie para
+        // reactivar una compañía desde el dashboard (PUT :id {isActive:true}).
+        // El sync tampoco la recrea si ya está vinculada a un perfil aunque
+        // esté inactiva (findByProfileId no filtra por isActive) — filtrar
+        // acá la dejaría inalcanzable para siempre tras un solo desactivar.
         const result = await this.companyService.listCompanies();
         const companies = unwrapOrThrow(result);
 
@@ -52,7 +58,7 @@ export class InternalCompaniesController {
             if (!c.profileId) continue;
             const key = c.profileId.toString();
             if (profileById.has(key)) continue;
-            const profile = await this.profileById(key);
+            const profile = unwrapOrThrow(await this.profileById(key));
             if (profile) profileById.set(key, profile);
         }
 
@@ -134,15 +140,14 @@ export class InternalCompaniesController {
     }
 
     /** Perfil por id, sin filtrar por isActive — un perfil desactivado sigue siendo el que usa resolveSnowCompanySysId() para la compañía que lo referencia. */
-    private async profileById(id: string): Promise<ServiceNowProfile | null> {
-        const profileResult = await this.snProfileRepo.findById(id as any);
-        return profileResult.isFailure ? null : profileResult.unwrap();
+    private profileById(id: string): Promise<Result<ServiceNowProfile | null>> {
+        return this.snProfileRepo.findById(id as any);
     }
 
     private async profileMapFor(company: Company): Promise<Map<string, ServiceNowProfile>> {
         const profileById = new Map<string, ServiceNowProfile>();
         if (!company.profileId) return profileById;
-        const profile = await this.profileById(company.profileId.toString());
+        const profile = unwrapOrThrow(await this.profileById(company.profileId.toString()));
         if (profile) profileById.set(company.profileId.toString(), profile);
         return profileById;
     }

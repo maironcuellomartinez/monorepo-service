@@ -13,8 +13,8 @@ export class MonolithClient {
         this.authHeaders = { Authorization: `Bearer ${process.env.ABAC_M2M_TOKEN ?? ''}` };
     }
 
-    private cfg(params?: Record<string, string | undefined>): RequestConfig {
-        return { params, headers: this.authHeaders };
+    private cfg(params?: Record<string, string | undefined>, timeoutMs?: number): RequestConfig {
+        return { params, headers: this.authHeaders, ...(timeoutMs ? { timeout: timeoutMs } : {}) };
     }
 
     async get<T>(path: string, params?: Record<string, string | undefined>): Promise<T> {
@@ -23,8 +23,9 @@ export class MonolithClient {
         return res.value.data;
     }
 
-    async post<T>(path: string, body?: unknown, params?: Record<string, string | undefined>): Promise<T> {
-        const res = await this.http.post<T>(`/internal${path}`, body, this.cfg(params));
+    /** `timeoutMs` sobreescribe el timeout default del cliente (8s) — usarlo para llamadas de larga duración conocidas, ej. sync-from-sn. */
+    async post<T>(path: string, body?: unknown, params?: Record<string, string | undefined>, timeoutMs?: number): Promise<T> {
+        const res = await this.http.post<T>(`/internal${path}`, body, this.cfg(params, timeoutMs));
         if (!res.ok) this.rethrow(res.error);
         return res.value.data;
     }

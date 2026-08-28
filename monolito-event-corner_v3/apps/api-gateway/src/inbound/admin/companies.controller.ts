@@ -67,7 +67,15 @@ export class AdminCompaniesController {
     return this.tracing.run(
       'gateway.controller.companies.syncFromServiceNow',
       { kind: 'server' },
-      () => this.monolith.post('/companies/sync-from-sn'),
+      // Timeout largo a propósito: sincroniza el catálogo completo de SN en
+      // una sola llamada síncrona (perfil + compañía por empresa) — con el
+      // timeout default de 8s del cliente monolith, un catálogo real lo
+      // supera con facilidad. Eso dispararía los 3 reintentos configurados a
+      // nivel cliente, cada uno relanzando otra corrida completa del sync en
+      // el monolito (sin este timeout, la corrida "lenta pero exitosa" se
+      // reporta como fallo y el circuit breaker compartido con el resto del
+      // tráfico gateway→monolith termina abriéndose).
+      () => this.monolith.post('/companies/sync-from-sn', undefined, undefined, 60_000),
     );
   }
 

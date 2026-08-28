@@ -51,10 +51,9 @@ export class TypeOrmCompanyRepository implements ICompanyRepository {
         }
     }
 
-    async findAllActive(): Promise<Result<Company[]>> {
+    async findAll(): Promise<Result<Company[]>> {
         try {
             const entities = await this.repo.find({
-                where: { is_active: true },
                 relations: ['snowProfile'],
                 order: { name: 'ASC' },
             });
