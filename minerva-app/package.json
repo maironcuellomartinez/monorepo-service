@@ -28,15 +28,12 @@
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
-    "@nestjs/typeorm": "^11.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "express": "^4.21.2",
-    "mysql2": "^3.11.5",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "soap": "^1.1.5",
-    "typeorm": "^0.3.28"
+    "soap": "^1.1.5"
   },
   "overrides": {
     "axios": "^1.18.1"

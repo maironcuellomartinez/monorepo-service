@@ -1,38 +1,20 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
-
-@Entity('devices')
+/**
+ * minerva-app es un mock del sistema Minerva real — sin base de datos, los
+ * datos viven en memoria (ver devices.repository.ts) y se pierden al
+ * reiniciar el proceso. Esto es intencional: simula el inventario externo
+ * sin necesitar MySQL propio para un servicio que solo existe para pruebas
+ * locales del flujo de sincronización de dispositivos.
+ */
 export class Device {
-  @PrimaryGeneratedColumn('uuid')
   deviceId: string;
-
-  @Column({ type: 'varchar', length: 200 })
   nombre: string;
-
-  @Column({ type: 'varchar', length: 100, unique: true })
   serialNumber: string;
-
-  @Column({ type: 'varchar', length: 500, nullable: true })
-  descripcion: string;
-
-  @Column({ type: 'varchar', length: 50 })
+  descripcion: string | null;
   tipo: string;
-
-  @Column({ type: 'varchar', length: 100 })
   marca: string;
-
-  @Column({ type: 'varchar', length: 100 })
   modelo: string;
-
-  @Column({ type: 'varchar', length: 100, nullable: true })
-  @Index()
   usuarioId: string | null;
-
-  @Column({ type: 'varchar', length: 200, nullable: true })
   usuarioNombre: string | null;
-
-  @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
-
-  @UpdateDateColumn({ type: 'timestamp' })
   updatedAt: Date;
 }

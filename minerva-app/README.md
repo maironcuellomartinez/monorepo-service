@@ -2,6 +2,12 @@
 
 Servicio de inventario de dispositivos asignados a usuarios mediante API SOAP.
 
+**Mock sin base de datos** — los dispositivos viven en memoria (array en
+`src/devices/devices.repository.ts`, sembrado con datos ilustrativos) y se
+reinician junto con el proceso. Es intencional: este servicio solo simula el
+sistema Minerva real para pruebas locales del flujo de sincronización de
+dispositivos, no necesita persistencia propia.
+
 ## Inicio rápido
 
 ### 1. Instalar dependencias
@@ -11,27 +17,7 @@ cd minerva-app
 npm install
 ```
 
-### 2. Configurar MySQL
-
-**Opción A: Con Docker (recomendado)**
-
-```bash
-docker-compose up -d
-```
-
-**Opción B: MySQL local**
-
-Crear la base de datos manualmente:
-
-```sql
-CREATE DATABASE IF NOT EXISTS minerva_db
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-```
-
-O ejecutar el script: `mysql -u root -p < database/init.sql`
-
-### 3. Configurar variables de entorno
+### 2. Configurar variables de entorno
 
 Copiar `.env.example` a `.env` y ajustar:
 
@@ -39,7 +25,7 @@ Copiar `.env.example` a `.env` y ajustar:
 cp .env.example .env
 ```
 
-### 4. Iniciar el servicio
+### 3. Iniciar el servicio
 
 ```bash
 npm run start:dev
@@ -156,14 +142,8 @@ test().catch(console.error);
 
 | Variable | Default | Descripción |
 |----------|---------|-------------|
-| `PORT` | 3015 | Puerto del servicio |
-| `DB_HOST` | localhost | Host de MySQL |
-| `DB_PORT` | 3306 | Puerto de MySQL |
-| `DB_USER` | root | Usuario de MySQL |
-| `DB_PASSWORD` | root | Contraseña de MySQL |
-| `DB_NAME` | minerva_db | Nombre de la base de datos |
-| `SYNCHRONIZE_DATABASE` | true | Auto-crear tablas (solo dev) |
-| `DB_LOGGING` | false | Log SQL queries |
+| `PORT` | 3015 | Puerto del servicio (API REST) |
+| `SOAP_PORT` | 3016 | Puerto del servidor SOAP |
 
 ## Comandos disponibles
 
