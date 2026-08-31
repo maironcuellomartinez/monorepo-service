@@ -113,8 +113,8 @@ import { InitialSchema1788194786468 } from './infrastructure/persistence/typeorm
         ],
         // Antes `NODE_ENV !== 'production'`, así que staging también quedaba
         // con synchronize=true — CLAUDE.md documenta SYNCHRONIZE_DATABASE=false
-        // para staging Y producción; las migraciones (migrationsRun: true más
-        // abajo) son las que deben gobernar el schema fuera de dev.
+        // para staging Y producción; las migraciones (migrationsRun más abajo)
+        // son las que deben gobernar el schema fuera de dev.
         synchronize: config.get<string>('SYNCHRONIZE_DATABASE') === 'true',
         dropSchema: false,
         logging: false,
@@ -126,7 +126,13 @@ import { InitialSchema1788194786468 } from './infrastructure/persistence/typeorm
         migrations: [
           InitialSchema1788194786468,
         ],
-        migrationsRun: true,
+        // Antes corría siempre, incluso en dev — synchronize ya deja el schema
+        // al día ahí, así que migrationsRun competía con synchronize en cada
+        // boot por las mismas tablas (motivo por el que había que reconciliar
+        // a mano la tabla `migrations` al consolidar en una sola). Ahora es
+        // el espejo exacto de synchronize: en dev corre synchronize y nunca
+        // migraciones; en staging/prod corren las migraciones y nunca synchronize.
+        migrationsRun: config.get<string>('SYNCHRONIZE_DATABASE') !== 'true',
       }),
     }),
     ScheduleModule.forRoot(),
