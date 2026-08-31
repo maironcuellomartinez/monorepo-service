@@ -2,7 +2,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import { micornerEnvSchema } from './config/env.validation';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -65,72 +65,14 @@ import { FixDevicesLastSyncAtColumnType1785900000000 } from './infrastructure/pe
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot({
-      type: 'mysql',
-      host: process.env.DB_HOST ?? 'localhost',
-      port: parseInt(process.env.DB_PORT ?? '3306'),
-      username: process.env.DB_USERNAME ?? 'root',
-      password: process.env.DB_PASSWORD ?? 'root',
-      database: process.env.DB_DATABASE ?? 'event_corner',
-      entities: [
-        ServiceNowProfileEntity,
-        CompanyEntity,
-        IssueTypeEntity,
-        IssueTypeTreeEntity,
-        CornerEntity,
-        CornerScheduleEntity,
-        ScheduleAssignmentEntity,
-        TechnicianEntity,
-        CornerSlotEntity,
-        UserEntity,
-        DeviceEntity,
-        LockerEntity,
-        AppointmentEntity,
-        AppointmentSlotEntity,
-        AppointmentTimelineEntity,
-        ServiceNowTicketLinkEntity,
-        OutboxEventEntity,
-        CompanyIssueConfigEntity,
-        ServiceNowGroupEntity,
-        BatchDraftEntity,
-        BatchDraftItemEntity,
-      ],
-      // Antes `NODE_ENV !== 'production'`, así que staging también quedaba
-      // con synchronize=true — CLAUDE.md documenta SYNCHRONIZE_DATABASE=false
-      // para staging Y producción; las migraciones (migrationsRun: true más
-      // abajo) son las que deben gobernar el schema fuera de dev.
-      synchronize: process.env.SYNCHRONIZE_DATABASE === 'true',
-      dropSchema: false,
-      logging: false,
-      // Sin esto, mysql2 usa su default y con replicas>1 el total de
-      // conexiones contra la misma instancia MySQL queda sin acotar por
-      // diseño. Mismo valor que api-snowq-service — ajustar con datos reales
-      // de tráfico si hace falta.
-      extra: { connectionLimit: 10 },
-      migrations: [
-        DropCornerSlotsFKForResync1745088000000,
-        IncreaseOutboxMaxRetries1783641799581,
-        AddUniqueSnowCompanySysIdToServiceNowProfiles1784324876162,
-        WidenSnowqCorrelationIdColumns1784384307249,
-        AddUniqueWindowToCornerSlots1784389154861,
-        WidenIncidentOriginChannel1784481206018,
-        AddSnClassificationToIssueTypes1784600000000,
-        AddCodeToCorners1784700000000,
-        AddIncrementalIssueIdToIncidentsAndRequests1784800000000,
-        AddEstimatedCloseToIncidents1784900000000,
-        WidenIncidentTimelineActionType1785000000000,
-        CreateAppointmentsTable1785100000000,
-        CreateAppointmentSlotsTable1785200000000,
-        CreateServicenowTicketLinksTable1785300000000,
-        CreateAppointmentTimelineTable1785400000000,
-        BackfillAppointmentsFromIncidentsAndRequests1785500000000,
-        DropIncidentsAndRequestsLegacyTables1785600000000,
-        RenamePrincipalNameToUpnOnUsers1785700000000,
-        MakeCompaniesTreeIdNullable1785800000000,
-        FixDevicesLastSyncAtColumnType1785900000000,
-      ],
-      migrationsRun: true,
-    }),
+    // Va primero: TypeOrmModule.forRootAsync (abajo) depende de ConfigService
+    // para leer DB_HOST/DB_PORT/etc — antes TypeOrmModule.forRoot() era un
+    // objeto literal que leía process.env directamente y se evaluaba al
+    // construir este array, ANTES de que ConfigModule cargara
+    // apps/micorner/.env.<env>. En dev nunca se notó porque los defaults
+    // hardcodeados coincidían por casualidad con los valores reales del
+    // .env (localhost/root/root/event_corner) — cambiar esas variables en
+    // el .env no tenía ningún efecto real.
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: [
@@ -145,6 +87,75 @@ import { FixDevicesLastSyncAtColumnType1785900000000 } from './infrastructure/pe
       ],
       validationSchema: micornerEnvSchema,
       validationOptions: { abortEarly: false, allowUnknown: true },
+    }),
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        type: 'mysql',
+        host: config.get<string>('DB_HOST', 'localhost'),
+        port: config.get<number>('DB_PORT', 3306),
+        username: config.get<string>('DB_USERNAME', 'root'),
+        password: config.get<string>('DB_PASSWORD', 'root'),
+        database: config.get<string>('DB_DATABASE', 'event_corner'),
+        entities: [
+          ServiceNowProfileEntity,
+          CompanyEntity,
+          IssueTypeEntity,
+          IssueTypeTreeEntity,
+          CornerEntity,
+          CornerScheduleEntity,
+          ScheduleAssignmentEntity,
+          TechnicianEntity,
+          CornerSlotEntity,
+          UserEntity,
+          DeviceEntity,
+          LockerEntity,
+          AppointmentEntity,
+          AppointmentSlotEntity,
+          AppointmentTimelineEntity,
+          ServiceNowTicketLinkEntity,
+          OutboxEventEntity,
+          CompanyIssueConfigEntity,
+          ServiceNowGroupEntity,
+          BatchDraftEntity,
+          BatchDraftItemEntity,
+        ],
+        // Antes `NODE_ENV !== 'production'`, así que staging también quedaba
+        // con synchronize=true — CLAUDE.md documenta SYNCHRONIZE_DATABASE=false
+        // para staging Y producción; las migraciones (migrationsRun: true más
+        // abajo) son las que deben gobernar el schema fuera de dev.
+        synchronize: config.get<string>('SYNCHRONIZE_DATABASE') === 'true',
+        dropSchema: false,
+        logging: false,
+        // Sin esto, mysql2 usa su default y con replicas>1 el total de
+        // conexiones contra la misma instancia MySQL queda sin acotar por
+        // diseño. Mismo valor que api-snowq-service — ajustar con datos reales
+        // de tráfico si hace falta.
+        extra: { connectionLimit: 10 },
+        migrations: [
+          DropCornerSlotsFKForResync1745088000000,
+          IncreaseOutboxMaxRetries1783641799581,
+          AddUniqueSnowCompanySysIdToServiceNowProfiles1784324876162,
+          WidenSnowqCorrelationIdColumns1784384307249,
+          AddUniqueWindowToCornerSlots1784389154861,
+          WidenIncidentOriginChannel1784481206018,
+          AddSnClassificationToIssueTypes1784600000000,
+          AddCodeToCorners1784700000000,
+          AddIncrementalIssueIdToIncidentsAndRequests1784800000000,
+          AddEstimatedCloseToIncidents1784900000000,
+          WidenIncidentTimelineActionType1785000000000,
+          CreateAppointmentsTable1785100000000,
+          CreateAppointmentSlotsTable1785200000000,
+          CreateServicenowTicketLinksTable1785300000000,
+          CreateAppointmentTimelineTable1785400000000,
+          BackfillAppointmentsFromIncidentsAndRequests1785500000000,
+          DropIncidentsAndRequestsLegacyTables1785600000000,
+          RenamePrincipalNameToUpnOnUsers1785700000000,
+          MakeCompaniesTreeIdNullable1785800000000,
+          FixDevicesLastSyncAtColumnType1785900000000,
+        ],
+        migrationsRun: true,
+      }),
     }),
     ScheduleModule.forRoot(),
     HttpModule,
