@@ -42,26 +42,17 @@ import { CompanyIssueConfigEntity } from './infrastructure/persistence/typeorm/e
 import { ServiceNowGroupEntity } from './infrastructure/persistence/typeorm/entities/servicenow-group.entity';
 import { BatchDraftEntity } from './infrastructure/persistence/typeorm/entities/batch-draft.entity';
 import { BatchDraftItemEntity } from './infrastructure/persistence/typeorm/entities/batch-draft-item.entity';
-import { DropCornerSlotsFKForResync1745088000000 } from './infrastructure/persistence/typeorm/migrations/1745088000000-DropCornerSlotsFKForResync';
-import { IncreaseOutboxMaxRetries1783641799581 } from './infrastructure/persistence/typeorm/migrations/1783641799581-IncreaseOutboxMaxRetries';
-import { AddUniqueSnowCompanySysIdToServiceNowProfiles1784324876162 } from './infrastructure/persistence/typeorm/migrations/1784324876162-AddUniqueSnowCompanySysIdToServiceNowProfiles';
-import { WidenSnowqCorrelationIdColumns1784384307249 } from './infrastructure/persistence/typeorm/migrations/1784384307249-WidenSnowqCorrelationIdColumns';
-import { AddUniqueWindowToCornerSlots1784389154861 } from './infrastructure/persistence/typeorm/migrations/1784389154861-AddUniqueWindowToCornerSlots';
-import { WidenIncidentOriginChannel1784481206018 } from './infrastructure/persistence/typeorm/migrations/1784481206018-WidenIncidentOriginChannel';
-import { AddSnClassificationToIssueTypes1784600000000 } from './infrastructure/persistence/typeorm/migrations/1784600000000-AddSnClassificationToIssueTypes';
-import { AddCodeToCorners1784700000000 } from './infrastructure/persistence/typeorm/migrations/1784700000000-AddCodeToCorners';
-import { AddIncrementalIssueIdToIncidentsAndRequests1784800000000 } from './infrastructure/persistence/typeorm/migrations/1784800000000-AddIncrementalIssueIdToIncidentsAndRequests';
-import { AddEstimatedCloseToIncidents1784900000000 } from './infrastructure/persistence/typeorm/migrations/1784900000000-AddEstimatedCloseToIncidents';
-import { WidenIncidentTimelineActionType1785000000000 } from './infrastructure/persistence/typeorm/migrations/1785000000000-WidenIncidentTimelineActionType';
-import { CreateAppointmentsTable1785100000000 } from './infrastructure/persistence/typeorm/migrations/1785100000000-CreateAppointmentsTable';
-import { CreateAppointmentSlotsTable1785200000000 } from './infrastructure/persistence/typeorm/migrations/1785200000000-CreateAppointmentSlotsTable';
-import { CreateServicenowTicketLinksTable1785300000000 } from './infrastructure/persistence/typeorm/migrations/1785300000000-CreateServicenowTicketLinksTable';
-import { CreateAppointmentTimelineTable1785400000000 } from './infrastructure/persistence/typeorm/migrations/1785400000000-CreateAppointmentTimelineTable';
-import { BackfillAppointmentsFromIncidentsAndRequests1785500000000 } from './infrastructure/persistence/typeorm/migrations/1785500000000-BackfillAppointmentsFromIncidentsAndRequests';
-import { DropIncidentsAndRequestsLegacyTables1785600000000 } from './infrastructure/persistence/typeorm/migrations/1785600000000-DropIncidentsAndRequestsLegacyTables';
-import { RenamePrincipalNameToUpnOnUsers1785700000000 } from './infrastructure/persistence/typeorm/migrations/1785700000000-RenamePrincipalNameToUpnOnUsers';
-import { MakeCompaniesTreeIdNullable1785800000000 } from './infrastructure/persistence/typeorm/migrations/1785800000000-MakeCompaniesTreeIdNullable';
-import { FixDevicesLastSyncAtColumnType1785900000000 } from './infrastructure/persistence/typeorm/migrations/1785900000000-FixDevicesLastSyncAtColumnType';
+// Migraciones consolidadas en una sola (2026-08-31): las 20 migraciones
+// incrementales previas nunca corrieron fuera de development (donde
+// synchronize=true construye el schema directo desde las entidades, así
+// que en la práctica casi nunca se ejecutaban) — sin despliegue real en
+// staging/producción, no había ninguna DB externa con esas migraciones
+// ya registradas en su tabla `migrations` que este squash pudiera romper.
+// InitialSchema1788194786468 crea el schema completo actual desde cero
+// (generada con `migration:generate` contra las entidades + issue_sequences
+// a mano, que es SQL crudo y no un @Entity()) y se verificó columna por
+// columna contra la DB de dev existente antes de reemplazar las 20.
+import { InitialSchema1788194786468 } from './infrastructure/persistence/typeorm/migrations/1788194786468-InitialSchema';
 
 @Module({
   imports: [
@@ -133,26 +124,7 @@ import { FixDevicesLastSyncAtColumnType1785900000000 } from './infrastructure/pe
         // de tráfico si hace falta.
         extra: { connectionLimit: 10 },
         migrations: [
-          DropCornerSlotsFKForResync1745088000000,
-          IncreaseOutboxMaxRetries1783641799581,
-          AddUniqueSnowCompanySysIdToServiceNowProfiles1784324876162,
-          WidenSnowqCorrelationIdColumns1784384307249,
-          AddUniqueWindowToCornerSlots1784389154861,
-          WidenIncidentOriginChannel1784481206018,
-          AddSnClassificationToIssueTypes1784600000000,
-          AddCodeToCorners1784700000000,
-          AddIncrementalIssueIdToIncidentsAndRequests1784800000000,
-          AddEstimatedCloseToIncidents1784900000000,
-          WidenIncidentTimelineActionType1785000000000,
-          CreateAppointmentsTable1785100000000,
-          CreateAppointmentSlotsTable1785200000000,
-          CreateServicenowTicketLinksTable1785300000000,
-          CreateAppointmentTimelineTable1785400000000,
-          BackfillAppointmentsFromIncidentsAndRequests1785500000000,
-          DropIncidentsAndRequestsLegacyTables1785600000000,
-          RenamePrincipalNameToUpnOnUsers1785700000000,
-          MakeCompaniesTreeIdNullable1785800000000,
-          FixDevicesLastSyncAtColumnType1785900000000,
+          InitialSchema1788194786468,
         ],
         migrationsRun: true,
       }),
