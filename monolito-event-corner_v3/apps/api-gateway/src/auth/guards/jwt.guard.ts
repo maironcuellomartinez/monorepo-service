@@ -2,6 +2,8 @@ import {
     CanActivate,
     ExecutionContext,
     Injectable,
+    OnModuleInit,
+    OnModuleDestroy,
     UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -11,6 +13,7 @@ import { IS_INTERNAL } from '../decorators/internal.decorator';
 import { AbacClient } from '../abac.client';
 import { JwtPayload } from '../decorators/current-user.decorator';
 import { JwtEd25519Service } from '@app/ed25519';
+import { RevokedApplicationsPoller } from '@app/shared';
 
 /**
  * JwtGuard — unico guard de autenticacion en api-gateway.
@@ -25,14 +28,27 @@ import { JwtEd25519Service } from '@app/ed25519';
  *                          Client apps siempre usan Entra ID (Bearer token)
  *
  * ABAC es la unica fuente de verdad para tokens de clientes.
- * M2M usa validacion local para ser rapido y resiliente.
+ * M2M usa validacion local (firma Ed25519) para ser rapido y resiliente —
+ * el unico chequeo que sigue consultando a ABAC es la lista de aplicaciones
+ * revocadas (RevokedApplicationsPoller), cacheada en memoria y refrescada
+ * por intervalo, nunca sincrono con el request.
  */
 @Injectable()
-export class JwtGuard implements CanActivate {
+export class JwtGuard implements CanActivate, OnModuleInit, OnModuleDestroy {
+    private readonly revokedApps = new RevokedApplicationsPoller(process.env.ABAC_URL ?? 'http://localhost:3005');
+
     constructor(
         private readonly reflector: Reflector,
         private readonly abacClient: AbacClient,
     ) {}
+
+    onModuleInit(): void {
+        this.revokedApps.start();
+    }
+
+    onModuleDestroy(): void {
+        this.revokedApps.stop();
+    }
 
     async canActivate(ctx: ExecutionContext): Promise<boolean> {
         const handlers = [ctx.getHandler(), ctx.getClass()];
@@ -91,6 +107,10 @@ export class JwtGuard implements CanActivate {
 
         if (result.payload?.type !== 'service') {
             throw new UnauthorizedException('El token no pertenece a una cuenta de servicio');
+        }
+
+        if (this.revokedApps.isRevoked(result.payload?.applicationId)) {
+            throw new UnauthorizedException('Token M2M revocado — la aplicación fue desactivada en ABAC');
         }
 
         // Ecosystem scoping: si el token declara ownerApplicationId, el servicio

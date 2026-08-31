@@ -338,6 +338,30 @@ export class ApplicationService {
         return application;
     }
 
+    /**
+     * IDs de aplicaciones desactivadas — base de la revocación de tokens M2M.
+     *
+     * La verificación M2M es local (firma Ed25519, sin red) por diseño, para
+     * ser rápida y resiliente — así que un token de 180+ días no tiene forma
+     * de invalidarse hoy salvo rotar la clave del ecosistema entero (ver A-07
+     * en la auditoría de 2026-08-31). Cada servicio consumidor cachea esta
+     * lista en memoria y la refresca cada ~30s (ver revoked-applications.poller
+     * en cada guard M2M): desactivar la Application acá revoca sus tokens M2M
+     * en todos los servicios en ese plazo, sin rotar la clave Ed25519 ni tocar
+     * ningún .env. Reactivarla los vuelve a aceptar.
+     *
+     * Devuelve solo IDs (UUIDs no sensibles) — mismo criterio de exposición
+     * que el JWKS endpoint, público sin autenticación para que un servicio
+     * pueda refrescarla incluso si su propio token M2M ya está vencido.
+     */
+    async getRevokedApplicationIds(): Promise<string[]> {
+        const rows = await this.applicationRepository.find({
+            where: { isActive: false },
+            select: ['id'],
+        });
+        return rows.map((r) => r.id);
+    }
+
     async reactivateApplication(appId: string): Promise<void> {
         const application = await this.applicationRepository.findOne({ where: { id: appId } });
         if (!application) throw new NotFoundException('Aplicación no encontrada');

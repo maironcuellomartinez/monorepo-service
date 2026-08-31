@@ -1,7 +1,8 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, OnModuleInit, OnModuleDestroy, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import * as crypto from 'crypto';
+import { RevokedApplicationsPoller } from './revoked-applications.poller';
 
 // ─── EdDSA / Ed25519 ──────────────────────────────────────────────────────────
 
@@ -55,10 +56,29 @@ function verifyEddsaJwt(token: string, publicKeyBase64: string): Record<string, 
  * el propio token, lo que permitía firmar con HS256 usando JWT_SECRET, un
  * secreto compartido entre varios servicios; ver A-06 en la auditoría de
  * 2026-08-31).
+ *
+ * Además de la firma, rechaza tokens de aplicaciones desactivadas en ABAC
+ * (RevokedApplicationsPoller, cacheado en memoria y refrescado por
+ * intervalo — nunca sincrono con el request). Ver A-07 en la misma
+ * auditoría.
  */
 @Injectable()
-export class InternalTokenGuard implements CanActivate {
-    constructor(private readonly configService: ConfigService) {}
+export class InternalTokenGuard implements CanActivate, OnModuleInit, OnModuleDestroy {
+    private readonly revokedApps: RevokedApplicationsPoller;
+
+    constructor(private readonly configService: ConfigService) {
+        this.revokedApps = new RevokedApplicationsPoller(
+            this.configService.get<string>('abac.url') ?? 'http://localhost:3005',
+        );
+    }
+
+    onModuleInit(): void {
+        this.revokedApps.start();
+    }
+
+    onModuleDestroy(): void {
+        this.revokedApps.stop();
+    }
 
     canActivate(context: ExecutionContext): boolean {
         const request = context.switchToHttp().getRequest<Request>();
@@ -87,6 +107,10 @@ export class InternalTokenGuard implements CanActivate {
 
             if (payload?.type !== 'service') {
                 throw new UnauthorizedException('El token no pertenece a una cuenta de servicio');
+            }
+
+            if (this.revokedApps.isRevoked(payload?.applicationId)) {
+                throw new UnauthorizedException('Token M2M revocado — la aplicación fue desactivada en ABAC');
             }
 
             // Ecosystem scoping: si el token declara ownerApplicationId, el

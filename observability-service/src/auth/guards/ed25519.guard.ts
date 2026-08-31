@@ -1,12 +1,23 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, OnModuleInit, OnModuleDestroy, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IS_PUBLIC } from '../decorators/public.decorator';
 import { JwtEd25519Service } from '../../common/jwt-ed25519.service';
+import { RevokedApplicationsPoller } from '../../common/revoked-applications.poller';
 
 @Injectable()
-export class Ed25519Guard implements CanActivate {
+export class Ed25519Guard implements CanActivate, OnModuleInit, OnModuleDestroy {
+    private readonly revokedApps = new RevokedApplicationsPoller(process.env.ABAC_URL ?? 'http://localhost:3005');
+
     constructor(private readonly reflector: Reflector) {}
+
+    onModuleInit(): void {
+        this.revokedApps.start();
+    }
+
+    onModuleDestroy(): void {
+        this.revokedApps.stop();
+    }
 
     canActivate(ctx: ExecutionContext): boolean {
         const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
@@ -32,6 +43,10 @@ export class Ed25519Guard implements CanActivate {
 
         if (!result.valid) throw new UnauthorizedException(`Token inválido: ${result.error}`);
         if (result.payload?.type !== 'service') throw new UnauthorizedException('Solo tokens de servicio M2M');
+
+        if (this.revokedApps.isRevoked(result.payload?.applicationId)) {
+            throw new UnauthorizedException('Token M2M revocado — la aplicación fue desactivada en ABAC');
+        }
 
         return true;
     }

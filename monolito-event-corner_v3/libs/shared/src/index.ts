@@ -4,3 +4,4 @@ export * from './aggregate-root';
 export * from './entity';
 export * from './domain-event';
 export * from './guards/m2m-jwt.guard';
+export * from './guards/revoked-applications.poller';

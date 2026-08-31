@@ -1,8 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, OnModuleInit, OnModuleDestroy, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { JwtEd25519Service } from '@app/ed25519';
+import { RevokedApplicationsPoller } from '@app/shared';
 import { IS_PUBLIC } from '../decorators/public.decorator';
 
 /**
@@ -13,13 +14,32 @@ import { IS_PUBLIC } from '../decorators/public.decorator';
  * Se monta como APP_GUARD, que NestJS aplica a toda la aplicación —no solo a
  * internal-api, donde se declara—, así que necesita una vía de exención para
  * las rutas que deben quedar abiertas (las sondas de salud). Ver @Public().
+ *
+ * Además de la firma, rechaza tokens de aplicaciones desactivadas en ABAC
+ * (RevokedApplicationsPoller, cacheado en memoria y refrescado por
+ * intervalo — nunca sincrono con el request). Ver A-07 en la auditoría de
+ * 2026-08-31: antes un token M2M no tenía forma de revocarse antes de su
+ * expiración (hasta 180+ días) salvo rotar la clave Ed25519 del ecosistema
+ * entero.
  */
 @Injectable()
-export class InternalTokenGuard implements CanActivate {
+export class InternalTokenGuard implements CanActivate, OnModuleInit, OnModuleDestroy {
+    private readonly revokedApps: RevokedApplicationsPoller;
+
     constructor(
         private readonly config: ConfigService,
         private readonly reflector: Reflector,
-    ) {}
+    ) {
+        this.revokedApps = new RevokedApplicationsPoller(this.config.get<string>('ABAC_URL') ?? 'http://localhost:3005');
+    }
+
+    onModuleInit(): void {
+        this.revokedApps.start();
+    }
+
+    onModuleDestroy(): void {
+        this.revokedApps.stop();
+    }
 
     canActivate(context: ExecutionContext): boolean {
         const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
@@ -53,6 +73,10 @@ export class InternalTokenGuard implements CanActivate {
 
         if (result.payload?.type !== 'service') {
             throw new UnauthorizedException('El token no pertenece a una cuenta de servicio');
+        }
+
+        if (this.revokedApps.isRevoked(result.payload?.applicationId)) {
+            throw new UnauthorizedException('Token M2M revocado — la aplicación fue desactivada en ABAC');
         }
 
         // Ecosystem scoping: si el token declara ownerApplicationId, el servicio

@@ -1,6 +1,7 @@
 import { Controller, Post, Body, Get, HttpCode, UnauthorizedException, BadRequestException, UseGuards, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from '../services/auth.service';
+import { ApplicationService } from '../services/application.service';
 import { AdminLoginDto, ServiceTokenDto, OAuthTokenDto, ValidateEntraTokenDto, SimulateEntraDto } from '../dtos/auth.dto';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
@@ -11,7 +12,10 @@ import { JwtEd25519Service } from '../../common/crypto/jwt-ed25519.service';
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-    constructor(private authService: AuthService) { }
+    constructor(
+        private authService: AuthService,
+        private applicationService: ApplicationService,
+    ) { }
 
     @Post('admin/login')
     @HttpCode(200)
@@ -232,5 +236,20 @@ export class AuthController {
                 x,
             }],
         };
+    }
+
+    /**
+     * Lista de applicationId revocados — cada servicio la cachea en memoria
+     * y la refresca cada ~30s para rechazar tokens M2M de aplicaciones
+     * desactivadas sin depender de su expiración (ver A-07 en la auditoría
+     * de 2026-08-31 y el comentario en ApplicationService.getRevokedApplicationIds).
+     * Público como el JWKS: sin esto, un servicio con el token vencido o a
+     * punto de vencer no podría refrescar la lista para saber que debe
+     * seguir rechazando revocaciones ya conocidas.
+     */
+    @Get('revoked-applications')
+    @ApiOperation({ summary: 'IDs de aplicaciones desactivadas — base de la revocación M2M' })
+    async getRevokedApplications() {
+        return { applicationIds: await this.applicationService.getRevokedApplicationIds() };
     }
 }
