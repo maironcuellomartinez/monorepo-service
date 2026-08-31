@@ -9,6 +9,7 @@ import { Application } from '../../entities/application.entity';
 import { RuleValidator } from '../utils/rule-validator.util';
 import { LoggerService } from '../../observability';
 import { AuditService } from './audit.service';
+import { AbacService } from './abac.service';
 import { AuditAction, EntityType } from '../../entities';
 import { CreatePolicyDto, CreatePolicyRuleDto, PolicyFilters, UpdatePolicyDto } from '../dtos/policy-request.dto';
 
@@ -28,6 +29,7 @@ export class PolicyService {
         private dataSource: DataSource,
         private auditService: AuditService,
         private logger: LoggerService,
+        private abacService: AbacService,
     ) { }
 
     /**
@@ -217,6 +219,7 @@ export class PolicyService {
 
             const updatedPolicy = await queryRunner.manager.save(policy);
             await queryRunner.commitTransaction();
+            await this.abacService.invalidateApplicationCache(policy.applicationId);
 
             // Registrar auditoría
             const changes = this.getChanges(previousState, updatedPolicy);
@@ -267,6 +270,7 @@ export class PolicyService {
 
             await queryRunner.manager.delete(Policy, { id: policyId });
             await queryRunner.commitTransaction();
+            await this.abacService.invalidateApplicationCache(policy.applicationId);
 
             // Registrar auditoría
             await this.auditService.logCrudEvent(AuditAction.DELETE, {
@@ -335,6 +339,7 @@ export class PolicyService {
 
             const savedRule = await queryRunner.manager.save(rule);
             await queryRunner.commitTransaction();
+            await this.abacService.invalidateApplicationCache(policy.applicationId);
 
             // Registrar auditoría
             await this.auditService.logCrudEvent(AuditAction.CREATE, {
@@ -410,6 +415,7 @@ export class PolicyService {
 
             const savedRelation = await queryRunner.manager.save(policyPermission);
             await queryRunner.commitTransaction();
+            await this.abacService.invalidateApplicationCache(policy.applicationId);
 
             // Registrar auditoría
             await this.auditService.logCrudEvent(AuditAction.PERMISSION_GRANT, {
@@ -473,6 +479,7 @@ export class PolicyService {
             }
 
             await queryRunner.commitTransaction();
+            await this.abacService.invalidateApplicationCache(policy.applicationId);
 
             // Registrar auditoría
             await this.auditService.logCrudEvent(AuditAction.PERMISSION_REVOKE, {
@@ -528,6 +535,7 @@ export class PolicyService {
             }
 
             await queryRunner.commitTransaction();
+            await this.abacService.invalidateApplicationCache(rule.policy.applicationId);
 
             // Registrar auditoría
             await this.auditService.logCrudEvent(AuditAction.DELETE, {
@@ -589,6 +597,7 @@ export class PolicyService {
             );
 
             await queryRunner.commitTransaction();
+            await this.abacService.invalidateApplicationCache(policy.applicationId);
 
             // Registrar auditoría
             await this.auditService.logCrudEvent(AuditAction.DEACTIVATE, {
@@ -645,6 +654,7 @@ export class PolicyService {
             );
 
             await queryRunner.commitTransaction();
+            await this.abacService.invalidateApplicationCache(policy.applicationId);
 
             // Registrar auditoría
             await this.auditService.logCrudEvent(AuditAction.REACTIVATE, {

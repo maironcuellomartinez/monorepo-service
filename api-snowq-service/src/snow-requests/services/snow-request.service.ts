@@ -123,6 +123,7 @@ export class SnowRequestService {
     correlationId: string,
     error: string,
     retryAfterMs?: number,
+    statusCode?: number,
   ): Promise<void> {
     const entity = await this.repo.findOne({ where: { correlationId } });
     if (!entity) return;
@@ -138,6 +139,7 @@ export class SnowRequestService {
           status: STATUS.FAILED,
           retryCount: newRetryCount,
           lastError: error.substring(0, 500),
+          lastErrorStatusCode: statusCode ?? null,
         },
       );
     } else {
@@ -151,17 +153,19 @@ export class SnowRequestService {
           retryCount: newRetryCount,
           nextRetryAt: new Date(Date.now() + delayMs),
           lastError: error.substring(0, 500),
+          lastErrorStatusCode: statusCode ?? null,
         },
       );
     }
   }
 
-  async markAsFailed(correlationId: string, error?: string): Promise<void> {
+  async markAsFailed(correlationId: string, error?: string, statusCode?: number): Promise<void> {
     await this.repo.update(
       { correlationId },
       {
         status: STATUS.FAILED,
         ...(error ? { lastError: error.substring(0, 500) } : {}),
+        lastErrorStatusCode: statusCode ?? null,
       },
     );
   }

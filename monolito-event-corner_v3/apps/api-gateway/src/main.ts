@@ -41,11 +41,18 @@ async function bootstrap() {
     app.getHttpAdapter().getInstance().set('trust proxy', 1);
   }
 
+  // origin:true refleja el Origin entrante — con credentials:true eso es
+  // "cualquier sitio, con cookies/Authorization". Solo aceptable en
+  // development; si CORS_ORIGINS falta en staging/prod, cerrar (array
+  // vacío) en vez de abrir por default (ver M-09 en la auditoría de
+  // 2026-08-31 — mismo criterio que ya aplica abac-microservice/src/main.ts).
   const corsOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(',')
         .map((o) => o.trim())
         .filter(Boolean)
-    : true;
+    : env === 'development'
+      ? true
+      : [];
   app.enableCors({
     origin: corsOrigins,
     credentials: true,

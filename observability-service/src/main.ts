@@ -17,7 +17,39 @@ process.on('unhandledRejection', (reason) => {
     );
 });
 
+// Era el único servicio del ecosistema sin esta validación de arranque — si
+// falta ED25519_PUBLIC_KEY, Ed25519Guard rechaza CADA request entrante con
+// 401 y el primer síntoma visible es que dejan de llegar logs/métricas/
+// trazas de los seis servicios, sin ningún error explícito en el propio
+// observability-service (ver M-10 en la auditoría de 2026-08-31).
+function validateConfig(): void {
+    if ((process.env.NODE_ENV ?? 'development') === 'development') return;
+
+    const required: Record<string, string> = {
+        ED25519_PUBLIC_KEY: 'Clave pública Ed25519 para verificar los Bearer M2M entrantes (base64)',
+    };
+
+    const invalid = Object.entries(required).filter(
+        ([key]) => !process.env[key] || process.env[key]!.startsWith('CHANGE_ME'),
+    );
+
+    if (invalid.length > 0) {
+        const lines = invalid.map(([key, desc]) => `  • ${key} — ${desc}`).join('\n');
+        throw new Error(
+            `Variables de entorno requeridas no configuradas:\n${lines}\n` +
+            `Revisa el archivo .env.${process.env.NODE_ENV} antes de iniciar el servicio.`,
+        );
+    }
+}
+
 async function bootstrap() {
+    try {
+        validateConfig();
+    } catch (err: any) {
+        console.error(`\n[Bootstrap] ${err.message}\n`);
+        process.exit(1);
+    }
+
     const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
     // NO se replica acá el rechazo 426 "solo HTTPS" de api-middleware-service:
@@ -37,10 +69,12 @@ async function bootstrap() {
         app.getHttpAdapter().getInstance().set('trust proxy', 1);
     }
 
+    // Si CORS_ORIGINS falta en staging/prod, cerrar (array vacío) en vez de
+    // abrir por default (ver M-09 en la auditoría de 2026-08-31).
     app.enableCors({
         origin: process.env.CORS_ORIGINS
             ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
-            : true,
+            : env === 'development' ? true : [],
         methods: ['GET', 'POST', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],
     });

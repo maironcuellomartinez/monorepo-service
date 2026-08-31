@@ -61,6 +61,7 @@ export class PolicyController {
      * @returns The policy details.
      */
     @Get(':id')
+    @Roles('admin')
     @ApiOperation({ summary: 'Obtener política por ID' })
     async getPolicyById(@Param('id') id: string) {
         return this.policyService.getPolicyById(id);
@@ -73,6 +74,7 @@ export class PolicyController {
      * @returns The updated policy.
      */
     @Put(':id')
+    @Roles('admin')
     @ApiOperation({ summary: 'Actualizar política' })
     async updatePolicy(
         @Param('id') id: string,
@@ -87,6 +89,7 @@ export class PolicyController {
      * @param deletedBy The user who is deactivating the policy.
      */
     @Delete(':id')
+    @Roles('admin')
     @HttpCode(HttpStatus.NO_CONTENT)
     @ApiOperation({ summary: 'Desactivar política' })
     async deactivatePolicy(
@@ -102,6 +105,7 @@ export class PolicyController {
      * @param reactivatedBy The user who is reactivating the policy.
      */
     @Post(':id/reactivate')
+    @Roles('admin')
     @HttpCode(HttpStatus.NO_CONTENT)
     @ApiOperation({ summary: 'Reactivar política' })
     async reactivatePolicy(
@@ -118,6 +122,7 @@ export class PolicyController {
      * @returns The created rule.
      */
     @Post(':id/rules')
+    @Roles('admin')
     @ApiOperation({ summary: 'Agregar regla a política' })
     async addPolicyRule(
         @Param('id') policyId: string,
@@ -132,6 +137,7 @@ export class PolicyController {
      * @returns A list of rules.
      */
     @Get(':id/rules')
+    @Roles('admin')
     @ApiOperation({ summary: 'Obtener reglas de política' })
     async getPolicyRules(@Param('id') policyId: string) {
         return this.policyService.getPolicyRules(policyId);
@@ -143,6 +149,7 @@ export class PolicyController {
      * @param deletedBy The user who is deleting the rule.
      */
     @Delete('rules/:ruleId')
+    @Roles('admin')
     @HttpCode(HttpStatus.NO_CONTENT)
     @ApiOperation({ summary: 'Eliminar regla de política' })
     async deletePolicyRule(
@@ -161,6 +168,7 @@ export class PolicyController {
      * @returns The created policy-permission relation.
      */
     @Post(':id/permissions/:permissionId')
+    @Roles('admin')
     @ApiOperation({ summary: 'Agregar permiso a política' })
     async addPermissionToPolicy(
         @Param('id') policyId: string,
@@ -176,6 +184,7 @@ export class PolicyController {
      * @returns A list of permissions.
      */
     @Get(':id/permissions')
+    @Roles('admin')
     @ApiOperation({ summary: 'Obtener permisos de política' })
     async getPolicyPermissions(@Param('id') policyId: string) {
         return this.policyService.getPolicyPermissions(policyId);
@@ -188,6 +197,7 @@ export class PolicyController {
      * @param deletedBy The user who is removing the permission.
      */
     @Delete(':id/permissions/:permissionId')
+    @Roles('admin')
     @HttpCode(HttpStatus.NO_CONTENT)
     @ApiOperation({ summary: 'Remover permiso de política' })
     async removePermissionFromPolicy(
@@ -204,6 +214,7 @@ export class PolicyController {
      * @returns Validation result.
      */
     @Post('validate-rule')
+    @Roles('admin')
     @ApiOperation({ summary: 'Validar condición de regla' })
     async validateRuleCondition(@Body('condition') condition: any) {
         return this.policyService.validateRuleCondition(condition);

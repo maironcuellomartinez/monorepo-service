@@ -69,6 +69,8 @@ export interface SnowqStatusResult {
   sysId?: string;
   snowNumber?: string;
   lastError?: string | null;
+  /** Status HTTP que originó lastError (ver ServiceNowErrorFactory en api-snowq-service). Ausente en registros previos a este campo. */
+  lastErrorStatusCode?: number | null;
   retryCount?: number;
   maxRetries?: number;
 }

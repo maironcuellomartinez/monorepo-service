@@ -78,6 +78,18 @@ export class SnowRequestEntity {
     lastError: string | null;
 
     /**
+     * Status HTTP que originó `lastError`, cuando se conoce (ver
+     * ServiceNowErrorFactory: 400/404/422 → fatal, 401/403 → auth,
+     * 408/429/5xx → temporal). Permite a los consumidores (ej. el
+     * ReconcilerJob del micorner) clasificar el error sin tener que
+     * adivinar leyendo substrings del mensaje — un ticket "INC0004041" o
+     * un mensaje con "422" adentro no debe leerse como un status real
+     * (ver M-03 en la auditoría de 2026-08-31).
+     */
+    @Column({ nullable: true, type: 'int' })
+    lastErrorStatusCode: number | null;
+
+    /**
      * Fecha en que el ticket fue resuelto en ServiceNow (recovery de Nagios).
      * Solo aplica a registros DELIVERED con fingerprint.
      *

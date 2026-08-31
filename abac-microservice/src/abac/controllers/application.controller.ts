@@ -111,6 +111,7 @@ export class ApplicationController {
      * El nuevo secret se muestra solo esta vez.
      */
     @Post(':id/regenerate-api-key')
+    @Roles('admin')
     @ApiOperation({ summary: 'Regenerar API Key de aplicación interna' })
     @ApiParam({ name: 'id', description: 'UUID de la aplicación' })
     async regenerateApiKey(
@@ -124,6 +125,7 @@ export class ApplicationController {
      * Valida un API Key + Secret. Uso interno / debugging.
      */
     @Post('validate-api-key')
+    @Roles('admin')
     @ApiOperation({ summary: 'Validar API Key y Secret' })
     async validateApiKey(
         @Body('apiKey') apiKey: string,

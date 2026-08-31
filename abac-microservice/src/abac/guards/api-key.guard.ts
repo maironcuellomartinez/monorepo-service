@@ -96,16 +96,16 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     private extractApiKeyFromRequest(request: Request): string | null {
-        // Check multiple sources for API key
+        // Solo headers — nunca query string. `CustomLog … combined` (Apache,
+        // ver deploy/apache-staging.conf) escribe la línea de request
+        // completa a disco, con query incluida: una API key en `?api_key=`
+        // queda en el log del servidor, en el historial del navegador y en
+        // el Referer hacia terceros (ver M-05 en la auditoría de 2026-08-31).
         const sources = [
             // X-API-Key header (fuente principal)
             () => request.headers['x-api-key'] as string,
             // Custom header
             () => request.headers['api-key'] as string,
-            // Query parameter
-            () => request.query.api_key as string,
-            // Body (for POST requests)
-            () => request.body?.apiKey,
         ];
 
         for (const source of sources) {

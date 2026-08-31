@@ -5,6 +5,7 @@ import { AdminLoginDto, ServiceTokenDto, OAuthTokenDto, ValidateEntraTokenDto, S
 import { ApiKeyGuard } from '../guards/api-key.guard';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { RolesGuard } from '../guards/roles.guard';
+import { Roles } from '../decorators/roles.decorator';
 import { JwtEd25519Service } from '../../common/crypto/jwt-ed25519.service';
 
 @ApiTags('Auth')
@@ -168,7 +169,8 @@ export class AuthController {
      */
     @Post('admin/keypair')
     @HttpCode(200)
-    @UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('super-admin')
     @ApiBearerAuth()
     @ApiOperation({
         summary: 'Generar nuevo keypair Ed25519 (solo super-admin)',

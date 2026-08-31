@@ -384,6 +384,7 @@ export class SnowRequestQueueController {
             sysId: entity.sysId ?? null,
             snowNumber: entity.snowNumber ?? null,
             lastError: entity.lastError ?? null,
+            lastErrorStatusCode: entity.lastErrorStatusCode ?? null,
             retryCount: entity.retryCount,
             maxRetries: entity.maxRetries,
             nextRetryAt: entity.nextRetryAt,

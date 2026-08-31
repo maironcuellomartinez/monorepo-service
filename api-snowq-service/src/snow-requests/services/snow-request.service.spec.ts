@@ -174,7 +174,7 @@ describe('SnowRequestService', () => {
 
       expect(repo.update).toHaveBeenCalledWith(
         { correlationId: 'corr-id' },
-        { status: STATUS.FAILED, lastError: 'Error de prueba' },
+        { status: STATUS.FAILED, lastError: 'Error de prueba', lastErrorStatusCode: null },
       );
     });
 
@@ -185,7 +185,7 @@ describe('SnowRequestService', () => {
 
       expect(repo.update).toHaveBeenCalledWith(
         { correlationId: 'corr-id' },
-        { status: STATUS.FAILED },
+        { status: STATUS.FAILED, lastErrorStatusCode: null },
       );
     });
   });

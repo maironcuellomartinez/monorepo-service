@@ -106,16 +106,39 @@ export class SnowOrphanRecoveryJob {
                 }
                 const link = linkResult.unwrap();
 
+                // Persistir el link PENDING ANTES de encolar en snowq — no al
+                // revés. findOrphanedTicketAppointments excluye citas con un
+                // link PENDING/ACTIVE, así que guardarlo primero es lo que
+                // evita que el próximo ciclo la vuelva a tomar como huérfana
+                // mientras el ticket ya está en camino. Con el orden
+                // anterior (encolar y recién ahí guardar), un fallo al
+                // persistir dejaba un ticket real creándose en ServiceNow
+                // sin ningún rastro acá — la cita seguía huérfana y el
+                // siguiente ciclo generaba OTRO ticket duplicado para la
+                // misma cita, indefinidamente (ver M-02 en la auditoría de
+                // 2026-08-31).
+                const savePendingResult = await this.ticketLinkRepo.save(link);
+                if (savePendingResult.isFailure) {
+                    this.logger.error(`SnowOrphanRecoveryJob: appointment=${appointment.id} — error persistiendo el link: ${savePendingResult.unwrapError().message}`);
+                    continue;
+                }
+
                 // Re-encolar en snowq (async only) — el ReconcilerJob obtendrá sysId+number.
                 const enqueueResult = await this.snService.reQueueTicket(appointment, link, company);
                 if (enqueueResult.isFailure) {
                     this.logger.error(`SnowOrphanRecoveryJob: appointment=${appointment.id} — snowq no disponible: ${enqueueResult.unwrapError().message}`);
+                    link.abandon();
+                    const abandonResult = await this.ticketLinkRepo.save(link);
+                    if (abandonResult.isFailure) {
+                        this.logger.error(`SnowOrphanRecoveryJob: appointment=${appointment.id} — no se pudo abandonar el link tras fallo de encolado: ${abandonResult.unwrapError().message}`);
+                    }
                     continue;
                 }
 
+                // reQueueTicket mutó `link` con el correlationId (markDeferred) — persistir el estado final.
                 const saveResult = await this.ticketLinkRepo.save(link);
                 if (saveResult.isFailure) {
-                    this.logger.error(`SnowOrphanRecoveryJob: appointment=${appointment.id} — error persistiendo el link: ${saveResult.unwrapError().message}`);
+                    this.logger.error(`SnowOrphanRecoveryJob: appointment=${appointment.id} — error persistiendo correlationId del link: ${saveResult.unwrapError().message}`);
                     continue;
                 }
 

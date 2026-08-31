@@ -39,12 +39,14 @@ export const configuration = () => ({
     },
 
     security: {
-        jwtSecret: process.env.JWT_SECRET,
         apiKey: process.env.API_KEY,
+        jwtIssuer: process.env.JWT_ISSUER || 'abac-service',
+        jwtAudience: process.env.JWT_AUDIENCE || 'abac-clients',
     },
 
     abac: {
         url: process.env.ABAC_URL || 'http://localhost:3005',
+        appId: process.env.ABAC_APP_ID || '',
         m2mToken: process.env.ABAC_M2M_TOKEN || '',
     },
 });
