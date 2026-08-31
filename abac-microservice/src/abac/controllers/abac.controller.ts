@@ -1,4 +1,5 @@
-import { Controller, Post, Body, UseGuards, HttpCode, Get, Param, Query } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, HttpCode, Get, Param, Query, Req, ForbiddenException } from '@nestjs/common';
+import { Request } from 'express';
 import { ApiKeyGuard } from '../guards/api-key.guard';
 import { AbacService } from '../services/abac.service';
 import { AuditAction, AuditService } from '../services/audit.service';
@@ -14,11 +15,31 @@ export class AbacController {
     private logger: LoggerService,
   ) { }
 
+  /**
+   * El caller (identificado por su x-api-key vía ApiKeyGuard) solo puede
+   * evaluar/consultar accesos sobre su propia aplicación — sin este check,
+   * cualquier servicio con una API key válida podía consultar y enumerar
+   * autorizaciones del ecosistema de otro (ver M-07 en la auditoría de
+   * 2026-08-31). Los callers legítimos de este ecosistema siempre piden por
+   * su propio ABAC_APP_ID (ver AbacClient del gateway/micorner/snowq), así
+   * que esto no restringe ningún uso real.
+   */
+  private assertOwnApplication(request: Request, applicationId: string): void {
+    const callerAppId = (request as any).application?.id;
+    if (callerAppId && applicationId !== callerAppId) {
+      throw new ForbiddenException(
+        'La API key no está autorizada para consultar esta aplicación',
+      );
+    }
+  }
+
   @Post('can-access')
   @HttpCode(200)
   @TrackPerformance()
   @BusinessMetric('abac_can_access', { endpoint: 'can-access' })
-  async canAccess(@Body() body: CanAccessDto) {
+  async canAccess(@Body() body: CanAccessDto, @Req() req: Request) {
+    this.assertOwnApplication(req, body.applicationId);
+
     const result = await this.abacService.canAccess(
       body.userId,
       body.applicationId,
@@ -49,7 +70,9 @@ export class AbacController {
   async getUserRoles(
     @Query('userId') userId: string,
     @Query('applicationId') applicationId: string,
+    @Req() req: Request,
   ) {
+    this.assertOwnApplication(req, applicationId);
     const roles = await this.abacService.getUserRoles(userId, applicationId);
     return { roles: roles.map(r => r.name) };
   }
@@ -58,7 +81,11 @@ export class AbacController {
   @HttpCode(200)
   @TrackPerformance()
   @BusinessMetric('abac_batch_evaluate', { endpoint: 'batch-evaluate' })
-  async batchEvaluate(@Body() body: BatchEvaluateDto) {
+  async batchEvaluate(@Body() body: BatchEvaluateDto, @Req() req: Request) {
+    for (const item of body.requests) {
+      this.assertOwnApplication(req, item.applicationId);
+    }
+
     const results = await Promise.all(
       body.requests.map((request) =>
         this.abacService.canAccess(

@@ -218,6 +218,22 @@ export class WinstonHttpTransport extends Transport implements OnModuleDestroy {
 
     this.send(batch)
       .then(({ ok, failed, error }) => {
+        if (failed > 0) {
+          // Reinsertar al frente del buffer para reintentar en el próximo
+          // flush — sin esto, cualquier fallo de envío (o los 30s que el
+          // circuit breaker está abierto, justo cuando algo se está
+          // rompiendo) descartaba el batch sin dejar rastro en
+          // observability (ver M-11 en la auditoría de 2026-08-31).
+          // Respeta MAX_BUFFER: prioriza logs nuevos sobre reintentar los
+          // viejos si el buffer ya está lleno.
+          const room = this.MAX_BUFFER - this.buffer.length;
+          if (room > 0) {
+            this.buffer.unshift(...batch.slice(0, room));
+          }
+          if (batch.length > room) {
+            this.droppedCount += batch.length - Math.max(room, 0);
+          }
+        }
         // No loguear fallo si el CB ya está abierto — el onStateChange ya avisó
         if (failed > 0 && !cbOpen) {
           this.logger.warn(
@@ -259,11 +275,16 @@ export class WinstonHttpTransport extends Transport implements OnModuleDestroy {
     }
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
+    // Antes disparaba los send() sin esperarlos y llamaba a agent.destroy()
+    // en la misma vuelta de síncrono — destruía los sockets que esos
+    // envíos todavía necesitaban, así que el flush final estaba
+    // garantizado a no completarse nunca (ver M-11 en la auditoría de
+    // 2026-08-31).
     while (this.buffer.length > 0) {
       const batch = this.buffer.splice(0, this.BATCH_SIZE);
-      this.send(batch).catch(() => {});
+      await this.send(batch).catch(() => {});
     }
     this.agent.destroy();
   }

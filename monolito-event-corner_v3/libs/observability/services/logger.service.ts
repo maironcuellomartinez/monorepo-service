@@ -172,8 +172,12 @@ export class LoggerService implements NestLoggerService, OnModuleDestroy {
   // Shutdown
   // ======================================================
 
-  onModuleDestroy(): void {
-    this.httpTransport.onModuleDestroy();
+  async onModuleDestroy(): Promise<void> {
+    // await: WinstonHttpTransport.onModuleDestroy() ahora espera a que el
+    // flush final termine antes de cerrar el socket — sin este await acá,
+    // NestJS sigue el shutdown sin esperarlo igual (ver M-11 en la
+    // auditoría de 2026-08-31).
+    await this.httpTransport.onModuleDestroy();
     this.winston.end();
   }
 }

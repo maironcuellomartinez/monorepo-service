@@ -7,6 +7,7 @@ import { UserRole } from '../../entities/user-role.entity';
 import { UserApplication } from '../../entities/user-application.entity';
 import { Role } from '../../entities/role.entity';
 import { AuditService, } from './audit.service';
+import { AbacService } from './abac.service';
 import { LoggerService } from '../../observability';
 import { AuditAction, EntityType } from '../../entities';
 
@@ -24,6 +25,7 @@ export class UserService {
         private dataSource: DataSource,
         private auditService: AuditService,
         private logger: LoggerService,
+        private abacService: AbacService,
     ) { }
 
     async createUser(createDto: {
@@ -239,6 +241,7 @@ export class UserService {
             );
 
             await queryRunner.commitTransaction();
+            await this.abacService.invalidateAllUserCache(userId);
 
             // Auditoría
             await this.auditService.logCrudEvent(AuditAction.DEACTIVATE, {
@@ -266,6 +269,7 @@ export class UserService {
         const user = await this.userRepository.findOne({ where: { id: userId } });
         if (!user) throw new NotFoundException('Usuario no encontrado');
         await this.userRepository.update({ id: userId }, { isActive: true, updatedBy });
+        await this.abacService.invalidateAllUserCache(userId);
         await this.auditService.logCrudEvent(AuditAction.UPDATE, {
             entityType: EntityType.USER,
             entityId: userId,
@@ -289,6 +293,7 @@ export class UserService {
             await qr.manager.delete(UserApplication, { userId });
             await qr.manager.delete(User, { id: userId });
             await qr.commitTransaction();
+            await this.abacService.invalidateAllUserCache(userId);
             this.logger.log('Usuario eliminado permanentemente', 'USER', { userId });
         } catch (err) {
             await qr.rollbackTransaction();
@@ -346,6 +351,7 @@ export class UserService {
             // Reactivar
             existing.isActive = true;
             const saved = await this.userRoleRepository.save(existing);
+            await this.abacService.invalidateUserCache(userId, applicationId);
             this.logger.log(`Rol reactivado: user=${userId} role=${role.name}`, 'USER');
             return saved;
         }
@@ -359,6 +365,7 @@ export class UserService {
         });
 
         const saved = await this.userRoleRepository.save(userRole);
+        await this.abacService.invalidateUserCache(userId, applicationId);
 
         this.logger.log(`Rol asignado: user=${userId} role=${role.name}`, 'USER');
 
@@ -382,6 +389,7 @@ export class UserService {
 
         userRole.isActive = false;
         await this.userRoleRepository.save(userRole);
+        await this.abacService.invalidateUserCache(userId, userRole.applicationId);
 
         this.logger.log(`Rol removido: user=${userId} role=${roleId}`, 'USER');
     }
@@ -414,7 +422,9 @@ export class UserService {
             }
             existing.isActive = true;
             existing.membershipType = membershipType;
-            return this.userApplicationRepository.save(existing);
+            const saved = await this.userApplicationRepository.save(existing);
+            await this.abacService.invalidateUserCache(userId, applicationId);
+            return saved;
         }
 
         const ua = this.userApplicationRepository.create({
@@ -426,6 +436,7 @@ export class UserService {
         });
 
         const saved = await this.userApplicationRepository.save(ua);
+        await this.abacService.invalidateUserCache(userId, applicationId);
         this.logger.log(`App asignada: user=${userId} app=${applicationId}`, 'USER');
         return saved;
     }
@@ -443,6 +454,7 @@ export class UserService {
 
         ua.isActive = false;
         await this.userApplicationRepository.save(ua);
+        await this.abacService.invalidateUserCache(userId, applicationId);
 
         this.logger.log(`App desvinculada: user=${userId} app=${applicationId}`, 'USER');
     }

@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { RolesGuard } from '../guards/roles.guard';
 import { Roles } from '../decorators';
 import { AuditService } from '../services/audit.service';
+import { AbacService } from '../services/abac.service';
 import { AuditAction, EntityType } from '../../entities';
 
 @ApiTags('Roles')
@@ -26,6 +27,7 @@ export class RoleController {
         @InjectRepository(UserRole) private userRoleRepository: Repository<UserRole>,
         private dataSource: DataSource,
         private auditService: AuditService,
+        private abacService: AbacService,
     ) { }
 
     @Get()
@@ -136,6 +138,7 @@ export class RoleController {
 
         role.isActive = false;
         await this.roleRepository.save(role);
+        await this.abacService.invalidateApplicationCache(role.applicationId);
 
         this.auditService.logCrudEvent(AuditAction.DEACTIVATE, {
             entityType: EntityType.ROLE,
@@ -157,6 +160,7 @@ export class RoleController {
 
         role.isActive = true;
         await this.roleRepository.save(role);
+        await this.abacService.invalidateApplicationCache(role.applicationId);
 
         this.auditService.logCrudEvent(AuditAction.REACTIVATE, {
             entityType: EntityType.ROLE,
@@ -185,6 +189,7 @@ export class RoleController {
             await qr.manager.delete(RolePermission, { roleId: id });
             await qr.manager.delete(Role, { id });
             await qr.commitTransaction();
+            await this.abacService.invalidateApplicationCache(role.applicationId);
 
             this.auditService.logCrudEvent(AuditAction.DELETE, {
                 entityType: EntityType.ROLE,
@@ -235,7 +240,9 @@ export class RoleController {
             }
             existing.isActive = true;
             existing.effect = body.effect || 'allow';
-            return this.rolePermRepository.save(existing);
+            const saved = await this.rolePermRepository.save(existing);
+            await this.abacService.invalidateApplicationCache(role.applicationId);
+            return saved;
         }
 
         const rp = this.rolePermRepository.create({
@@ -244,7 +251,9 @@ export class RoleController {
             effect: body.effect || 'allow',
         });
 
-        return this.rolePermRepository.save(rp);
+        const saved = await this.rolePermRepository.save(rp);
+        await this.abacService.invalidateApplicationCache(role.applicationId);
+        return saved;
     }
 
     @Delete(':id/permissions/:permissionId')
@@ -256,8 +265,11 @@ export class RoleController {
         });
         if (!rp) throw new NotFoundException('Asignación no encontrada');
 
+        const role = await this.roleRepository.findOne({ where: { id } });
+
         rp.isActive = false;
         await this.rolePermRepository.save(rp);
+        if (role) await this.abacService.invalidateApplicationCache(role.applicationId);
         return { message: 'Permiso removido del rol' };
     }
 }

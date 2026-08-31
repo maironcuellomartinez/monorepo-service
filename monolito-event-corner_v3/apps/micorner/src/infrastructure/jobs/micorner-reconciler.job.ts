@@ -142,7 +142,7 @@ export class MicornerReconcilerJob {
               }
             }
           } else if (status.status === 'FAILED') {
-            if (this.isFatalError(status.lastError)) {
+            if (this.isFatalError(status.lastErrorStatusCode, status.lastError)) {
               this.logger.error(
                 `ReconcilerJob: link ${link.id} (${link.type}) | correlationId ${correlationId} FAILED con error FATAL — no se reintentará. lastError=${status.lastError}`,
               );
@@ -184,21 +184,25 @@ export class MicornerReconcilerJob {
   }
 
   /**
-   * Determina si el lastError de snowq corresponde a un error fatal
-   * (no tiene sentido reintentar: problema de autenticación, configuración,
-   * o payload inválido — reintentar el mismo payload malo agota los reintentos
-   * en un loop indefinido, ver ServiceNowErrorFactory en api-snowq-service que
-   * clasifica 400/404/422 como fatales del lado del cliente HTTP).
+   * Determina si el error de snowq es fatal (no tiene sentido reintentar:
+   * problema de autenticación, configuración, o payload inválido — reintentar
+   * el mismo payload malo agota los reintentos en un loop indefinido).
+   *
+   * Se apoya en `lastErrorStatusCode` (el status HTTP real que clasificó
+   * ServiceNowErrorFactory del lado de snowq) en vez de buscar substrings en
+   * el mensaje de error — antes, un ticket "INC0004041" o un mensaje del
+   * estilo "timeout after 400ms" se leían como un 400/404/422 real y
+   * abandonaban un link por un error transitorio (ver M-03 en la auditoría
+   * de 2026-08-31). El heurístico de texto queda solo como fallback para
+   * registros anteriores a este campo o errores sin clasificar.
    */
-  private isFatalError(lastError?: string | null): boolean {
+  private isFatalError(statusCode?: number | null, lastError?: string | null): boolean {
+    if (statusCode != null) {
+      return [400, 401, 403, 404, 422].includes(statusCode);
+    }
     if (!lastError) return false;
     const lower = lastError.toLowerCase();
     return (
-      lower.includes('400') ||
-      lower.includes('401') ||
-      lower.includes('403') ||
-      lower.includes('404') ||
-      lower.includes('422') ||
       lower.includes('unauthorized') ||
       lower.includes('forbidden') ||
       lower.includes('invalid credentials') ||

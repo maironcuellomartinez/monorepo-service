@@ -41,6 +41,16 @@ export class SnowRequestWorkerService implements OnModuleInit {
       try {
         await this.checkExpiry();
 
+        // Backpressure: si la PQueue ya tiene MAX_BACKLOG tareas en size+pending,
+        // no leer más filas QUEUED de la DB — sin este freno, una tormenta de
+        // alertas mueve la tabla entera a memoria en segundos porque nada
+        // detiene al worker mientras haya filas QUEUED (ver M-12 en la
+        // auditoría de 2026-08-31).
+        if (this.queueService.isBacklogFull()) {
+          setTimeout(poll, this.POLL_INTERVAL_MS);
+          return;
+        }
+
         const entities = await this.snowRequestService.findPendingQueue(
           this.BATCH_SIZE,
         );

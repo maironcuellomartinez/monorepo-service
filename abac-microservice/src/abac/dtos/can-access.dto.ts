@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty, IsUUID, IsObject, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID, IsObject, IsOptional, IsArray, ArrayMaxSize, ArrayMinSize, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CanAccessDto {
     @IsUUID()
@@ -22,14 +23,24 @@ export class CanAccessDto {
     context?: Record<string, any>;
 }
 
+/**
+ * Igual a CanAccessDto salvo por el nombre — se declara aparte porque
+ * BatchEvaluateDto necesita @ValidateNested + @Type sobre una clase propia
+ * para que el ValidationPipe global entre a validar cada elemento del
+ * array (con `Array<{...}>` como tipo plano, class-validator no tiene
+ * forma de saber qué shape validar dentro del array).
+ */
+export class CanAccessItemDto extends CanAccessDto {}
+
 export class BatchEvaluateDto {
-    @IsObject({ each: true })
-    @IsNotEmpty()
-    requests!: Array<{
-        userId: string;
-        applicationId: string;
-        resource: string;
-        action: string;
-        context?: Record<string, any>;
-    }>;
+    // Tope de 100 — sin límite, un solo POST dispara N evaluaciones ABAC
+    // concurrentes (Promise.all en AbacController.batchEvaluate) contra
+    // MySQL/Redis; el endpoint está detrás de ApiKeyGuard nada más, sin
+    // rate limit propio (ver M-06 en la auditoría de 2026-08-31).
+    @IsArray()
+    @ArrayMinSize(1)
+    @ArrayMaxSize(100)
+    @ValidateNested({ each: true })
+    @Type(() => CanAccessItemDto)
+    requests!: CanAccessItemDto[];
 }

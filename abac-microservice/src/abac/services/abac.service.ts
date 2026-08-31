@@ -386,6 +386,34 @@ export class AbacService {
         this.logger.debug('Cache invalidado para usuario', 'ABAC', { userId, appId });
     }
 
+    /**
+     * Invalida el caché de decisiones de un usuario en TODAS las aplicaciones.
+     *
+     * Para cambios que afectan al usuario en sí (desactivación, reactivación,
+     * baja) y no a una sola membresía — el usuario puede tener roles/apps en
+     * más de una aplicación y no vale la pena resolverlas una por una antes
+     * de invalidar.
+     */
+    async invalidateAllUserCache(userId: string): Promise<void> {
+        await this.cache.deletePattern(`abac_granted:${userId}:*`);
+        this.logger.debug('Cache invalidado para usuario (todas las apps)', 'ABAC', { userId });
+    }
+
+    /**
+     * Invalida el caché de decisiones de TODOS los usuarios de una aplicación.
+     *
+     * Un cambio de rol o de política (agregar/quitar un permiso, activar/
+     * desactivar una política) no afecta a un solo usuario, sino a todos los
+     * que tengan ese rol o esa política asignada — invalidar por userId no
+     * alcanza. Se usa en los write paths de roles y políticas (ver A-05 en
+     * la auditoría de 2026-08-31: la invalidación existía pero nadie la
+     * llamaba, así que una revocación tardaba hasta 1h en hacerse efectiva).
+     */
+    async invalidateApplicationCache(appId: string): Promise<void> {
+        await this.cache.deletePattern(`abac_granted:*:${appId}:*`);
+        this.logger.debug('Cache invalidado para aplicación', 'ABAC', { appId });
+    }
+
     createTimeCondition(startTime: string, endTime: string): Condition {
         return RuleValidator.createCondition('context.time', 'in', [startTime, endTime]);
     }

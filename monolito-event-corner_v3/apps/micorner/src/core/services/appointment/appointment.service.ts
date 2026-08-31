@@ -280,6 +280,13 @@ export class AppointmentService implements IAppointmentService {
           `createAppointment — slot conflict: expected to book ${slotIds.length}, only booked ${booked}. slotIds=${slotIds.join(', ')}`,
           CTX,
         );
+        // bookManyAtomic es atómico por sentencia, no por conjunto: si de N
+        // slots solo alcanzó a marcar M < N como BOOKED, esos M quedan
+        // reservados sin cita ni held_by_user_id que los referencie. Sin
+        // esta compensación quedan huérfanos para siempre — SlotHoldCleanupJob
+        // solo barre HELD/AVAILABLE, nunca BOOKED (ver M-01 en la auditoría
+        // de 2026-08-31).
+        if (booked > 0) await this.releaseBookedSlots(slotIds);
         return Result.err(
           new Error(
             'El horario seleccionado ya no está disponible. Por favor elegí otro horario.',
@@ -585,6 +592,9 @@ export class AppointmentService implements IAppointmentService {
     if (bookResult.isFailure) return Result.err(bookResult.unwrapError());
     const booked = bookResult.unwrap();
     if (booked < slotIds.length) {
+      // Ver comentario equivalente en _createAppointment (M-01): una
+      // reserva parcial deja slots BOOKED sin cita — hay que liberarlos.
+      if (booked > 0) await this.releaseBookedSlots(slotIds);
       return Result.err(
         new Error('El horario seleccionado ya no está disponible. Por favor elegí otro horario.'),
       );
@@ -759,6 +769,8 @@ export class AppointmentService implements IAppointmentService {
     if (bookResult.isFailure) return Result.err(bookResult.unwrapError());
     const booked = bookResult.unwrap();
     if (booked < newSlotIds.length) {
+      // Ver comentario equivalente en _createAppointment (M-01).
+      if (booked > 0) await this.releaseBookedSlots(newSlotIds);
       return Result.err(
         new Error(
           'El horario seleccionado ya no está disponible. Por favor elegí otro horario.',

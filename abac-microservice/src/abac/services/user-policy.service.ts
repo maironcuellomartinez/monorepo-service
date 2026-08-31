@@ -3,12 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AssignUserPolicyDto } from '../dtos/assign-user-policy.dto';
 import { UserPolicyAssignment } from 'src/entities/userPolicyAssignment.entity';
+import { AbacService } from './abac.service';
 
 @Injectable()
 export class UserPolicyService {
     constructor(
         @InjectRepository(UserPolicyAssignment)
         private readonly repo: Repository<UserPolicyAssignment>,
+        private readonly abacService: AbacService,
     ) { }
 
     async assign(dto: AssignUserPolicyDto) {
@@ -19,7 +21,13 @@ export class UserPolicyService {
             user: { id: dto.userId },
             policy: { id: dto.policyId },
         });
-        return await this.repo.save(assignment);
+        const saved = await this.repo.save(assignment);
+        // Una política de usuario puede evaluarse en cualquier aplicación a
+        // la que pertenezca — invalidar por app específica requeriría cargar
+        // la policy solo para leer su applicationId; más simple y igual de
+        // correcto invalidar todas las apps de este usuario.
+        await this.abacService.invalidateAllUserCache(dto.userId);
+        return saved;
     }
 
     async remove(userId: string, policyId: string) {
@@ -28,6 +36,7 @@ export class UserPolicyService {
         });
         if (!assignment) return { removed: false };
         await this.repo.remove(assignment);
+        await this.abacService.invalidateAllUserCache(userId);
         return { removed: true };
     }
 

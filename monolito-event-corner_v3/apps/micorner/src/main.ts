@@ -24,6 +24,7 @@ async function bootstrap() {
   const app = await NestFactory.create(MicornerModule, { bufferLogs: true });
   app.useLogger(app.get(LoggerService));
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+  const logger = new Logger('Bootstrap');
 
   const config = new DocumentBuilder()
     .setTitle('Micorner — Internal API')
@@ -40,6 +41,24 @@ async function bootstrap() {
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('internal-docs', app, document, {
       swaggerOptions: { persistAuthorization: true },
+    });
+  }
+
+  // Es el servicio con más estado en vuelo del ecosistema: outbox worker,
+  // cinco @Cron/@Interval jobs y el buffer del transporte de logs. Sin esto
+  // un `pm2 restart micorner` (o cualquier SIGTERM) mata el proceso a mitad
+  // de un flush o de un job en curso, en vez de dejarlos terminar — es el
+  // único de los cinco servicios que no lo tenía (ver M-08 en la auditoría
+  // de 2026-08-31).
+  app.enableShutdownHooks();
+
+  const shutdownSignals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
+  for (const signal of shutdownSignals) {
+    process.once(signal, async () => {
+      logger.log(`Señal ${signal} recibida — iniciando shutdown graceful`);
+      await app.close();
+      logger.log('micorner detenido limpiamente');
+      process.exit(0);
     });
   }
 

@@ -27,6 +27,15 @@ const MAX_RETRY_DELAY_MS = 300_000; // 5 min cap
 export class OutboxWorkerService {
     private readonly logger = new Logger(OutboxWorkerService.name);
 
+    // @Interval no espera a que el ciclo anterior termine — un lote de 50
+    // eventos que dispara llamadas a ServiceNow puede tardar más que los 5s
+    // de POLL_INTERVAL_MS. Sin este flag, el tick siguiente relee las mismas
+    // filas (published_at sigue NULL hasta que termina de publicar) y las
+    // reprocesa: entrega duplicada de eventos de dominio, justo la garantía
+    // que el patrón outbox existe para dar (ver M-04 en la auditoría de
+    // 2026-08-31).
+    private isRunning = false;
+
     /**
      * Backoff exponencial para el retry_after (durable, en DB).
      * nextDelay(n) = BASE * 2^(n-1), tope MAX. Llamado con (retryCount + 1)
@@ -49,11 +58,20 @@ export class OutboxWorkerService {
 
     @Interval(POLL_INTERVAL_MS)
     async processOutbox(): Promise<void> {
-        return this.tracing.run(
-            'micorner.job.outboxWorker',
-            { kind: 'internal' },
-            () => this._processOutbox(),
-        );
+        if (this.isRunning) {
+            this.logger.debug('Outbox worker: ciclo anterior todavía en curso — se salta este tick');
+            return;
+        }
+        this.isRunning = true;
+        try {
+            await this.tracing.run(
+                'micorner.job.outboxWorker',
+                { kind: 'internal' },
+                () => this._processOutbox(),
+            );
+        } finally {
+            this.isRunning = false;
+        }
     }
 
     private async _processOutbox(): Promise<void> {

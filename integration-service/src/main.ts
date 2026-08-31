@@ -37,7 +37,7 @@ function validateConfig(): void {
   if (env === 'development') return;
 
   const required: Record<string, string> = {
-    JWT_SECRET: 'Secret para validar tokens JWT entrantes',
+    ED25519_PUBLIC_KEY: 'Clave pública Ed25519 para verificar tokens M2M entrantes (base64)',
     ABAC_M2M_TOKEN: 'Token M2M para autenticarse ante ABAC',
   };
 

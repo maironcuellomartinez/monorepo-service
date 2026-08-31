@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
 import { CircuitBreakerOpenError } from '@backendkit-labs/circuit-breaker';
 import PQueue from 'p-queue';
 import { SnowRequestEntity } from '../entities/snow-request.entity';
@@ -38,11 +38,21 @@ import { BulkheadRegistry } from 'src/resilience/bulkhead/bulkhead.registry';
  * en la DB con nextRetryAt = now + delay(priority). Si agota maxRetries → FAILED.
  */
 @Injectable()
-export class SnowRequestQueueService implements OnModuleInit {
+export class SnowRequestQueueService implements OnModuleInit, OnModuleDestroy {
 
     private readonly snowQueue = new PQueue({ concurrency: 5 });
     private readonly metrics = ObsMetricsClient.getInstance();
     private readonly tracing = TracingClient.getInstance();
+    private metricsInterval?: NodeJS.Timeout;
+
+    /**
+     * Tope del backlog en memoria (size + pending de la PQueue). El worker
+     * (SnowRequestWorkerService) consulta `isBacklogFull()` antes de leer más
+     * filas QUEUED de la DB — sin este freno, una tormenta de alertas mueve
+     * la tabla entera a memoria en segundos porque nada frena al worker
+     * mientras haya filas QUEUED (ver M-12 en la auditoría de 2026-08-31).
+     */
+    private static readonly MAX_BACKLOG = parseInt(process.env.SNOWQ_MAX_BACKLOG ?? '500', 10);
 
     // Pico de tamaño/pendientes desde el último reporte — un poll puntual cada 15s
     // sobre snowQueue.size/.pending casi siempre lee 0 (el backlog dura milisegundos,
@@ -77,7 +87,10 @@ export class SnowRequestQueueService implements OnModuleInit {
         this.snowQueue.on('active', () => this.trackQueuePeaks());
 
         // Gauges periódicos: pico de backlog y de concurrencia real desde el último reporte.
-        setInterval(() => {
+        // Handle guardado y limpiado en onModuleDestroy — antes quedaba corriendo
+        // indefinidamente tras el shutdown del módulo (los propios tests de este
+        // servicio lo delataban con "worker process has failed to exit gracefully").
+        this.metricsInterval = setInterval(() => {
             this.metrics.gauge('snow_queue_size', this.peakSize, { concurrency: '5' }).catch(() => { });
             this.metrics.gauge('snow_queue_pending', this.peakPending, { concurrency: '5' }).catch(() => { });
             // No resetear a 0: si el backlog sigue activo al momento del reporte, la
@@ -87,10 +100,19 @@ export class SnowRequestQueueService implements OnModuleInit {
         }, 15_000);
     }
 
+    onModuleDestroy(): void {
+        if (this.metricsInterval) clearInterval(this.metricsInterval);
+    }
+
     /** Actualiza el pico de size/pending visto desde el último reporte. */
     private trackQueuePeaks(): void {
         if (this.snowQueue.size > this.peakSize) this.peakSize = this.snowQueue.size;
         if (this.snowQueue.pending > this.peakPending) this.peakPending = this.snowQueue.pending;
+    }
+
+    /** true si el backlog en memoria alcanzó el tope — el worker debe frenar la lectura de más filas de la DB. */
+    isBacklogFull(): boolean {
+        return this.snowQueue.size + this.snowQueue.pending >= SnowRequestQueueService.MAX_BACKLOG;
     }
 
     // Usado por el worker (modo asíncrono DB-backed) — fire-and-forget
@@ -176,7 +198,7 @@ export class SnowRequestQueueService implements OnModuleInit {
             } else if (error instanceof ServiceNowTemporalError) {
                 // Error transitorio (5xx, 408, 429): respetar Retry-After si está disponible
                 const retryAfterMs = error.retryAfterMs;
-                await this.snowRequestService.markAsRetry(entity.correlationId, message, retryAfterMs);
+                await this.snowRequestService.markAsRetry(entity.correlationId, message, retryAfterMs, error.statusCode);
                 this.logger.warn(
                     `Error temporal en ${entity.internalNumber} [tipo=${entity.type}]${retryAfterMs ? ` — Retry-After: ${retryAfterMs}ms` : ''} — reintentando: ${message}`,
                     'SnowRequestQueueService',
@@ -184,7 +206,7 @@ export class SnowRequestQueueService implements OnModuleInit {
                 this.metrics.counter('snow_requests_retried_total', { type: entity.type, reason: error.statusCode === 429 ? 'rate_limited' : 'temporal_error' }, entity.correlationId).catch(() => { });
             } else {
                 // Error fatal (4xx) o de autenticación (401/403): no tiene sentido reintentar
-                await this.snowRequestService.markAsFailed(entity.correlationId, message);
+                await this.snowRequestService.markAsFailed(entity.correlationId, message, error?.statusCode);
                 this.logger.error(
                     `Error fatal en ${entity.internalNumber} [tipo=${entity.type}] — marcado como FAILED: ${message}`,
                     error?.stack ?? '',

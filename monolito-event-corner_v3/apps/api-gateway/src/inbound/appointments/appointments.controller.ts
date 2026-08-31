@@ -9,6 +9,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -102,6 +103,7 @@ export class AppointmentsController {
     description: 'true = solo citas sin técnico asignado',
   })
   async list(
+    @CurrentUser() user: JwtPayload,
     @Query('cornerId') cornerId?: string,
     @Query('status') status?: string,
     @Query('issueTypeId') issueTypeId?: string,
@@ -115,6 +117,27 @@ export class AppointmentsController {
     @Query('limit') limit?: string,
     @Query('availableOnly') availableOnly?: string,
   ) {
+    // Sin appointment:list-all, el resultado se acota a las citas propias:
+    // se ignora cualquier customerId/customerEmail que venga en la query y
+    // se fuerza al del caller — de lo contrario un empleado podría enumerar
+    // citas de otras empresas cambiando el parámetro (ver auditoría A-04).
+    if (!this.hasListAll(user)) {
+      const ownCustomerId = await this.resolveOwnCustomerId(user);
+      return this.micorner.get('/appointments', {
+        cornerId,
+        status,
+        issueTypeId,
+        customerId: ownCustomerId,
+        servicenowNumber,
+        deviceSerial,
+        dateFrom,
+        dateTo,
+        page,
+        limit,
+        availableOnly,
+      });
+    }
+
     return this.micorner.get('/appointments', {
       cornerId,
       status,
@@ -129,6 +152,19 @@ export class AppointmentsController {
       limit,
       availableOnly,
     });
+  }
+
+  /** appointment:list-all habilita ver citas de cualquier cliente/empresa; sin él, el listado se acota al propio usuario. */
+  private hasListAll(user: JwtPayload): boolean {
+    return user.permissions?.includes('appointment:list-all') ?? false;
+  }
+
+  /** Resuelve el id de micorner del usuario autenticado a partir de su externalId (sub del JWT). */
+  private async resolveOwnCustomerId(user: JwtPayload): Promise<string> {
+    const micornerUser = await this.micorner.get<{ id: string }>(
+      `/users/by-external-id/${user.sub}`,
+    );
+    return micornerUser.id;
   }
 
   @Get('suggestions/device-serial')
@@ -208,8 +244,20 @@ export class AppointmentsController {
   @Permission('appointment', 'read')
   @ApiOperation({ summary: 'Obtener cita por ID' })
   @ApiParam({ name: 'id' })
-  async getOne(@Param('id') id: string) {
-    return this.micorner.get(`/appointments/${id}`);
+  async getOne(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    const appointment = await this.micorner.get<{ customerId: string }>(
+      `/appointments/${id}`,
+    );
+
+    // Sin appointment:list-all, solo puede ver su propia cita (ver A-04).
+    if (!this.hasListAll(user)) {
+      const ownCustomerId = await this.resolveOwnCustomerId(user);
+      if (appointment.customerId !== ownCustomerId) {
+        throw new ForbiddenException('No tenés acceso a esta cita');
+      }
+    }
+
+    return appointment;
   }
 
   @Post()
