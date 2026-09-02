@@ -551,6 +551,48 @@ export abstract class BaseExternalConnector implements IExternalConnector {
         this.metrics.lastRequestTime = new Date().toISOString();
     }
 
+    /**
+     * Genera un correlationId propio para logging/métricas cuando el
+     * conector no participa de un request HTTP (job programado, retry
+     * en background) y por lo tanto no hay uno heredado del request
+     * original.
+     */
+    generateCorrelationId(): string {
+        return `corr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    /**
+     * Redacta campos sensibles de los argumentos de una operación antes de
+     * loguearlos (usado por withMetricsAndLogging). Mismos campos que
+     * LoggingInterceptor.sanitizeBody para mantener un único criterio de
+     * qué se considera sensible en todo el servicio.
+     */
+    sanitizeArgs(args: any[]): any[] {
+        const sensitiveFields = [
+            'password',
+            'token',
+            'secret',
+            'key',
+            'authorization',
+            'creditCard',
+            'ssn',
+            'cvv',
+        ];
+
+        return args.map((arg) => {
+            if (!arg || typeof arg !== 'object') return arg;
+
+            const sanitized = { ...arg };
+            sensitiveFields.forEach((field) => {
+                if (sanitized[field]) {
+                    sanitized[field] = '***REDACTED***';
+                }
+            });
+
+            return sanitized;
+        });
+    }
+
     protected initializeMetrics(): SystemMetrics {
         return {
             uptime: Date.now(),
