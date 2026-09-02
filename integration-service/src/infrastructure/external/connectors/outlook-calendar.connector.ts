@@ -50,7 +50,7 @@ export interface OutlookEvent {
 @Injectable()
 export class OutlookCalendarConnector implements Partial<IExternalConnector> {
     private readonly logger = new Logger(OutlookCalendarConnector.name);
-    private graphClient: Client;
+    private graphClient?: Client;
     private readonly userId: string;
     private readonly timeout: number;
 
@@ -101,9 +101,22 @@ export class OutlookCalendarConnector implements Partial<IExternalConnector> {
 
         } catch (error) {
             this.logger.error('Failed to initialize Outlook Calendar client', {
-                error: error.message,
+                error: (error as Error).message,
             });
         }
+    }
+
+    /**
+     * graphClient queda undefined si falta config (tenantId/clientId/clientSecret)
+     * o si initializeGraphClient() tiro un error -sin este guard, cualquier
+     * operacion de calendario fallaria con un TypeError críptico en vez de un
+     * mensaje que indique el problema real.
+     */
+    private getClient(): Client {
+        if (!this.graphClient) {
+            throw new Error('Outlook Calendar client not initialized — check outlook.tenantId/clientId/clientSecret configuration');
+        }
+        return this.graphClient;
     }
 
     async createEvent(payload: any): Promise<OutlookEvent> {
@@ -122,7 +135,7 @@ export class OutlookCalendarConnector implements Partial<IExternalConnector> {
             this.validateOutlookEvent(outlookEvent);
 
             // Crear evento en Outlook
-            const response = await this.graphClient
+            const response = await this.getClient()
                 .api(`/users/${this.userId}/calendar/events`)
                 .post(outlookEvent);
 
@@ -159,7 +172,7 @@ export class OutlookCalendarConnector implements Partial<IExternalConnector> {
             const outlookUpdates = this.adapter.transformToOutlookFormat(updates);
 
             // Actualizar evento
-            const response = await this.graphClient
+            const response = await this.getClient()
                 .api(`/users/${this.userId}/calendar/events/${eventId}`)
                 .patch(outlookUpdates);
 
@@ -189,7 +202,7 @@ export class OutlookCalendarConnector implements Partial<IExternalConnector> {
         try {
             this.logger.debug('Deleting Outlook Calendar event', { eventId });
 
-            await this.graphClient
+            await this.getClient()
                 .api(`/users/${this.userId}/calendar/events/${eventId}`)
                 .delete();
 
@@ -219,7 +232,7 @@ export class OutlookCalendarConnector implements Partial<IExternalConnector> {
 
     async getEvent(eventId: string): Promise<OutlookEvent> {
         try {
-            const response = await this.graphClient
+            const response = await this.getClient()
                 .api(`/users/${this.userId}/calendar/events/${eventId}`)
                 .get();
 
@@ -241,7 +254,7 @@ export class OutlookCalendarConnector implements Partial<IExternalConnector> {
         maxResults: number = 100
     ): Promise<OutlookEvent[]> {
         try {
-            const response = await this.graphClient
+            const response = await this.getClient()
                 .api(`/users/${this.userId}/calendar/calendarView`)
                 .query({
                     startDateTime,
@@ -270,7 +283,7 @@ export class OutlookCalendarConnector implements Partial<IExternalConnector> {
         try {
             this.logger.debug('Creating online meeting for Outlook event', { eventId });
 
-            const response = await this.graphClient
+            const response = await this.getClient()
                 .api(`/users/${this.userId}/calendar/events/${eventId}/onlineMeeting`)
                 .post({
                     startDateTime: new Date().toISOString(),
@@ -420,7 +433,7 @@ export class OutlookCalendarConnector implements Partial<IExternalConnector> {
         const startTime = Date.now();
 
         try {
-            await this.graphClient
+            await this.getClient()
                 .api('/me')
                 .select('displayName,userPrincipalName')
                 .get();
