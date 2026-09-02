@@ -1,5 +1,7 @@
 // src/domain/interfaces/external-connector.interface.ts
 
+import { CorrelationIdService } from '../../infrastructure/logging/correlation-id.service';
+
 /**
  * Interfaz base para todos los conectores de sistemas externos
  * Define el contrato que deben implementar todos los conectores
@@ -356,7 +358,10 @@ export abstract class BaseExternalConnector implements IExternalConnector {
     protected lastHealthCheck?: HealthCheckResult;
     protected isConnected: boolean = false;
 
-    constructor(config: ConnectorConfig) {
+    constructor(
+        config: ConnectorConfig,
+        protected readonly correlationIdService?: CorrelationIdService,
+    ) {
         this.config = config;
         this.metrics = this.initializeMetrics();
     }
@@ -552,13 +557,16 @@ export abstract class BaseExternalConnector implements IExternalConnector {
     }
 
     /**
-     * Genera un correlationId propio para logging/métricas cuando el
-     * conector no participa de un request HTTP (job programado, retry
-     * en background) y por lo tanto no hay uno heredado del request
-     * original.
+     * Devuelve el correlationId del request HTTP en curso (propagado via
+     * AsyncLocalStorage por CorrelationMiddleware). Si el conector corre
+     * fuera de un request (job programado, retry en background) o no se
+     * le inyectó CorrelationIdService, genera uno propio.
      */
     generateCorrelationId(): string {
-        return `corr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        return (
+            this.correlationIdService?.getCorrelationId() ??
+            `corr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        );
     }
 
     /**

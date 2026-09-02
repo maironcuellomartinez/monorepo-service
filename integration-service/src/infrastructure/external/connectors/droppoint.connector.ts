@@ -10,6 +10,7 @@ import {
     OperationContext,
 } from 'src/domain/interfaces/external-connector.interface';
 import { TracingService } from '../../monitoring/tracing.service';
+import { CorrelationIdService } from '../../logging/correlation-id.service';
 
 export type DroppointState =
     | 'RESERVADO'
@@ -67,6 +68,7 @@ export class DroppointConnector extends BaseExternalConnector {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
         private readonly tracing: TracingService,
+        correlationIdService: CorrelationIdService,
     ) {
         const baseUrl = configService.get<string>(
             'droppoint.baseUrl',
@@ -102,7 +104,7 @@ export class DroppointConnector extends BaseExternalConnector {
             },
         };
 
-        super(connectorConfig);
+        super(connectorConfig, correlationIdService);
 
         this.baseUrl = baseUrl;
         this.timeout = timeout;
