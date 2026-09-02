@@ -691,16 +691,16 @@ export function withMetricsAndLogging(
 ) {
     const originalMethod = descriptor.value;
 
-    descriptor.value = async function (...args: any[]) {
-        const connector = this as BaseExternalConnector;
+    descriptor.value = async function (this: BaseExternalConnector, ...args: any[]) {
+        const connector = this;
         const operation = propertyName;
-        const correlationId = this.generateCorrelationId?.() || 'N/A';
+        const correlationId = connector.generateCorrelationId();
         const startTime = Date.now();
 
         try {
             connector.log('debug', `Starting operation: ${operation}`, {
                 correlationId,
-                args: this.sanitizeArgs?.(args) || args,
+                args: connector.sanitizeArgs(args),
             });
 
             const result = await originalMethod.apply(this, args);
