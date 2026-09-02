@@ -409,7 +409,7 @@ export abstract class BaseExternalConnector implements IExternalConnector {
                 status: 'UNHEALTHY',
                 latency: Date.now() - startTime,
                 timestamp: new Date().toISOString(),
-                errors: [error.message],
+                errors: [(error as Error)?.message],
             };
 
             this.lastHealthCheck = result;
