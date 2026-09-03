@@ -22,15 +22,14 @@ export class SoapProvider implements OnModuleInit, OnModuleDestroy {
     // Leer el WSDL
     const wsdlXml = fs.readFileSync(this.wsdlPath, 'utf-8');
 
-    // Crear servidor HTTP para SOAP
+    // Servidor HTTP con el fallback para requests que no matchean el path
+    // SOAP (/devices) — soap.listen() de mas abajo remueve este listener del
+    // httpServer y lo re-engancha por su cuenta, delegandole las requests
+    // que no son SOAP; no hay que (ni se puede, no existe en esta version)
+    // invocar handleHTTP manualmente sobre el objeto que devuelve.
     this.httpServer = http.createServer((req, res) => {
-      // Manejar solicitudes SOAP
-      if (req.method === 'POST' || (req.method === 'GET' && req.url?.includes('?wsdl'))) {
-        this.soapServer.handleHTTP(req, res);
-      } else {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('Minerva SOAP Service - WSDL available at /devices?wsdl');
-      }
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('Minerva SOAP Service - WSDL available at /devices?wsdl');
     });
 
     // Definir servicios
