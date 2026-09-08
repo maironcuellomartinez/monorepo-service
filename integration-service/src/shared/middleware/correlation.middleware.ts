@@ -1,7 +1,7 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
-import { CorrelationIdService } from '../../infrastructure/logging/correlation-id.service';
+import { CorrelationIdService } from '../../observability/correlation-id.service';
 
 /**
  * Propaga x-correlation-id entrante al AsyncLocalStorage para que todos los

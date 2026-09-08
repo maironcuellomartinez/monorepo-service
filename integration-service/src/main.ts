@@ -19,7 +19,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
 import { AppModule } from './app.module';
-import { LoggerService } from './infrastructure/logging/logger.service';
+import { LoggerService } from './observability/logger.service';
 import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
 import { TransformResponseInterceptor } from './shared/interceptors/transform-response.interceptor';

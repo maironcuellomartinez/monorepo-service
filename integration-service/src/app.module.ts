@@ -6,12 +6,15 @@ import { TerminusModule } from '@nestjs/terminus';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 
-import { ExternalModule } from './infrastructure/external/external.module';
-import { LoggingModule } from './infrastructure/logging/logging.module';
-import { PresentationModule } from './presentation/presentation.module';
+import { SharedModule } from './shared/shared.module';
+import { ObservabilityModule } from './observability/observability.module';
+import { MinervaModule } from './minerva/minerva.module';
+import { DroppointModule } from './droppoint/droppoint.module';
+import { OutlookCalendarModule } from './outlook-calendar/outlook-calendar.module';
+import { HealthController } from './health/health.controller';
 
-import { configuration } from './infrastructure/config/configuration';
-import { winstonConfig } from './infrastructure/logging/winston.config';
+import { configuration } from './config/configuration';
+import { winstonConfig } from './observability/winston.config';
 import { WinstonModule } from 'nest-winston';
 
 @Module({
@@ -54,13 +57,18 @@ import { WinstonModule } from 'nest-winston';
     // Health checks
     TerminusModule.forRoot(),
 
-    // Módulos de infraestructura
-    ExternalModule,
-    LoggingModule,
+    // Cliente HTTP + guard M2M compartidos por todas las integraciones
+    SharedModule,
 
-    // Módulo de presentación
-    PresentationModule,
+    // Observabilidad (logs, correlación, tracing, métricas propias)
+    ObservabilityModule,
+
+    // Integraciones
+    MinervaModule,
+    DroppointModule,
+    OutlookCalendarModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

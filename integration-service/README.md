@@ -36,12 +36,13 @@ monolith ──► api-gateway (/outbound/inventory/*) ──► integration-ser
                                                               └──► DropPoint (lockers, REST v5) — sin caller interno confirmado hoy
 ```
 
-Clean Architecture por capas (`domain/ → application/ → infrastructure/ → presentation/`), pero
-sin capa de persistencia: no hay TypeORM, no hay MySQL, no hay migraciones. Cada conector
-resuelve su propio circuit breaker y política de reintentos en memoria (`BaseExternalConnector`),
-no hay estado compartido entre requests.
+Un módulo NestJS por integración (`minerva/`, `droppoint/`, `outlook-calendar/`), sin capas
+`domain/application/infrastructure/presentation` — se sacaron en 2026-09 al confirmar que esa
+separación no protegía ninguna regla de negocio real (ver nota histórica al final): cada módulo
+trae su connector + controller + DTOs juntos. Tampoco hay capa de persistencia: no hay TypeORM,
+no hay MySQL, no hay migraciones, no hay estado compartido entre requests.
 
-**Conectores registrados** (`infrastructure/external/connectors/`):
+**Conectores registrados** (uno por carpeta bajo `src/`):
 
 | Conector | Protocolo/Auth | Expuesto vía HTTP | Consumido hoy por |
 |---|---|---|---|
@@ -140,18 +141,18 @@ Prefijo global `/api/v1` (`setGlobalPrefix('api')` + `enableVersioning({ type: U
 |---|---|---|
 | `GET` | `/health` | `memory_heap` únicamente — sin DB que pinguear |
 | `GET` | `/health/readiness`, `/health/liveness` | Checks de K8s |
-| `GET` | `/metrics` | Métricas Prometheus (`integration_service_*`) |
+| `GET` | `/metrics` | Métricas Prometheus por default (`@willsoto/nestjs-prometheus`, sin métricas de negocio propias) |
 
 ---
 
 ## 7. Resiliencia por conector
 
-Cada conector que extiende `BaseExternalConnector` (`domain/interfaces/external-connector.interface.ts`)
-trae su propio circuit breaker y política de reintentos **en memoria**, configurados en el
-constructor (ver `DroppointConnector` como referencia: `failureThreshold`, `resetTimeout`,
-`retryPolicy` con backoff exponencial + jitter). No hay estado persistido entre reinicios del
-proceso — a diferencia de, por ejemplo, `api-snowq-service`, que sí persiste el estado del
-breaker en DB.
+No hay circuit breaker ni reintentos automáticos hoy: cada llamada HTTP de un conector
+(`MinervaConnector`, `DroppointConnector`) es un único intento con timeout (`MINERVA_TIMEOUT`,
+`DROPPOINT_TIMEOUT`); si falla, el error sube tal cual al caller (que decide si reintentar).
+Hasta 2026-09 existía un `BaseExternalConnector` con un `retryPolicy`/`circuitBreaker` armados en
+el constructor de cada conector, pero nada los leía nunca — se borró junto con el resto de la
+capa `domain/` (ver nota histórica).
 
 ---
 
@@ -159,10 +160,10 @@ breaker en DB.
 
 - **Logs**: Winston con rotación diaria + transporte HTTP hacia `observability-service`
   (`LOG_TRANSPORT_URL`), con circuit breaker propio.
-- **Trazas**: `TracingService` (`infrastructure/monitoring/tracing.service.ts`), envuelve
-  operaciones relevantes de cada connector/controller.
-- **Métricas**: `prom-client` expuesto en `GET /api/v1/metrics` — contadores de requests,
-  duración, estado de circuit breakers y errores por sistema.
+- **Trazas**: `TracingService` (`observability/tracing.service.ts`), envuelve operaciones
+  relevantes de cada connector/controller.
+- **Métricas**: `@willsoto/nestjs-prometheus` expuesto en `GET /api/v1/metrics` — métricas
+  default de Node.js/proceso, sin contadores de negocio propios.
 - **Correlation ID**: `CorrelationMiddleware` + `CorrelationIdService`, propagado en headers
   salientes (`x-correlation-id`).
 
@@ -195,6 +196,18 @@ Hasta julio de 2026 este servicio tenía bastante más superficie de la que apar
   la asignación de dispositivos a un usuario es hoy una operación local del monolito
   (`Device.assignToUser()`), nunca pasa por HTTP hacia acá. Se eliminaron junto con los métodos
   huérfanos del conector y del cliente SOAP.
+- **Toda la capa `domain/` + `infrastructure/external/registries/` + `presentation/`** —
+  `BaseExternalConnector`/`IExternalConnector` (con sus 6 sub-interfaces `ICrudConnector`/
+  `ITicketingConnector`/etc. y un `ConnectorFactory`), un `CircuitBreaker`/`CircuitState` casero
+  de ~1000 líneas, y un `ConnectorRegistry` — nada de eso lo llamaba nadie fuera de su propio
+  archivo (confirmado con `grep` sobre todo `src/` antes de borrar). Los métodos abstractos que
+  `DroppointConnector` estaba forzado a implementar (`execute`, `transformToExternalFormat`,
+  `handleError`) nunca se invocaban — el conector ya resolvía sus errores con su propio
+  `mapError()` privado. Se eliminó el 2026-09 junto con el `MetricsController` a medida
+  (duplicaba `/api/metrics` con el `PrometheusModule` ya wireado, y sus 4 métricas nunca se
+  incrementaban) y los métodos de Google Calendar muertos en `CalendarAdapter`. Los conectores
+  pasaron a vivir en un módulo por integración (`minerva/`, `droppoint/`, `outlook-calendar/`),
+  sin base class ni registry.
 
 Si necesitás reintroducir algo con estado (retries persistidos, event sourcing, asignación de
 dispositivos vía Minerva), hay que traer esa infraestructura de nuevo desde cero — no quedó
