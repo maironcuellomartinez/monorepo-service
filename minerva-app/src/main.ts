@@ -21,8 +21,7 @@ async function bootstrap() {
   const port = process.env.PORT || 3015;
   await app.listen(port);
 
-  console.log(`Minerva SOAP API running on port ${port}`);
-  console.log(`WSDL available at http://localhost:${port}/devices?wsdl`);
+  console.log(`Minerva mock API running on port ${port}`);
 }
 
 bootstrap();

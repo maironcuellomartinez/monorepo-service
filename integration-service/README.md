@@ -31,7 +31,7 @@ Puerto: **3008** | Swagger: `http://localhost:3008/api/docs` (dev/staging) | Pre
 ## 1. Arquitectura general
 
 ```
-monolith ──► api-gateway (/outbound/inventory/*) ──► integration-service :3008 ──► Minerva (solo lectura, SOAP)
+monolith ──► api-gateway (/outbound/inventory/*) ──► integration-service :3008 ──► Minerva (solo lectura, REST)
                                                               │
                                                               └──► DropPoint (lockers, REST v5) — sin caller interno confirmado hoy
 ```
@@ -45,7 +45,7 @@ no hay estado compartido entre requests.
 
 | Conector | Protocolo/Auth | Expuesto vía HTTP | Consumido hoy por |
 |---|---|---|---|
-| `MinervaConnector` (+ `MinervaSoapClient`) | SOAP, X-API-Key | Sí — `MinervaController` | `api-gateway/InventoryOutboundController` (solo lectura) |
+| `MinervaConnector` | REST, X-API-Key | Sí — `MinervaController` | `api-gateway/InventoryOutboundController` (solo lectura) |
 | `DroppointConnector` | REST v5, Basic Auth | Sí — `DroppointController` | Sin caller interno confirmado — tiene credenciales reales de prod configuradas, integración pendiente de conectar |
 | `OutlookCalendarConnector` (+ `CalendarAdapter`) | MS Graph, `ClientSecretCredential` | **No** — registrado en el DI pero sin controller propio | Nadie todavía |
 
@@ -77,7 +77,7 @@ Ver `.env.development` / `.env.staging` / `.env.production` (gitignored, no vers
 | `ABAC_URL`, `ABAC_M2M_TOKEN` | Emisión/validación de tokens M2M contra ABAC |
 | `ED25519_PUBLIC_KEY` | Clave pública de ABAC para verificar el JWT M2M (EdDSA) — ver [`InternalTokenGuard`](#5-autenticación) |
 | `JWT_SECRET` | Fallback HS256 legado del mismo guard (algoritmo detectado por el header del JWT) |
-| `MINERVA_SOAP_WSDL_URL`, `MINERVA_TIMEOUT` | Cliente SOAP de Minerva |
+| `MINERVA_BASE_URL`, `MINERVA_API_KEY`, `MINERVA_TIMEOUT` | Cliente REST de Minerva |
 | `DROPPOINT_BASE_URL`, `DROPPOINT_USERNAME`, `DROPPOINT_PASSWORD`, `DROPPOINT_TIMEOUT` | Cliente REST de DropPoint |
 | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` | `OutlookCalendarConnector` (MS Graph) |
 | `THROTTLER_TTL`, `THROTTLER_LIMIT` | Rate limiting global (`ThrottlerGuard`) |

@@ -4,7 +4,8 @@ export const configuration = () => ({
     port: parseInt(process.env.PORT || '3008', 10),
 
     minerva: {
-        soapWsdlUrl: process.env.MINERVA_SOAP_WSDL_URL || 'http://localhost:3016/devices?wsdl',
+        baseUrl: process.env.MINERVA_BASE_URL || 'http://localhost:3015/api',
+        apiKey: process.env.MINERVA_API_KEY || '',
         timeout: parseInt(process.env.MINERVA_TIMEOUT || '10000', 10),
     },
 

@@ -5,12 +5,11 @@ import { ProxyAgent, Dispatcher } from 'undici';
  * el egress hacia Minerva/DropPoint/Outlook pasa por Apache actuando como
  * forward proxy (ver deploy/apache-forward-proxy.conf).
  *
- * axios (droppoint.connector.ts, y el HttpClient interno de node-soap en
- * minerva-soap.client.ts) y @azure/identity (ClientSecretCredential, usado
- * por outlook-calendar.connector.ts para obtener el token) detectan
- * HTTPS_PROXY automáticamente — no necesitan wiring explícito. Verificado
- * en vivo: un axios.create() sin config de proxy y un cliente node-soap
- * default tunelean correctamente contra un forward-proxy real con solo
+ * axios (droppoint.connector.ts, minerva.connector.ts) y @azure/identity
+ * (ClientSecretCredential, usado por outlook-calendar.connector.ts para
+ * obtener el token) detectan HTTPS_PROXY automáticamente — no necesitan
+ * wiring explícito. Verificado en vivo: un axios.create() sin config de
+ * proxy tunelea correctamente contra un forward-proxy real con solo
  * setear HTTPS_PROXY.
  *
  * El único que NO lo detecta solo es @microsoft/microsoft-graph-client

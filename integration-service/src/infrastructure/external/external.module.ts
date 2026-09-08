@@ -5,7 +5,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { OutlookCalendarConnector } from './connectors/outlook-calendar.connector';
 import { MinervaConnector } from './connectors/minerva.connector';
-import { MinervaSoapClient } from './connectors/minerva-soap.client';
 import { DroppointConnector } from './connectors/droppoint.connector';
 
 import { CalendarAdapter } from './adapters/calendar.adapter';
@@ -30,7 +29,6 @@ import { ConnectorRegistry } from './registries/connector.registry';
     providers: [
         // Connectors
         OutlookCalendarConnector,
-        MinervaSoapClient,
         MinervaConnector,
         DroppointConnector,
 
@@ -61,7 +59,6 @@ import { ConnectorRegistry } from './registries/connector.registry';
     ],
     exports: [
         OutlookCalendarConnector,
-        MinervaSoapClient,
         MinervaConnector,
         DroppointConnector,
         ConnectorRegistry,

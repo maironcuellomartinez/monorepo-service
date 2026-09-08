@@ -43,7 +43,6 @@
     "nest-winston": "^1.10.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "soap": "^1.8.0",
     "undici": "^7.29.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",

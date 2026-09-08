@@ -5,12 +5,13 @@ import { CreateDeviceDto } from './dto/create-device.dto';
 /**
  * REST API layer para integración con el ecosistema Event Corner.
  *
- * El api-gateway (InventoryOutboundController) proxea hacia este endpoint.
- * Monolith → api-gateway → GET /api/devices/:serialNumber (aquí)
+ * Único punto de entrada de minerva-app (el SOAP viejo se eliminó — ver
+ * git history de soap.provider.ts/devices.soap.service.ts). Consumido por
+ * integration-service (MinervaConnector), que a su vez expone
+ * /api/v1/minerva/* hacia el api-gateway.
  *
- * Formato de respuesta documentado en inventory-service.port.ts del monolith:
- *   ApiDevice  → { serial_number, model, brand, device_type, assigned_user }
- *   ApiAssignedUser → { userId, nombre, dispositivosAsignados }
+ * Formato de respuesta (ApiDevice, documentado en inventory-service.port.ts
+ * del monolith): { serial_number, model, brand, device_type, assigned_user }
  */
 @Controller('api')
 export class DevicesRestController {
@@ -61,13 +62,17 @@ export class DevicesRestController {
   @Get('users/:userId')
   async getByUser(@Param('userId') userId: string) {
     const devices = await this.repository.findByUsuarioId(userId);
-    const nombre = devices.length > 0 && devices[0].usuarioNombre
-      ? devices[0].usuarioNombre
-      : userId;
-    return {
-      userId,
-      nombre,
-      dispositivosAsignados: devices.map((d) => d.serialNumber),
-    };
+    return devices.map((device) => ({
+      serial_number: device.serialNumber,
+      model: device.modelo || null,
+      brand: device.marca || null,
+      device_type: device.tipo || null,
+      assigned_user: device.usuarioId
+        ? {
+            userId: device.usuarioId,
+            nombre: device.usuarioNombre || device.usuarioId,
+          }
+        : null,
+    }));
   }
 }

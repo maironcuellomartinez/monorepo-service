@@ -1,5 +1,5 @@
 // ecosystem.config.js
-// Config PM2 de minerva-app — mock local de Minerva SOAP (inventario de
+// Config PM2 de minerva-app — mock local de Minerva (REST, inventario de
 // dispositivos), solo tiene sentido en development (staging/production usan
 // el sistema Minerva real).
 //
