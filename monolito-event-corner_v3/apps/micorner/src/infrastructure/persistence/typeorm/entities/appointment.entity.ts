@@ -33,8 +33,15 @@ export class AppointmentEntity {
    * (contador compartido con IncidentEntity/RequestEntity, que ya no
    * existen desde la unificación a Appointment de 2026-07) — sin esa
    * coordinación cross-tabla pendiente, MySQL puede generarlo solo.
+   *
+   * Nombre de índice explícito (no autogenerado): sin esto, `synchronize`
+   * calcula un nombre distinto al que ya existe en la DB y en cada boot
+   * intenta DROP + CREATE del índice — y MySQL rechaza el DROP porque
+   * dejaría a esta columna AUTO_INCREMENT momentáneamente sin key
+   * (ER_WRONG_AUTO_KEY). Debe coincidir con el nombre usado en
+   * InitialSchema1788194786468.
    */
-  @Index({ unique: true })
+  @Index('IDX_appointments_issue_id', { unique: true })
   @Column({ type: 'int', unsigned: true, generated: 'increment' })
   issue_id: number;
 
