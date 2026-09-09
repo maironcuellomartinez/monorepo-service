@@ -53,6 +53,12 @@ import { BatchDraftItemEntity } from './infrastructure/persistence/typeorm/entit
 // columna por columna contra la DB de dev existente antes de reemplazar
 // las 20.
 import { InitialSchema1788194786468 } from './infrastructure/persistence/typeorm/migrations/1788194786468-InitialSchema';
+// Convierte appointments.issue_id a AUTO_INCREMENT — necesaria aparte de
+// InitialSchema porque esa ya corrió (o su schema equivalente ya existe vía
+// synchronize) en todo ambiente con datos reales; TypeORM no re-ejecuta una
+// migración ya registrada, así que editar InitialSchema solo alcanza a
+// instalaciones nuevas. Correr con `npm run micorner:migration:run`.
+import { FixAppointmentsIssueIdAutoIncrement1788963265894 } from './infrastructure/persistence/typeorm/migrations/1788963265894-FixAppointmentsIssueIdAutoIncrement';
 
 @Module({
   imports: [
@@ -125,6 +131,7 @@ import { InitialSchema1788194786468 } from './infrastructure/persistence/typeorm
         extra: { connectionLimit: 10 },
         migrations: [
           InitialSchema1788194786468,
+          FixAppointmentsIssueIdAutoIncrement1788963265894,
         ],
         // Antes corría siempre, incluso en dev — synchronize ya deja el schema
         // al día ahí, así que migrationsRun competía con synchronize en cada
