@@ -6,6 +6,7 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  Index,
 } from 'typeorm';
 import { IssueTypeEntity } from './issue-type.entity';
 import { CornerEntity } from './corner.entity';
@@ -25,12 +26,16 @@ export class AppointmentEntity {
 
   /**
    * Correlativo incremental usado como referencia externa estable (ver
-   * ServiceNowIntegrationService.buildExternalId). Se asigna en
-   * TypeOrmAppointmentRepository.save() vía la tabla issue_sequences
-   * (contador 'appointment') — mismo patrón (y misma razón: no
-   * AUTO_INCREMENT/@Generated) que IncidentEntity.issue_id/RequestEntity.issue_id.
+   * ServiceNowIntegrationService.buildExternalId). AUTO_INCREMENT nativo de
+   * MySQL — no es la PK (appointment_id sigue siendo el UUID), pero InnoDB
+   * permite una columna auto-increment secundaria mientras tenga su propio
+   * índice. Antes se coordinaba a mano vía la tabla `issue_sequences`
+   * (contador compartido con IncidentEntity/RequestEntity, que ya no
+   * existen desde la unificación a Appointment de 2026-07) — sin esa
+   * coordinación cross-tabla pendiente, MySQL puede generarlo solo.
    */
-  @Column({ type: 'int', unsigned: true })
+  @Index({ unique: true })
+  @Column({ type: 'int', unsigned: true, generated: 'increment' })
   issue_id: number;
 
   /** 'ISSUE' | 'REQUEST' — decide la estrategia de ticket SN, no la clase del agregado. */

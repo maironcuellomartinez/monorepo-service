@@ -199,7 +199,7 @@ erDiagram
     %% ── Citas (unifica Incident + Request post-remodelado 2026-07) ────────────
     appointments {
         varchar appointment_id PK "Identificador único de la cita"
-        int     issue_id "Correlativo incremental (issue_sequences) — referencia externa estable"
+        int     issue_id "Correlativo incremental (AUTO_INCREMENT) — referencia externa estable"
         varchar kind "ISSUE | REQUEST — mecanismo técnico de creación de ticket SN, no la categoría de negocio"
         varchar issue_type_id FK "Tipo de cita seleccionado"
         varchar customer_id FK "Usuario que la cita atiende/afecta"

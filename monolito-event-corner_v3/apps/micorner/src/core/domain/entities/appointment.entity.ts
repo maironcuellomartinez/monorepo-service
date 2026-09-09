@@ -51,7 +51,7 @@ export class Appointment {
     private readonly _createdAt: Date,
     private _updatedAt: Date,
     /**
-     * Correlativo incremental (contador `'appointment'` en `issue_sequences`)
+     * Correlativo incremental (AUTO_INCREMENT de `appointments.issue_id`)
      * usado como referencia externa estable — análogo al id numérico del
      * legacy (ej. '1526'). Lo asigna la DB al insertar, por eso es null hasta
      * que se recarga el agregado desde persistencia tras el primer save().

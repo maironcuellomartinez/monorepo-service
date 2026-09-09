@@ -49,11 +49,13 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
   async save(appointment: Appointment): Promise<Result<void>> {
     try {
       const entity = this.toEntity(appointment);
-      // issue_id no es AUTO_INCREMENT (ver comentario en AppointmentEntity) —
-      // se asigna acá vía la tabla issue_sequences (contador 'appointment')
-      // la primera vez que se persiste el agregado; en saves posteriores ya
-      // viene poblado desde el reload (findById) que precede a cada update.
-      entity.issue_id = appointment.issueId ?? (await this.allocateIssueId());
+      // issue_id es AUTO_INCREMENT (ver comentario en AppointmentEntity) — en
+      // el primer save se deja sin asignar y MySQL lo genera solo; en saves
+      // posteriores ya viene poblado desde el reload (findById) que precede
+      // a cada update, así que se reafirma el mismo valor sin efecto.
+      if (appointment.issueId != null) {
+        entity.issue_id = appointment.issueId;
+      }
       await this.appointmentRepository.save(entity);
 
       // Reemplazar slots asociados
@@ -523,23 +525,6 @@ export class TypeOrmAppointmentRepository implements IAppointmentRepository {
     } catch (error) {
       return Result.err(error);
     }
-  }
-
-  /**
-   * Asigna el próximo valor de la secuencia `issue_sequences` (fila
-   * 'appointment') de forma atómica — ver el comentario análogo en
-   * TypeOrmIncidentRepository.allocateIssueId(). Contador propio, sembrado
-   * por encima del máximo de incidents/requests en el backfill (Fase 2) para
-   * no colisionar con issue_id históricos.
-   */
-  private async allocateIssueId(): Promise<number> {
-    return this.appointmentRepository.manager.transaction(async (txEm) => {
-      await txEm.query(
-        `UPDATE issue_sequences SET next_value = LAST_INSERT_ID(next_value + 1) WHERE entity_name = 'appointment'`,
-      );
-      const rows = await txEm.query(`SELECT LAST_INSERT_ID() AS id`);
-      return Number(rows[0].id);
-    });
   }
 
   /**

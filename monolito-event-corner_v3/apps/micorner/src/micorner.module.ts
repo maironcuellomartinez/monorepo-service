@@ -49,9 +49,9 @@ import { BatchDraftItemEntity } from './infrastructure/persistence/typeorm/entit
 // staging/producción, no había ninguna DB externa con esas migraciones
 // ya registradas en su tabla `migrations` que este squash pudiera romper.
 // InitialSchema1788194786468 crea el schema completo actual desde cero
-// (generada con `migration:generate` contra las entidades + issue_sequences
-// a mano, que es SQL crudo y no un @Entity()) y se verificó columna por
-// columna contra la DB de dev existente antes de reemplazar las 20.
+// (generada con `migration:generate` contra las entidades) y se verificó
+// columna por columna contra la DB de dev existente antes de reemplazar
+// las 20.
 import { InitialSchema1788194786468 } from './infrastructure/persistence/typeorm/migrations/1788194786468-InitialSchema';
 
 @Module({

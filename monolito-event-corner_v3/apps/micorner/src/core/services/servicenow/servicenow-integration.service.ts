@@ -38,8 +38,8 @@ export class ServiceNowIntegrationService {
    * Referencia externa estable enviada a snowq (campo `externalId`, usado para
    * el fingerprint de deduplicación — ver computeFingerprint en api-snowq-service —
    * y para poblar u_external_system_id en ServiceNow).
-   * Formato `{issueId}_{corner.code}` — issueId ahora viene del contador
-   * 'appointment' de issue_sequences (ver TypeOrmAppointmentRepository).
+   * Formato `{issueId}_{corner.code}` — issueId ahora viene del AUTO_INCREMENT
+   * de `appointments.issue_id` (ver TypeOrmAppointmentRepository).
    */
   private buildExternalId(
     issueId: number | null,
