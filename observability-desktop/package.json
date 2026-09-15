@@ -1,0 +1,37 @@
+{
+  "name": "observability-desktop",
+  "productName": "Observability Desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shell de escritorio (Electron) para observability-dashboard. No contiene lógica propia: empaqueta el build estático del dashboard y lo sirve localmente, apuntando por red al observability-service configurado en Ajustes.",
+  "main": "main.js",
+  "scripts": {
+    "build:dashboard": "node scripts/build-dashboard.js",
+    "dev": "npm run build:dashboard && electron .",
+    "dist": "npm run build:dashboard && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.eventcorner.observability-desktop",
+    "productName": "Observability Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "resources/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
