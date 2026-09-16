@@ -53,7 +53,7 @@
     "https-proxy-agent": "^6.2.1",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.3",
-    "mysql2": "^3.14.1",
+    "mysql2": "^3.22.0",
     "opossum": "^9.0.0",
     "p-queue": "^8.1.0",
     "reflect-metadata": "^0.2.2",
@@ -70,7 +70,10 @@
     "sha.js": "^2.4.12",
     "@nestjs/swagger": {
       "js-yaml": "^5.2.2"
-    }
+    },
+    "multer": "^2.3.0",
+    "browserslist": "^4.28.7",
+    "js-yaml": "^4.3.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

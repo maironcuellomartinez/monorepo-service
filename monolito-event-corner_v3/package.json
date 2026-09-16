@@ -74,7 +74,7 @@
     "joi": "^18.2.5",
     "json-rules-engine": "^7.3.1",
     "jwks-rsa": "^3.2.2",
-    "mysql2": "^3.19.0",
+    "mysql2": "^3.22.0",
     "node-cache": "^5.1.2",
     "passport": "^0.7.0",
     "passport-headerapikey": "^1.2.2",
@@ -88,6 +88,10 @@
     "typeorm": "^0.3.28",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0"
+  },
+  "overrides": {
+    "multer": "^2.3.0",
+    "browserslist": "^4.28.7"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
