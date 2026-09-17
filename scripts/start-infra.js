@@ -42,6 +42,7 @@ const SERVICES = {
         distCheck: 'dist/main.js',
         pm2: { ecosystem: 'servicenow-clone-backend/ecosystem.config.js', app: 'servicenow-clone-backend' },
         port: 3010,
+        hasDb: true,
         envFile: null, // sin .env.development — usa defaults de ConfigService (localhost:3306)
     },
     abac: {
@@ -50,6 +51,7 @@ const SERVICES = {
         distCheck: 'dist/src/main.js',
         pm2: { ecosystem: 'monolito-event-corner_v3/ecosystem.config.js', app: 'abac' },
         port: 3005,
+        hasDb: true,
         envFile: 'abac-microservice/.env.development',
     },
     'observability-service': {
@@ -58,6 +60,7 @@ const SERVICES = {
         distCheck: 'dist/main.js',
         pm2: { ecosystem: 'monolito-event-corner_v3/ecosystem.config.js', app: 'observability-service' },
         port: 3099,
+        hasDb: true,
         envFile: 'observability-service/.env.development',
     },
     'api-snowq-service': {
@@ -66,6 +69,7 @@ const SERVICES = {
         distCheck: 'dist/main.js',
         pm2: { ecosystem: 'api-snowq-service/ecosystem.config.js', app: 'api-snowq-service' },
         port: 3090,
+        hasDb: true,
         envFile: 'api-snowq-service/.env.development',
     },
     micorner: {
@@ -74,6 +78,7 @@ const SERVICES = {
         distCheck: 'dist/apps/micorner/main.js',
         pm2: { ecosystem: 'monolito-event-corner_v3/ecosystem.config.js', app: 'micorner' },
         port: 3002,
+        hasDb: true,
         envFile: 'monolito-event-corner_v3/apps/micorner/.env.development',
     },
     'observability-dashboard': {
@@ -82,7 +87,8 @@ const SERVICES = {
         distCheck: 'dist/index.html',
         pm2: { ecosystem: 'observability-dashboard/ecosystem.config.cjs', app: 'observability-dashboard' },
         port: 5174,
-        envFile: null, // front, sin DB propia
+        hasDb: false, // front, sin DB propia
+        envFile: null,
     },
     'api-gateway': {
         dir: 'monolito-event-corner_v3',
@@ -90,7 +96,8 @@ const SERVICES = {
         distCheck: 'dist/apps/api-gateway/main.js',
         pm2: { ecosystem: 'monolito-event-corner_v3/ecosystem.config.js', app: 'api-gateway' },
         port: 4000,
-        envFile: null, // proxy, sin DB propia
+        hasDb: false, // proxy, sin DB propia
+        envFile: null,
     },
     'integration-service': {
         dir: 'integration-service',
@@ -98,7 +105,8 @@ const SERVICES = {
         distCheck: 'dist/main.js',
         pm2: { ecosystem: 'monolito-event-corner_v3/ecosystem.config.js', app: 'integration-service' },
         port: 3008,
-        envFile: null, // capa MySQL/TypeORM eliminada (2026-07-28)
+        hasDb: false, // capa MySQL/TypeORM eliminada (2026-07-28)
+        envFile: null,
     },
     'event-corner-app': {
         dir: 'event-corner-app',
@@ -106,7 +114,8 @@ const SERVICES = {
         distCheck: 'dist/index.html',
         pm2: { ecosystem: 'event-corner-app/ecosystem.config.cjs', app: 'event-corner-app' },
         port: 5175,
-        envFile: null, // front, sin DB propia
+        hasDb: false, // front, sin DB propia
+        envFile: null,
     },
     'minerva-app': {
         dir: 'minerva-app',
@@ -114,7 +123,8 @@ const SERVICES = {
         distCheck: 'dist/main.js',
         pm2: { ecosystem: 'minerva-app/ecosystem.config.js', app: 'minerva-app' },
         port: 3015,
-        envFile: null, // mock REST, sin DB — consumido por integration-service (MINERVA_BASE_URL)
+        hasDb: false, // mock REST, sin DB — consumido por integration-service (MINERVA_BASE_URL)
+        envFile: null,
     },
     'auth-configuration-app': {
         dir: 'auth-configuration-app',
@@ -122,7 +132,8 @@ const SERVICES = {
         distCheck: 'dist/index.html',
         pm2: { ecosystem: 'auth-configuration-app/ecosystem.config.cjs', app: 'auth-configuration-app' },
         port: 5173,
-        envFile: null, // front, depende solo de abac (VITE_ABAC_API_URL)
+        hasDb: false, // front, depende solo de abac (VITE_ABAC_API_URL)
+        envFile: null,
     },
 };
 
@@ -174,10 +185,8 @@ function resolveDbTarget(envFileRel) {
     const filePath = path.join(ROOT, envFileRel);
     if (!fs.existsSync(filePath)) return { host: 'localhost', port: 3306 };
     const vars = parseEnvFile(filePath);
-    const pairs = [
-        ['DB_HOST', 'DB_PORT'],
-        ['HOST_DATABASE', 'PORT_DATABASE'],
-    ];
+    const pairs = [['DB_HOST', 'DB_PORT'], ['HOST_DATABASE', 'PORT_DATABASE']];
+    
     for (const [hostKey, portKey] of pairs) {
         if (vars[hostKey]) {
             return { host: vars[hostKey], port: Number(vars[portKey]) || 3306 };
@@ -241,6 +250,7 @@ async function checkMysql() {
     console.log('\n=== Verificando MySQL ===');
     const targets = new Map();
     for (const svc of Object.values(SERVICES)) {
+        if (!svc.hasDb) continue; // servicios sin DB propia no entran al chequeo de MySQL
         const target = resolveDbTarget(svc.envFile);
         targets.set(`${target.host}:${target.port}`, target);
     }
