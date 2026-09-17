@@ -35,6 +35,24 @@ export class UserService implements IUserService {
             return Result.ok(existing);
         }
 
+        // No se encontró por externalId — antes de asumir que es un usuario
+        // nuevo, buscar por upn (único). Si ya existe, el proveedor de
+        // identidad le reemitió un id nuevo para el mismo upn (reseed de
+        // ABAC en dev, rotación de cuenta en Entra ID): reconciliar en vez
+        // de intentar crear un duplicado, que fallaría contra el upn único.
+        if (providerData.upn) {
+            const byUpnResult = await this.userRepo.findByUpn(providerData.upn);
+            if (byUpnResult.isFailure) return Result.err(byUpnResult.unwrapError());
+            const byUpn = byUpnResult.unwrap();
+            if (byUpn) {
+                byUpn.reconcileExternalId(providerData.external_id);
+                byUpn.syncFromProvider(providerData);
+                const updateResult = await this.userRepo.update(byUpn);
+                if (updateResult.isFailure) return Result.err(updateResult.unwrapError());
+                return Result.ok(byUpn);
+            }
+        }
+
         let emailValue: Email | null = null;
         if (providerData.email) {
             const emailResult = Email.create(providerData.email);

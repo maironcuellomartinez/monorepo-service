@@ -62,6 +62,19 @@ export class User {
         this.props.updatedAt = new Date();
     }
 
+    /**
+     * Reasigna el externalId (ABAC userId) a este usuario ya existente.
+     * Cubre el caso en que el proveedor de identidad reemitió un id nuevo
+     * para el mismo upn (ej. reseed de la base de ABAC en dev, o rotación
+     * de cuenta en Entra ID) — sin esto, syncUser() no encuentra al usuario
+     * por externalId e intenta crear uno nuevo, chocando contra el upn
+     * único de este mismo registro.
+     */
+    reconcileExternalId(newExternalId: string): void {
+        this.props.externalId = newExternalId;
+        this.props.updatedAt = new Date();
+    }
+
     syncFromProvider(data: any): void {
         this.props.name = data.name ?? this.props.name;
         this.props.lastName = data.last_name ?? this.props.lastName;

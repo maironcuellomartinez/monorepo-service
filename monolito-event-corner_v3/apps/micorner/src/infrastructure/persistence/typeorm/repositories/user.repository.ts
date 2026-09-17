@@ -68,6 +68,20 @@ export class TypeOrmUserRepository implements IUserRepository {
         }
     }
 
+    async findByUpn(upn: string): Promise<Result<User | null>> {
+        try {
+            const entity = await this.repo.findOne({
+                where: { upn },
+                relations: ['company'],
+            });
+            if (!entity) return Result.ok(null);
+            const domain = this.toDomain(entity);
+            return Result.ok(domain);
+        } catch (error) {
+            return Result.err(error);
+        }
+    }
+
     async search(query: string, options: { limit?: number; requireCompany?: boolean; activeOnly?: boolean } = {}): Promise<Result<User[]>> {
         const { limit = 20, requireCompany = false, activeOnly = true } = options;
         try {
