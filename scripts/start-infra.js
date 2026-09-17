@@ -22,7 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
-const { execSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -207,10 +207,30 @@ function waitForPort(host, port, timeoutMs) {
     });
 }
 
-function ensurePm2Available() {
-    try {
-        execSync(`${PM2_BIN} --version`, { stdio: 'ignore' });
-    } catch {
+// spawn asíncrono — a diferencia de execSync (spawnSync), no bloquea el
+// event loop del proceso mientras corre el comando hijo (build, pm2 start).
+function run(cmd, opts = {}) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(cmd, { shell: true, stdio: 'inherit', ...opts });
+        child.on('error', reject);
+        child.on('exit', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`Comando falló (exit ${code}): ${cmd}`));
+        });
+    });
+}
+
+function runSilent(cmd, opts = {}) {
+    return new Promise((resolve) => {
+        const child = spawn(cmd, { shell: true, stdio: 'ignore', ...opts });
+        child.on('error', () => resolve(false));
+        child.on('exit', (code) => resolve(code === 0));
+    });
+}
+
+async function ensurePm2Available() {
+    const ok = await runSilent(`${PM2_BIN} --version`);
+    if (!ok) {
         console.error('✗ pm2 no está disponible. Instalar como devDependency local: npm install --save-dev pm2');
         console.error('  (o, si el entorno lo permite, globalmente: npm install -g pm2)');
         process.exit(1);
@@ -236,7 +256,7 @@ async function checkMysql() {
     }
 }
 
-function buildIfNeeded(name, force) {
+async function buildIfNeeded(name, force) {
     const svc = SERVICES[name];
     const distPath = path.join(ROOT, svc.dir, svc.distCheck);
     if (!force && fs.existsSync(distPath)) {
@@ -244,10 +264,10 @@ function buildIfNeeded(name, force) {
         return;
     }
     console.log(`  (${name}) building...`);
-    execSync(svc.build, { cwd: path.join(ROOT, svc.dir), stdio: 'inherit' });
+    await run(svc.build, { cwd: path.join(ROOT, svc.dir) });
 }
 
-function startPm2(name) {
+async function startPm2(name) {
     const svc = SERVICES[name];
     const ecosystemPath = path.join(ROOT, svc.pm2.ecosystem);
     console.log(`  (${name}) pm2 start...`);
@@ -255,20 +275,19 @@ function startPm2(name) {
     // monolito-event-corner_v3/ecosystem.config.js) resuelven su `script`
     // relativo contra el cwd desde el que se invoca `pm2 start`, no contra la
     // ubicación del ecosystem file — hay que pararse en esa carpeta.
-    execSync(`${PM2_BIN} start "${ecosystemPath}" --env development --only ${svc.pm2.app}`, {
-        stdio: 'inherit',
+    await run(`${PM2_BIN} start "${ecosystemPath}" --env development --only ${svc.pm2.app}`, {
         cwd: path.join(ROOT, svc.dir),
     });
 }
 
 async function up(force) {
-    ensurePm2Available();
+    await ensurePm2Available();
     await checkMysql();
 
     for (const tier of TIERS) {
         console.log(`\n=== Tier: ${tier.join(', ')} ===`);
-        for (const name of tier) buildIfNeeded(name, force);
-        for (const name of tier) startPm2(name);
+        for (const name of tier) await buildIfNeeded(name, force);
+        for (const name of tier) await startPm2(name);
         for (const name of tier) {
             const svc = SERVICES[name];
             process.stdout.write(`  esperando ${name} en :${svc.port}... `);
@@ -311,21 +330,21 @@ function printSummary() {
     console.log('(abac seed → micorner:seed → abac seed:m2m) antes de usar el ecosistema.');
 }
 
-function down() {
-    ensurePm2Available();
+async function down() {
+    await ensurePm2Available();
     const names = new Set(Object.values(SERVICES).map((s) => s.pm2.app));
     for (const name of names) {
         try {
-            execSync(`${PM2_BIN} delete ${name}`, { stdio: 'inherit' });
+            await run(`${PM2_BIN} delete ${name}`);
         } catch {
             console.log(`  (${name} no estaba corriendo)`);
         }
     }
 }
 
-function status() {
-    ensurePm2Available();
-    execSync(`${PM2_BIN} status`, { stdio: 'inherit' });
+async function status() {
+    await ensurePm2Available();
+    await run(`${PM2_BIN} status`);
 }
 
 async function main() {
