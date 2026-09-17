@@ -108,17 +108,34 @@ const SERVICES = {
         port: 5175,
         envFile: null, // front, sin DB propia
     },
+    'minerva-app': {
+        dir: 'minerva-app',
+        build: 'npm run build',
+        distCheck: 'dist/main.js',
+        pm2: { ecosystem: 'minerva-app/ecosystem.config.js', app: 'minerva-app' },
+        port: 3015,
+        envFile: null, // mock REST, sin DB — consumido por integration-service (MINERVA_BASE_URL)
+    },
+    'auth-configuration-app': {
+        dir: 'auth-configuration-app',
+        build: 'npm run build',
+        distCheck: 'dist/index.html',
+        pm2: { ecosystem: 'auth-configuration-app/ecosystem.config.cjs', app: 'auth-configuration-app' },
+        port: 5173,
+        envFile: null, // front, depende solo de abac (VITE_ABAC_API_URL)
+    },
 };
 
 // Orden de arranque — ver CLAUDE.md "Ecosystem Overview":
-//   MySQL → servicenow-clone-backend / abac / observability-service (sin deps entre sí)
+//   MySQL → servicenow-clone-backend / abac / observability-service / minerva-app (sin deps entre sí)
 //        → api-snowq-service (necesita servicenow-clone-backend) / micorner (necesita abac)
 //          / observability-dashboard (necesita observability-service)
+//          / auth-configuration-app (necesita abac)
 //        → api-gateway (necesita micorner + api-snowq-service + abac)
-//        → integration-service / event-corner-app (necesitan api-gateway)
+//        → integration-service (necesita api-gateway + minerva-app) / event-corner-app (necesita api-gateway)
 const TIERS = [
-    ['servicenow-clone-backend', 'abac', 'observability-service'],
-    ['api-snowq-service', 'micorner', 'observability-dashboard'],
+    ['servicenow-clone-backend', 'abac', 'observability-service', 'minerva-app'],
+    ['api-snowq-service', 'micorner', 'observability-dashboard', 'auth-configuration-app'],
     ['api-gateway'],
     ['integration-service', 'event-corner-app'],
 ];
@@ -275,9 +292,11 @@ function printSummary() {
         ['servicenow-clone-backend', 3010, 'mock local de ServiceNow'],
         ['abac', 3005, 'Swagger: /api-docs'],
         ['observability-service', 3099, 'ingesta: /ingest/{logs,metrics,traces}'],
+        ['minerva-app', 3015, 'mock REST de Minerva (inventario)'],
         ['api-snowq-service', 3090, 'queue + circuit breaker SN'],
         ['micorner', 3002, 'internal only'],
         ['observability-dashboard', 5174, 'front Vite'],
+        ['auth-configuration-app', 5173, 'front Vite (config ABAC)'],
         ['api-gateway', 4000, 'Swagger: /docs'],
         ['integration-service', 3008, 'Swagger: /api/docs'],
         ['event-corner-app', 5175, 'front Vite (cliente)'],
