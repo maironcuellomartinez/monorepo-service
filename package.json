@@ -2,6 +2,9 @@
   "name": "workspace-santander",
   "private": true,
   "scripts": {
+    "infra:up": "node scripts/start-infra.js",
+    "infra:down": "node scripts/start-infra.js --down",
+    "infra:status": "node scripts/start-infra.js --status",
     "sim:gateway": "node simulators/gateway-simulator.js",
     "sim:snow": "node simulators/snow-request-simulator.js",
     "sim:thruk": "node simulators/thruk-simulator.js",
