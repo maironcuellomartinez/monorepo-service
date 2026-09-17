@@ -126,6 +126,15 @@ const TIERS = [
 const HEALTH_TIMEOUT_MS = 45000;
 const MYSQL_TIMEOUT_MS = 5000;
 
+// Usa el pm2 local (devDependency de la raíz) si existe — evita depender de
+// una instalación global, que algunas políticas de entorno no permiten. Si
+// no está instalado localmente, cae al `pm2` del PATH (entornos donde sí
+// hay una instalación global).
+const PM2_BIN = (() => {
+    const local = path.join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'pm2.cmd' : 'pm2');
+    return fs.existsSync(local) ? `"${local}"` : 'pm2';
+})();
+
 function parseEnvFile(filePath) {
     const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
     const result = {};
@@ -183,9 +192,10 @@ function waitForPort(host, port, timeoutMs) {
 
 function ensurePm2Available() {
     try {
-        execSync('pm2 --version', { stdio: 'ignore' });
+        execSync(`${PM2_BIN} --version`, { stdio: 'ignore' });
     } catch {
-        console.error('✗ pm2 no está instalado o no está en el PATH. Instalar con: npm install -g pm2');
+        console.error('✗ pm2 no está disponible. Instalar como devDependency local: npm install --save-dev pm2');
+        console.error('  (o, si el entorno lo permite, globalmente: npm install -g pm2)');
         process.exit(1);
     }
 }
@@ -228,7 +238,7 @@ function startPm2(name) {
     // monolito-event-corner_v3/ecosystem.config.js) resuelven su `script`
     // relativo contra el cwd desde el que se invoca `pm2 start`, no contra la
     // ubicación del ecosystem file — hay que pararse en esa carpeta.
-    execSync(`pm2 start "${ecosystemPath}" --env development --only ${svc.pm2.app}`, {
+    execSync(`${PM2_BIN} start "${ecosystemPath}" --env development --only ${svc.pm2.app}`, {
         stdio: 'inherit',
         cwd: path.join(ROOT, svc.dir),
     });
@@ -287,7 +297,7 @@ function down() {
     const names = new Set(Object.values(SERVICES).map((s) => s.pm2.app));
     for (const name of names) {
         try {
-            execSync(`pm2 delete ${name}`, { stdio: 'inherit' });
+            execSync(`${PM2_BIN} delete ${name}`, { stdio: 'inherit' });
         } catch {
             console.log(`  (${name} no estaba corriendo)`);
         }
@@ -296,7 +306,7 @@ function down() {
 
 function status() {
     ensurePm2Available();
-    execSync('pm2 status', { stdio: 'inherit' });
+    execSync(`${PM2_BIN} status`, { stdio: 'inherit' });
 }
 
 async function main() {
