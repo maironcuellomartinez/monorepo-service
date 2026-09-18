@@ -151,7 +151,7 @@ const TIERS = [
     ['integration-service', 'event-corner-app'],
 ];
 
-const HEALTH_TIMEOUT_MS = 45000;
+const HEALTH_TIMEOUT_MS = 90000;
 const MYSQL_TIMEOUT_MS = 5000;
 
 // Usa el pm2 local (devDependency de la raíz) si existe — evita depender de
@@ -294,12 +294,17 @@ async function up(force) {
     await ensurePm2Available();
     await checkMysql();
 
+    // Un servicio a la vez (build -> pm2 start -> esperar puerto) en vez de
+    // lanzar todo el tier en paralelo y esperar despues. En una VM con pocos
+    // recursos, arrancar varios NestJS/Vite juntos satura CPU/RAM de golpe
+    // y hace que los health-checks vayan quedando cortos por contencion.
+    // Arranca mas lento, pero cada paso pesa solo lo suyo.
     for (const tier of TIERS) {
         console.log(`\n=== Tier: ${tier.join(', ')} ===`);
-        for (const name of tier) await buildIfNeeded(name, force);
-        for (const name of tier) await startPm2(name);
         for (const name of tier) {
             const svc = SERVICES[name];
+            await buildIfNeeded(name, force);
+            await startPm2(name);
             process.stdout.write(`  esperando ${name} en :${svc.port}... `);
             const ok = await waitForPort('localhost', svc.port, HEALTH_TIMEOUT_MS);
             if (!ok) {
