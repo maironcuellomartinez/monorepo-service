@@ -1,6 +1,11 @@
 # Event Corner — Arranque del ecosistema
 
-Ver `CLAUDE.md` para la arquitectura completa (servicios, puertos, variables de entorno, dominio). Este README documenta únicamente **cómo levantar todo el ecosistema local con un solo comando**, vía PM2.
+Ver `CLAUDE.md` para la arquitectura completa (servicios, puertos, variables de entorno, dominio). Este README documenta únicamente **cómo levantar todo el ecosistema local con un solo comando**, de dos formas:
+
+- **`npm run infra:up`** (`scripts/start-infra.js`) — vía PM2. El camino normal.
+- **`npm run infra:dev`** (`scripts/start-infra-dev.js`) — sin PM2, para entornos donde PM2 no puede correr (ver [Alternativa sin PM2](#alternativa-sin-pm2-npm-run-infradev) más abajo).
+
+Ambos arrancan los mismos 11 servicios, en el mismo orden de dependencias, con el mismo chequeo de MySQL — difieren solo en cómo ejecutan cada proceso.
 
 ## Requisitos previos
 
@@ -9,7 +14,7 @@ Ver `CLAUDE.md` para la arquitectura completa (servicios, puertos, variables de 
 - **Redis**: no es necesario para este flujo de arranque (no está en la ruta crítica actual).
 - **pm2**: no hace falta instalarlo vos. Ya está como `devDependency` de la raíz del workspace (`npm install` en la raíz lo trae). El script usa ese binario local antes que uno global, así que funciona incluso en entornos donde la política no permite instalar paquetes globalmente.
 
-## Uso
+## Uso (con PM2)
 
 Desde la raíz del workspace:
 
@@ -58,9 +63,25 @@ npm run infra:up -- --force-build
 | integration-service | 3008 | Swagger: `/api/docs` |
 | event-corner-app | 5175 | front Vite (cliente) |
 
+## Alternativa sin PM2 (`npm run infra:dev`)
+
+Para cuando PM2 no puede correr en el entorno — por ejemplo una VM cuyo EDR/antivirus bloquea la creación de procesos detached/en background: el síntoma típico es `spawn EPERM` justo en `pm2 start` (que necesita forkear el daemon + la app) pero **no** en `pm2 --version` (que no forkea nada).
+
+```bash
+npm run infra:dev
+```
+
+Diferencias clave con `infra:up`:
+
+- **No usa PM2 en absoluto.** Corre cada servicio con su propio `npm run start:dev` (NestJS, `--watch`) o `npm run dev` (Vite) que **ya existe** en cada `package.json` — no hay build ni `dist/` de por medio, arranca en modo watch con hot-reload.
+- **No toca la configuración de ninguna app.** Es solo una forma distinta de invocar los mismos comandos que ya existían; cuando se despliega de verdad a un servidor, cada app sigue arrancando independiente vía su propio PM2 — esto no cambia eso.
+- **Arranca un servicio a la vez** (mismo orden de dependencias y mismo chequeo de MySQL que `infra:up`), esperando el puerto de cada uno antes de seguir con el siguiente.
+- **No hay `--status`/`--down`.** Sin PM2 no hay daemon: el proceso corre en **foreground**, todos los servicios son hijos directos de él, y el propio proceso corriendo *es* el estado. Hay que dejar esa terminal abierta.
+- **`Ctrl+C` apaga todo** (mata el árbol completo de procesos). Si el proceso se corta de una forma que no sea `Ctrl+C`/`SIGTERM` (ej. "Finalizar tarea" en el Administrador de tareas, o apagar la VM de golpe), pueden quedar procesos huérfanos ocupando los puertos — igual que le pasaría a cualquier `npm run dev` suelto sin este wrapper. Si pasa, hay que matarlos a mano (`taskkill /pid <pid> /T /F` en Windows, por cada puerto) o reiniciar el entorno.
+
 ## Primera vez
 
-Si es un entorno nuevo (bases vacías), después de `npm run infra:up` correr la secuencia de seeds documentada en `CLAUDE.md`:
+Si es un entorno nuevo (bases vacías), después de `npm run infra:up` (o `infra:dev`) correr la secuencia de seeds documentada en `CLAUDE.md`:
 
 1. `npm run seed` en `abac-microservice/` (crea el super admin, genera `initial-credentials.json`)
 2. `npm run micorner:seed` en `monolito-event-corner_v3/` (lee `initial-credentials.json` automáticamente)
